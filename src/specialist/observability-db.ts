@@ -4,7 +4,7 @@ import { join, sep, resolve as resolvePath } from 'node:path';
 
 const OBSERVABILITY_DB_FILENAME = 'observability.db';
 const DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = ['.specialists', 'db'] as const;
-export const OBSERVABILITY_SCHEMA_VERSION = 14;
+export const OBSERVABILITY_SCHEMA_VERSION = 15;
 
 export interface ObservabilityDbLocation {
   gitRoot: string;

@@ -244,7 +244,8 @@ describe('forensic-events', () => {
     const first = createForensicEvent({ event_family: 'job', event_name: 'job.started', resource, correlation: { participant_id: participantId, job_id: 'job-a' } });
     const second = createForensicEvent({ event_family: 'job', event_name: 'job.started', resource, correlation: { participant_id: participantId, job_id: 'job-b' } });
 
-    expect(participantId).toBe('chain:7f3a::executor');
+    // unitAI-rrdnt.2: canonical specialist identity replaces `chain:7f3a::executor`.
+    expect(participantId).toBe('specialist::executor');
     expect(first.correlation.participant_id).toBe(second.correlation.participant_id);
     expect(first.correlation.job_id).not.toBe(second.correlation.job_id);
   });
@@ -426,7 +427,8 @@ describe('forensic-events', () => {
         participant_role: 'executor',
       },
       correlation: {
-        participant_id: 'chain:1::executor',
+        // unitAI-rrdnt.2: canonical specialist identity replaces `chain:1::executor`.
+        participant_id: 'specialist::executor',
         job_id: 'job-1',
         bead_id: 'unitAI-1',
         chain_id: 'chain:1',

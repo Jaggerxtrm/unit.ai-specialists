@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, normalize, resolve } from 'node:path';
 
 // bun:sqlite is Bun-only — lazy-load to avoid breaking Node/vitest imports.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,7 +21,7 @@ function loadBunDatabase(): (new (path: string) => BunDb) | null {
 import { resolveObservabilityDbLocation } from './observability-db.js';
 import { resolveJobsDir } from './job-root.js';
 import type { TimelineEvent, TimelineEventTool } from './timeline-events.js';
-import { forensicEventFromTimelineEvent, type ForensicEvent } from './forensic-events.js';
+import { deriveParticipantId, forensicEventFromTimelineEvent, type ForensicEvent } from './forensic-events.js';
 import type { BranchIntegrationEvent } from './branch-integration-events.js';
 import type { SupervisorStatus } from './supervisor.js';
 import type { EpicChainRecord, EpicRunRecord } from './epic-lifecycle.js';
@@ -293,6 +293,22 @@ function stringifyJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
+// V15 identity helpers (unitAI-rrdnt.2). Workspace rule: normalize(resolve(path))
+// only — no realpath, repo-root, or git-common-dir normalization, so linked
+// worktree paths remain distinct mutable workspaces.
+function normalizeWorkspacePath(worktreePath: string | null | undefined): string | null {
+  if (!worktreePath || worktreePath.trim().length === 0) return null;
+  return normalize(resolve(worktreePath));
+}
+
+function buildAttemptId(jobId: string, attemptNo: number): string {
+  return `${jobId}::attempt::${attemptNo}`;
+}
+
+function isRetryStartEvent(event: { type: string; phase?: unknown }): boolean {
+  return event.type === 'retry' && event.phase === 'start';
+}
+
 function migrateToV4(db: BunDb): void {
   const hasV4 = db.query('SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1').get() as { 1?: number } | undefined;
   if (hasV4) {
@@ -524,6 +540,7 @@ export function initSchema(db: BunDb): void {
   migrateToV12(db);
   migrateToV13(db);
   migrateToV14(db);
+  migrateToV15(db);
   verifyWalMode(db);
 }
 
@@ -598,6 +615,121 @@ function migrateToV14(db: BunDb): void {
     INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
       VALUES (14, strftime('%s', 'now') * 1000);
   `);
+}
+
+// V15 — identity lineage: attempt_id, columnar pi_session_id/workspace_id,
+// chain-independent participant_id. unitAI-rrdnt.2.
+//
+// Migration contract (normative):
+// - Additive and idempotent: only ADD COLUMN / CREATE INDEX IF NOT EXISTS plus
+//   columnar backfill. No shadow/new table, no event_json/status_json mutation
+//   or removal — the column is a normalized query projection; the blob is the
+//   original forensic record, never rewritten.
+// - workspace_id uses normalize(resolve(path)) without realpath, repo-root, or
+//   git-common-dir normalization, so linked worktree paths remain distinct
+//   mutable workspaces. Known ceiling: a symlinked worktree path and its real
+//   path become two different workspace_ids.
+// - participant_id is recomputed as `specialist::<specialist>` (jobs) /
+//   `specialist::<participant_role>` (forensic rows). `specialist::<unknown>`
+//   means exactly "role not recoverable", NOT a participant named unknown;
+//   acceptance/rollup queries must exclude sentinel rows, never aggregate them
+//   as a participant. A read-only dry run over the repository's v14 store found
+//   zero sentinel rows; the guard is exercised only by the synthetic v15 fixture.
+// - Legacy rows keep attempt_no = 0 and attempt_id = NULL; no attempt 1 is
+//   invented by the migration.
+function migrateToV15(db: BunDb): void {
+  const hasV15 = db.query('SELECT 1 FROM schema_version WHERE version = 15 LIMIT 1').get() as { 1?: number } | undefined;
+
+  const jobsColumns = new Set(
+    (db.query('PRAGMA table_info(specialist_jobs)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+  for (const column of [
+    { name: 'participant_id', definition: 'TEXT' },
+    { name: 'pi_session_id', definition: 'TEXT' },
+    { name: 'workspace_id', definition: 'TEXT' },
+    { name: 'attempt_no', definition: 'INTEGER DEFAULT 0' },
+    { name: 'attempt_id', definition: 'TEXT' },
+  ]) {
+    if (!jobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+
+  const eventsColumns = new Set(
+    (db.query('PRAGMA table_info(specialist_events)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+  if (!eventsColumns.has('attempt_id')) {
+    db.run('ALTER TABLE specialist_events ADD COLUMN attempt_id TEXT');
+  }
+
+  const forensicColumns = new Set(
+    (db.query('PRAGMA table_info(specialist_forensic_events)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+  if (!forensicColumns.has('attempt_id')) {
+    db.run('ALTER TABLE specialist_forensic_events ADD COLUMN attempt_id TEXT');
+  }
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_jobs_participant ON specialist_jobs(participant_id) WHERE participant_id IS NOT NULL');
+  db.run('CREATE INDEX IF NOT EXISTS idx_jobs_pi_session ON specialist_jobs(pi_session_id) WHERE pi_session_id IS NOT NULL');
+  db.run('CREATE INDEX IF NOT EXISTS idx_jobs_workspace ON specialist_jobs(workspace_id) WHERE workspace_id IS NOT NULL');
+  db.run('CREATE INDEX IF NOT EXISTS idx_specialist_events_job_attempt ON specialist_events(job_id, attempt_id, seq) WHERE attempt_id IS NOT NULL');
+  db.run('CREATE INDEX IF NOT EXISTS idx_forensic_events_job_attempt ON specialist_forensic_events(job_id, attempt_id, seq) WHERE attempt_id IS NOT NULL');
+
+  if (hasV15) return;
+
+  const backfill = db.transaction(() => {
+    db.run(`
+      UPDATE specialist_jobs
+      SET pi_session_id = NULLIF(JSON_EXTRACT(status_json, '$.session_id'), '')
+    `);
+    db.run(`
+      UPDATE specialist_jobs
+      SET participant_id = 'specialist::' || COALESCE(NULLIF(TRIM(specialist), ''), '<unknown>')
+    `);
+    db.run(`
+      UPDATE specialist_jobs
+      SET attempt_no = 0
+      WHERE attempt_no IS NULL
+    `);
+
+    const worktreeRows = db.query(`
+      SELECT job_id, worktree_column
+      FROM specialist_jobs
+      WHERE worktree_column IS NOT NULL AND worktree_column != ''
+    `).all() as Array<{ job_id?: string; worktree_column?: string }>;
+    const workspaceStmt = db.query('UPDATE specialist_jobs SET workspace_id = ? WHERE job_id = ?');
+    for (const row of worktreeRows) {
+      if (!row.job_id || !row.worktree_column) continue;
+      workspaceStmt.run(normalizeWorkspacePath(row.worktree_column), row.job_id);
+    }
+
+    db.run(`
+      UPDATE specialist_forensic_events AS forensic
+      SET participant_id = 'specialist::' || COALESCE(
+        NULLIF(TRIM(forensic.participant_role), ''),
+        NULLIF(TRIM((
+          SELECT jobs.specialist
+          FROM specialist_jobs AS jobs
+          WHERE jobs.job_id = forensic.job_id
+          LIMIT 1
+        )), ''),
+        '<unknown>'
+      )
+      WHERE forensic.participant_kind = 'specialist'
+    `);
+
+    db.run(`
+      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+        VALUES (15, strftime('%s', 'now') * 1000);
+    `);
+  });
+  backfill();
 }
 
 function migrateToV5(db: BunDb): void {
@@ -1020,6 +1152,7 @@ export interface ForensicEventRecord {
   participant_kind: string | null;
   participant_role: string | null;
   participant_id: string | null;
+  attempt_id?: string | null;
   redaction_status: string;
   event_json: string;
 }
@@ -1322,9 +1455,13 @@ class SqliteClient implements ObservabilitySqliteClient {
 
   private writeStatusRow(status: SupervisorStatus, lastOutput?: string): void {
     const statusJson = JSON.stringify(status);
+    const workspaceId = normalizeWorkspacePath(status.worktree_path);
+    const piSessionId = status.session_id ?? null;
+    const participantId = deriveParticipantId({ participant_role: status.specialist });
+    const attemptId = `${status.id}::attempt::1`;
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json, participant_id, pi_session_id, workspace_id, attempt_no, attempt_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
@@ -1339,7 +1476,10 @@ class SqliteClient implements ObservabilitySqliteClient {
         status_json = excluded.status_json,
         updated_at_ms = excluded.updated_at_ms,
         last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
-        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json);
+        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json),
+        participant_id = excluded.participant_id,
+        pi_session_id = excluded.pi_session_id,
+        workspace_id = excluded.workspace_id;
     `, [
       status.id,
       status.specialist,
@@ -1356,6 +1496,10 @@ class SqliteClient implements ObservabilitySqliteClient {
       Date.now(),
       lastOutput ?? null,
       status.startup_payload_json ?? null,
+      participantId,
+      piSessionId,
+      workspaceId,
+      attemptId,
     ]);
   }
 
@@ -1403,18 +1547,40 @@ class SqliteClient implements ObservabilitySqliteClient {
     return row?.next_seq ?? 1;
   }
 
+  private readJobAttempt(jobId: string): { attempt_no: number; attempt_id: string | null } | null {
+    const row = this.db.query('SELECT attempt_no, attempt_id FROM specialist_jobs WHERE job_id = ? LIMIT 1').get(jobId) as { attempt_no?: number | bigint | null; attempt_id?: string | null } | undefined;
+    if (!row) return null;
+    const attemptNo = typeof row.attempt_no === 'bigint' ? Number(row.attempt_no) : typeof row.attempt_no === 'number' ? row.attempt_no : 0;
+    return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === 'string' ? row.attempt_id : null };
+  }
+
   private writeEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
     const seq = typeof event.seq === 'number' && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
+    const current = this.readJobAttempt(jobId);
+    let attemptId: string | null;
+    if (isRetryStartEvent(event as { type: string; phase?: unknown })) {
+      const nextNo = (current?.attempt_no ?? 0) + 1;
+      attemptId = buildAttemptId(jobId, nextNo);
+      if (current) {
+        this.db.run('UPDATE specialist_jobs SET attempt_no = ?, attempt_id = ?, updated_at_ms = ? WHERE job_id = ?', [nextNo, attemptId, Date.now(), jobId]);
+      }
+    } else if (current && current.attempt_no > 0) {
+      attemptId = current.attempt_id ?? buildAttemptId(jobId, current.attempt_no);
+    } else if (!current) {
+      attemptId = buildAttemptId(jobId, 1);
+    } else {
+      attemptId = null;
+    }
     this.db.run(`
-      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
-    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent);
+      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json, attempt_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson, attemptId]);
+    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent, attemptId);
   }
 
-  private writeForensicEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent & { seq: number }): void {
+  private writeForensicEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent & { seq: number }, attemptId: string | null): void {
     const context = this.readForensicContext(jobId);
     const forensicEvent = forensicEventFromTimelineEvent(
       event as unknown as { t: number; seq?: number; type: string; [key: string]: unknown },
@@ -1433,6 +1599,9 @@ class SqliteClient implements ObservabilitySqliteClient {
         chainRootBeadId: context.chainRootBeadId,
         epicId: context.epicId,
         sessionId: context.sessionId,
+        attemptId: attemptId ?? context.attemptId,
+        piSessionId: context.piSessionId ?? context.sessionId,
+        workspaceId: context.workspaceId,
         conversationId: context.conversationId,
         traceId: context.traceId,
         spanId: context.spanId,
@@ -1442,7 +1611,7 @@ class SqliteClient implements ObservabilitySqliteClient {
         rootRuntimeOrigin: context.rootRuntimeOrigin,
       },
     );
-    this.insertForensicEventRow(jobId, event.seq, forensicEvent);
+    this.insertForensicEventRow(jobId, event.seq, forensicEvent, attemptId);
   }
 
   private readForensicContext(jobId: string): {
@@ -1457,6 +1626,10 @@ class SqliteClient implements ObservabilitySqliteClient {
     chainRootBeadId?: string;
     epicId?: string;
     sessionId?: string;
+    attemptId?: string;
+    piSessionId?: string;
+    workspaceId?: string;
+    participantId?: string;
     conversationId?: string;
     traceId?: string;
     spanId?: string;
@@ -1468,12 +1641,14 @@ class SqliteClient implements ObservabilitySqliteClient {
     rootRuntimeOrigin?: unknown;
   } {
     const row = this.db.query(`
-      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status_json
+      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id,
+             participant_id, pi_session_id, workspace_id, attempt_id, status_json
       FROM specialist_jobs
       WHERE job_id = ?
       LIMIT 1
     `).get(jobId) as Record<string, unknown> | undefined;
     const statusJson = parseJsonRecord(typeof row?.status_json === 'string' ? row.status_json : undefined);
+    const columnSession = typeof row?.pi_session_id === 'string' ? row.pi_session_id : undefined;
     return {
       beadId: typeof row?.bead_id === 'string' ? row.bead_id : undefined,
       nodeId: typeof row?.node_id === 'string' ? row.node_id : undefined,
@@ -1485,7 +1660,11 @@ class SqliteClient implements ObservabilitySqliteClient {
       chainRootJobId: typeof row?.chain_root_job_id === 'string' ? row.chain_root_job_id : undefined,
       chainRootBeadId: typeof row?.chain_root_bead_id === 'string' ? row.chain_root_bead_id : undefined,
       epicId: typeof row?.epic_id === 'string' ? row.epic_id : undefined,
-      sessionId: typeof statusJson.session_id === 'string' ? statusJson.session_id : undefined,
+      sessionId: columnSession ?? (typeof statusJson.session_id === 'string' ? statusJson.session_id : undefined),
+      attemptId: typeof row?.attempt_id === 'string' ? row.attempt_id : undefined,
+      piSessionId: columnSession ?? (typeof statusJson.session_id === 'string' ? statusJson.session_id : undefined),
+      workspaceId: typeof row?.workspace_id === 'string' ? row.workspace_id : undefined,
+      participantId: typeof row?.participant_id === 'string' ? row.participant_id : undefined,
       conversationId: typeof statusJson.conversation_id === 'string' ? statusJson.conversation_id : undefined,
       traceId: typeof statusJson.trace_id === 'string' ? statusJson.trace_id : undefined,
       spanId: typeof statusJson.span_id === 'string' ? statusJson.span_id : undefined,
@@ -1496,12 +1675,13 @@ class SqliteClient implements ObservabilitySqliteClient {
     };
   }
 
-  private insertForensicEventRow(jobId: string, seq: number, forensicEvent: ForensicEvent): void {
+  private insertForensicEventRow(jobId: string, seq: number, forensicEvent: ForensicEvent, attemptId?: string | null): void {
+    const columnAttemptId = attemptId ?? (typeof forensicEvent.correlation.attempt_id === 'string' ? forensicEvent.correlation.attempt_id : null);
     this.db.run(`
       INSERT INTO specialist_forensic_events (
         job_id, seq, t, schema_version, event_family, event_name,
-        participant_kind, participant_role, participant_id, redaction_status, event_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        participant_kind, participant_role, participant_id, redaction_status, event_json, attempt_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       jobId,
       seq,
@@ -1514,6 +1694,7 @@ class SqliteClient implements ObservabilitySqliteClient {
       typeof forensicEvent.correlation.participant_id === 'string' ? forensicEvent.correlation.participant_id : null,
       forensicEvent.redaction.status,
       JSON.stringify(forensicEvent),
+      columnAttemptId,
     ]);
   }
 
@@ -2531,7 +2712,7 @@ class SqliteClient implements ObservabilitySqliteClient {
       const dir = filters.order === 'desc' ? 'DESC' : 'ASC';
       return this.db.query(`
         SELECT id, job_id, seq, t, schema_version, event_family, event_name,
-               participant_kind, participant_role, participant_id, redaction_status, event_json
+               participant_kind, participant_role, participant_id, attempt_id, redaction_status, event_json
         FROM specialist_forensic_events
         ${where}
         ORDER BY t ${dir}, seq ${dir}, id ${dir}

@@ -26,6 +26,9 @@ export interface ForensicCorrelation {
   bead_id?: string;
   issue_id?: string;
   container_id?: string;
+  attempt_id?: string;
+  pi_session_id?: string;
+  workspace_id?: string;
   chain_id?: string;
   chain_root_job_id?: string;
   chain_root_bead_id?: string;
@@ -386,14 +389,19 @@ export interface ParticipantIdentityInput {
   adapter_id?: string;
 }
 
-export function deriveParticipantId(input: ParticipantIdentityInput): string | undefined {
-  const kind = input.participant_kind ?? 'specialist';
-  if (kind === 'specialist' && input.chain_id) return `${input.chain_id}::${input.participant_role}`;
-  if (kind === 'orchestrator' && input.session_uuid) return `orch::${input.session_uuid}`;
-  if (kind === 'pulse_emitter' && input.container_id) return `${input.container_id}::emitter::${input.participant_role}`;
-  if (kind === 'node_member' && input.node_id) return `node::${input.node_id}::${input.participant_role}::${input.member_index ?? 0}`;
-  if (kind === 'adapter' && input.adapter_id) return input.adapter_id;
-  return undefined;
+export function deriveParticipantId(input: ParticipantIdentityInput): string {
+  if ((input.participant_kind ?? 'specialist') === 'specialist') {
+    const role = typeof input.participant_role === 'string' ? input.participant_role.trim() : '';
+    // Chain-independent stable identity. Missing/blank role degrades to an
+    // explicit sentinel so participant_id stays non-null and a diagnostic
+    // failure can never abort activation. Never throws.
+    return `specialist::${role ? role : '<unknown>'}`;
+  }
+  if (input.participant_kind === 'orchestrator' && input.session_uuid) return `orch::${input.session_uuid}`;
+  if (input.participant_kind === 'pulse_emitter' && input.container_id) return `${input.container_id}::emitter::${input.participant_role}`;
+  if (input.participant_kind === 'node_member' && input.node_id) return `node::${input.node_id}::${input.participant_role}::${input.member_index ?? 0}`;
+  if (input.participant_kind === 'adapter' && input.adapter_id) return input.adapter_id;
+  return `${input.participant_kind ?? 'specialist'}::<unknown>`;
 }
 
 export function assertKnownTopLevelFields(event: Record<string, unknown>): void {
@@ -436,6 +444,9 @@ export interface TimelineForensicContext {
   chainRootBeadId?: string;
   epicId?: string;
   sessionId?: string;
+  attemptId?: string;
+  piSessionId?: string;
+  workspaceId?: string;
   conversationId?: string;
   traceId?: string;
   spanId?: string;
@@ -562,6 +573,9 @@ export function forensicEventFromTimelineEvent(
       job_id: context.jobId,
       bead_id: context.beadId,
       node_id: context.nodeId,
+      attempt_id: context.attemptId,
+      pi_session_id: context.piSessionId ?? context.sessionId,
+      workspace_id: context.workspaceId,
       chain_id: context.chainId,
       chain_root_job_id: context.chainRootJobId,
       chain_root_bead_id: context.chainRootBeadId,

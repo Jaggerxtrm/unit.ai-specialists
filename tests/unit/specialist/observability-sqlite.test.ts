@@ -120,7 +120,7 @@ describe('observability-sqlite', () => {
       const tableRows = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('node_runs', 'node_members', 'node_events', 'node_memory') ORDER BY name").all() as Array<{ name: string }>;
       expect(tableRows.map((row) => row.name)).toEqual(['node_events', 'node_members', 'node_memory', 'node_runs']);
 
-      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(14);
+      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(15);
 
       const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 10 LIMIT 1').get() as { version?: number };
       expect(schemaVersionRow.version).toBe(10);
@@ -916,7 +916,8 @@ describe('observability-sqlite', () => {
       expect(forensicRows[0]?.event_name).toBe('tool.call.completed');
       expect(forensicRows[0]?.participant_kind).toBe('specialist');
       expect(forensicRows[0]?.participant_role).toBe('executor');
-      expect(forensicRows[0]?.participant_id).toBe('chain-forensic::executor');
+      // unitAI-rrdnt.2: canonical specialist identity replaces `chain-forensic::executor`.
+      expect(forensicRows[0]?.participant_id).toBe('specialist::executor');
       expect(forensicRows[0]?.redaction_status).toBe('redacted');
 
       const event = JSON.parse(forensicRows[0]!.event_json) as any;
