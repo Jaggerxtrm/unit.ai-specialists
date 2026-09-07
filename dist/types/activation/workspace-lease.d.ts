@@ -162,6 +162,13 @@ export declare function workspaceKey(workspace: WorkspaceIdentity): string;
  */
 export declare function leaseDir(workspace: WorkspaceIdentity): string;
 /**
+ * The lease record for a workspace.
+ *
+ * Exported because Phase 9 reconciliation resolves the same record without going through
+ * `release`, which refuses an uncertain lease by design.
+ */
+export declare function leasePath(workspace: WorkspaceIdentity): string;
+/**
  * Read the lease and apply the liveness verdict.
  *
  * The record's own contents never decide the state — only the probe does. A record that

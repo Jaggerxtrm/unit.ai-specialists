@@ -4,6 +4,7 @@ import type { CircuitBreaker } from '../../utils/circuitBreaker.js';
 import { type PendingInteractionProjection } from '../../activation/transport/polling.js';
 import type { NativeActivationHost } from '../../activation/native-host.js';
 import { type ActivationView, type PendingAskView } from './activation.tool.js';
+import { type UncertainWorkspaceProjection } from '../../activation/workspace-reconcile.js';
 /**
  * @param getHost Native runtime, when this process hosts one. Optional so the CLI and the
  *   tests that build this tool without a Fleet keep working; PRD Phase 13 acceptance
@@ -21,6 +22,7 @@ export declare function createSpecialistStatusTool(loader: SpecialistLoader, cir
         activations: ActivationView[];
         pending_asks: PendingAskView[];
         pending_interactions: PendingInteractionProjection[];
+        uncertain_workspaces: UncertainWorkspaceProjection[];
         backends_health: {
             [k: string]: "CLOSED" | "HALF_OPEN" | "OPEN";
         };

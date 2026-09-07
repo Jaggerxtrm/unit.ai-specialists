@@ -8,7 +8,7 @@ description: >
   advanced Specialists surface such as node/script execution, KPI analysis, or specialist
   definition authoring. Read live `specialists list --full` and `sp help` before relying
   on remembered roles or flags.
-version: 4.1
+version: 4.2
 ---
 
 # Using Specialists
@@ -134,6 +134,31 @@ failing context window.
 
 General inter-agent messaging and wake/reply semantics belong to `/multiplexing`, not
 this skill.
+
+## Native activation is not yet dispatchable
+
+Everything above describes the supervised `sp` job lifecycle. A second runtime — native
+activation — hosts a Specialist on an in-process Pi `AgentSession` rather than spawning
+`pi` as a subprocess, which lets a child ask a clarifying question and resume instead of
+restarting.
+
+**Do not dispatch through it. There is nothing to dispatch through.** It has no CLI
+command and no MCP tool; its only live path is a credential-gated integration test. The
+operator surface is being built under `unitAI-rrdnt.33`.
+
+Two of its properties change how you write a bead even before it is invocable, because
+they are stricter than the `sp` path:
+
+- Admission refuses a bead that is not a complete 7-section contract with a declared
+  `SCRUTINY` level, before any model turn is spent. Check `bd state <id> contract` — a
+  bead marked `draft` is refused outright.
+- A write-capable Specialist gets **no** worktree of its own; it shares the
+  coordinator's. Writers are refused entirely today (`unitAI-rrdnt.36` enables them),
+  and the exclusion that will make them safe is a writer lease that is implemented but
+  not yet wired to anything.
+
+Full reference, including which guarantees are specified but not in force:
+`docs/native-activation.md`.
 
 ## Advanced surfaces are references, not separate skills
 
