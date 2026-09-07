@@ -11,7 +11,16 @@ import type { PiSdk } from '../../../src/activation/pi-sdk.js';
  * answer" check and silently destroy the child's context.
  */
 
-interface Tool { name: string; description: string; execute: (args: never) => Promise<string> }
+/**
+ * The SDK calls execute as `(toolCallId, args, ...)`. Modelling it as `(args)` here is what
+ * let the real signature be wrong for the whole life of Phase 6: the unit test invoked the
+ * tool the way it wished the SDK did, so it passed against a tool no live model could use.
+ * Every call below therefore goes through `call()`, which supplies the id.
+ */
+interface Tool { name: string; description: string; execute: (toolCallId: string, args: never) => Promise<string> }
+
+let callSeq = 0;
+const call = (tool: Tool, args: unknown) => tool.execute(`call_${++callSeq}`, args as never);
 
 function sdkCapturingTools(): PiSdk {
   return {
@@ -53,7 +62,7 @@ describe('ask/escalate tools', () => {
   it('blocks inside the tool call until answered, then returns the answer as the result', async () => {
     const { transport, ask, asked, answered } = harness();
 
-    const call = ask.execute({ question: 'Which config layer wins?' } as never);
+    const inFlight = call(ask, { question: 'Which config layer wins?' });
     await Promise.resolve();
 
     // The child is suspended inside its tool call — not finished, not dead.
@@ -72,14 +81,14 @@ describe('ask/escalate tools', () => {
     });
 
     // The answer is the TOOL RESULT — this is what keeps the same session running.
-    await expect(call).resolves.toBe('the repo user layer wins');
+    await expect(inFlight).resolves.toBe('the repo user layer wins');
     expect(answered).toEqual(['question']);
   });
 
   it('escalates without dying and resumes when resolved', async () => {
     const { transport, escalate, asked } = harness();
 
-    const call = escalate.execute({ blocker: 'I lack permission to edit config' } as never);
+    const inFlight = call(escalate, { blocker: 'I lack permission to edit config' });
     await Promise.resolve();
 
     expect(asked[0].kind).toBe('escalation');
@@ -96,15 +105,15 @@ describe('ask/escalate tools', () => {
       inReplyTo: pending.message.messageId,
     });
 
-    await expect(call).resolves.toBe('permission granted, proceed');
+    await expect(inFlight).resolves.toBe('permission granted, proceed');
     expect(transport.impliedState('act:abc')).toBeUndefined();
   });
 
   it('routes two outstanding asks to the request that asked them, answered out of order', async () => {
     const { transport, ask } = harness();
 
-    const first = ask.execute({ question: 'question one' } as never);
-    const second = ask.execute({ question: 'question two' } as never);
+    const first = call(ask, { question: 'question one' });
+    const second = call(ask, { question: 'question two' });
     await Promise.resolve();
     await Promise.resolve();
 
@@ -134,7 +143,7 @@ describe('ask/escalate tools', () => {
     const { transport, ask } = harness({ currentAttemptId: () => attempt });
 
     attempt = 'att:abc:2';
-    void ask.execute({ question: 'after resume' } as never);
+    void call(ask, { question: 'after resume' });
     await Promise.resolve();
 
     expect(transport.pendingAsks()[0].message.attemptId).toBe('att:abc:2');
@@ -142,7 +151,7 @@ describe('ask/escalate tools', () => {
 
   it('refuses an empty question rather than asking one nobody can answer', async () => {
     const { transport, ask, asked } = harness();
-    await expect(ask.execute({ question: '   ' } as never)).resolves.toContain('Refused');
+    await expect(call(ask, { question: '   '  })).resolves.toContain('Refused');
     expect(asked).toEqual([]);
     expect(transport.pendingAsks()).toHaveLength(0);
   });
