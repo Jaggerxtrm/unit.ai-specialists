@@ -478,10 +478,31 @@ describe('live smoke: native Specialist activation', () => {
         outstanding = host.pendingAsks();
       }
 
-      expect(
-        outstanding,
-        'the child never asked — it guessed, or the ask tool was not in its contract',
-      ).toHaveLength(1);
+      // On failure this must say WHICH failure it was. "The child never asked" is
+      // consistent with three different causes — the tool absent from the session, the
+      // tool present and broken, or the model declining to call it — and they need
+      // different fixes. Two of the three have already been real here (unitAI-rrdnt.43.1
+      // and .43.2), and both were diagnosed by enumerating the session's own tool set
+      // rather than by reading the code, so the enumeration belongs in the assertion.
+      if (outstanding.length === 0) {
+        const live = host.snapshot(handle.activationId);
+        const session = (host as unknown as {
+          registry: { get: (id: string) => { session: { getAllTools?: () => Promise<Array<{ name: string }>> } } | undefined };
+        }).registry.get(handle.activationId)?.session;
+        const tools = (await session?.getAllTools?.())?.map(t => t.name) ?? ['<unavailable>'];
+        const result = await Promise.race([
+          handle.result.then(r => `${r.status}: ${String(r.output).slice(0, 400)}`),
+          new Promise<string>(resolve => setTimeout(() => resolve('<still running>'), 2000)),
+        ]);
+        expect.fail(
+          `the child never asked.\n`
+          + `  activation state: ${live?.state}\n`
+          + `  tools the session actually resolved: ${JSON.stringify(tools)}\n`
+          + `  ask tool present: ${tools.includes('ask_coordinator')}\n`
+          + `  child result so far: ${result}`,
+        );
+      }
+      expect(outstanding).toHaveLength(1);
 
       const [ask] = outstanding;
       expect(ask.message.kind).toBe('question');

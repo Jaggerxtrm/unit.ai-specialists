@@ -282,6 +282,12 @@ export class NativeActivationHost {
 
     const sdk = await this.loadSdk();
 
+    // Ruling (a), bead unitAI-rrdnt.35: the native runtime never falls back. Only the head
+    // of the configured chain is a candidate, and discarding the tail is deliberate — a
+    // Specialist that quietly ran on a fallback produces results nobody can attribute, and
+    // substituting a configured primary would contradict acceptance D refusing an
+    // unavailable override rather than replacing it. Honouring a chain later needs its own
+    // forensics and its own acceptance, not a silent widening of acceptance B.
     const configuredModel = resolveModelChain(execution)[0];
     const requestedModel = request.modelOverride ?? configuredModel;
     if (!requestedModel) return reject('no_model_configured');
@@ -352,6 +358,7 @@ export class NativeActivationHost {
     emit('activation_admitted', {
       tier, access,
       configured_model: configuredModel ?? null,
+      requested_model: requestedModel,
       resolved_model: resolvedModel,
       model_override: Boolean(request.modelOverride),
       workspace: workspace.worktreePath,
@@ -437,6 +444,12 @@ export class NativeActivationHost {
       access, workspace,
       piSessionId: session.sessionId,
       configuredModel,
+      // What the CALLER asked for, recorded even when it equals what resolved. Without the
+      // equal case the useful query — "which activations ran on something other than what
+      // was asked for" — is unanswerable, and `configuredModel` does not substitute: that
+      // is what the Specialist configures, which becomes a different question the moment an
+      // override exists (unitAI-rrdnt.35).
+      requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
       startedAt,
@@ -827,7 +840,13 @@ export class NativeActivationHost {
         activationId, attemptId, participantId: record.snapshot.participantId,
         specialist: record.snapshot.specialist, beadId: record.snapshot.beadId, name, payload,
       });
-    emit('activation_resumed');
+    // A resumed attempt carried no payload, so an override could not be shown to survive a
+    // resume from observability.db — only from memory, which is not evidence.
+    emit('activation_resumed', {
+      requested_model: record.snapshot.requestedModel,
+      resolved_model: record.snapshot.resolvedModel,
+      model_override: record.snapshot.modelOverride,
+    });
 
     record.unsubscribe();
     record.unsubscribe = record.session.subscribe((event) => this.onSessionEvent(record.snapshot, event, emit));
