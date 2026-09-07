@@ -26,6 +26,8 @@ import { resolveModelChain } from '../specialist/model-chain.js';
 import { BeadsClient } from '../specialist/beads.js';
 import { evaluateBeadReadiness, type BeadGateOptions } from './bead-gate.js';
 import { compileStepContract, type StepContract } from './step-contract.js';
+import { InteractionTransport, type InteractionMessage, type PendingAsk } from './interaction.js';
+import { createAskTools, ASK_TOOL, ESCALATE_TOOL } from './ask-tool.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
 import { FleetRegistry, RESUMABLE_STATES, nextAttemptId } from './registry.js';
@@ -99,6 +101,13 @@ export class NativeActivationHost {
   private readonly now: () => number;
 
   private readonly registry = new FleetRegistry();
+
+  /**
+   * One transport for the whole host. Messages carry their own activationId, so a single
+   * instance serves every child and the parent enumerates asks across the Fleet in one
+   * place rather than walking activations.
+   */
+  private readonly interactions = new InteractionTransport();
 
   constructor(deps: NativeActivationHostDeps = {}) {
     this.cwd = deps.cwd ?? process.cwd();
@@ -248,6 +257,7 @@ export class NativeActivationHost {
       model_override: Boolean(request.modelOverride),
       workspace: workspace.worktreePath,
       tools: toolContract.toolsList.join(','),
+      custom_tools: `${ASK_TOOL},${ESCALATE_TOOL}`,
     });
 
     const rendered = renderTaskPrompt({
@@ -273,7 +283,29 @@ export class NativeActivationHost {
 
     emit('activation_starting', { pi_session_id: null });
 
+    // The ask/escalate tools are CUSTOM tools, admitted alongside the resolved allowlist
+    // rather than added to it. A read-only Specialist gains the ability to ask without
+    // gaining any mutation capability — asking is not a workspace operation.
+    const askTools = createAskTools(sdk, {
+      transport: this.interactions,
+      activationId,
+      currentAttemptId: () => this.registry.get(activationId)?.snapshot.attemptId ?? attemptId,
+      self: participantId,
+      parent: request.requestedByParticipantId,
+      onAsk: (kind, body) => {
+        const record = this.registry.get(activationId);
+        if (record) record.snapshot.state = kind === 'escalation' ? 'escalated' : 'needs_reply';
+        emit(kind === 'escalation' ? 'escalation_raised' : 'clarification_requested', { body });
+      },
+      onAnswered: (kind) => {
+        const record = this.registry.get(activationId);
+        if (record) record.snapshot.state = 'running';
+        emit(kind === 'escalation' ? 'escalation_resolved' : 'clarification_answered');
+      },
+    });
+
     const { session } = await sdk.createAgentSession({
+      customTools: askTools,
       cwd: workspace.worktreePath,
       // The pi SDK takes a Model object here. Passing the provider-qualified string
       // instead is accepted silently and then fails mid-turn with an unresolved provider.
@@ -447,6 +479,33 @@ export class NativeActivationHost {
       };
     }
     // Deliberately no dispose(): a settled Specialist remains alive and resumable.
+  }
+
+  /**
+   * Answer an outstanding ask, resuming the child inside its existing tool call.
+   *
+   * The answer returns as that tool's result, so the SAME AgentSession continues with its
+   * context intact. Correlation is by `messageId`; there is deliberately no "answer the
+   * latest ask" convenience, because with two asks outstanding that is a coin flip.
+   */
+  async answer(messageId: string, body: string): Promise<InteractionMessage | undefined> {
+    const ask = this.interactions.pendingAsks().find(a => a.message.messageId === messageId);
+    if (!ask) return undefined;
+
+    return this.interactions.send({
+      kind: 'reply',
+      from: ask.message.to,
+      to: ask.message.from,
+      activationId: ask.message.activationId,
+      attemptId: ask.message.attemptId,
+      body,
+      inReplyTo: messageId,
+    });
+  }
+
+  /** Every outstanding ask across the Fleet, oldest first. */
+  pendingAsks(): PendingAsk[] {
+    return this.interactions.pendingAsks();
   }
 
   /** Current state of one activation, or undefined if unknown to this host. */
