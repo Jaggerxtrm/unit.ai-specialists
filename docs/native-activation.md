@@ -2,9 +2,9 @@
 title: Native Activation Runtime
 scope: native-activation
 category: guide
-version: 0.2.0
+version: 0.3.0
 updated: 2026-09-07
-synced_at: bea7957a
+synced_at: ee7f847c
 description: What the native Specialist activation runtime does today, what it refuses, and which of its guarantees are not yet in force.
 source_of_truth_for:
   - "src/activation/native-host.ts"
@@ -20,28 +20,32 @@ domain:
 <!-- INDEX -->
 | Section | Summary |
 |---|---|
-| [Status](#status-read-this-first) | What ships, what does not, and how to invoke it today |
+| [Status](#status-read-this-first) | What ships, what does not, and what is unproven |
 | [What it is](#what-it-is) | The runtime seam, and how it differs from `sp run` |
 | [Admission](#admission-what-gets-refused-before-a-model-turn) | The four gates a dispatch passes, in order |
 | [Workspaces and worktrees](#workspaces-and-worktrees) | Why a native Specialist does not get its own worktree |
-| [The writer lease](#the-writer-lease) | Specified, tested, and not yet in force |
+| [The writer lease](#the-writer-lease) | Acquired at admission; the per-call guard has no caller |
 | [Results are not messages](#results-are-not-messages) | The distinction the runtime exists to preserve |
 | [Asking without restarting](#asking-without-restarting) | Clarification versus restart |
 | [Forensics](#forensics) | One store, one query, and the vocabulary gap |
-| [Running one](#running-one--the-mcp-surface) | The four MCP tools, pending `unitAI-rrdnt.33` |
+| [Running one](#running-one--the-mcp-surface) | The four MCP tools, merged and callable |
 | [Known holes](#known-holes) | Every unclosed gap, with its bead |
 
 # Native Activation Runtime
 
 ## Status — read this first
 
-The native activation runtime is **not operator-invocable on `master`**. There is no CLI
-command, no merged MCP tool, and no export from `src/lib.ts` or `src/index.ts` that starts a
-native activation. `NativeActivationHost` has no production consumer there: every reference
-to it outside its own module is a test.
+The native activation runtime **is operator-invocable**. Four MCP tools —
+`specialist_dispatch`, `specialist_reply`, `specialist_stop_activation` and an extended
+`specialist_status` — are registered in `src/server.ts` and merged (`unitAI-rrdnt.33`,
+closed). See [Running one](#running-one--the-mcp-surface).
 
-The only way to run one is the gated live smoke, which is a test harness and not an
-operator surface:
+Write-capable Specialists are admitted and take the workspace writer lease
+(`unitAI-rrdnt.36` work merged as `67be44b1`, though the bead is still open). Read the
+[lease section](#the-writer-lease) before dispatching one: admission-time exclusion is live,
+the per-call mutation guard is not yet reachable.
+
+There is still no CLI command. A gated live smoke exercises the host directly:
 
 ```bash
 SPECIALISTS_LIVE_SMOKE=1 \
@@ -50,13 +54,11 @@ SPECIALISTS_LIVE_SMOKE_MODEL_ALT=<a different provider/model> \
   bun --bun vitest run tests/integration/activation/native-activation.live.test.ts
 ```
 
-It skips cleanly rather than failing when the environment variables or provider
-credentials are absent.
+It skips cleanly rather than failing when the environment variables or provider credentials
+are absent.
 
-The operator surface is four MCP tools built under **`unitAI-rrdnt.33`** (Phase 13), which
-exist on branch `xt/phase13-mcp` and are not merged. Their contract is documented in
-[Running one](#running-one--the-mcp-surface), read from that branch and confirmed against a
-live run by the lane that wrote them. Nothing there is callable until .33 merges.
+A second frontend — a Pi extension over the same host — is in progress as
+`unitAI-rrdnt.37` and is not merged. It is not documented here.
 
 Nothing below describes a planned behaviour. Where a behaviour is specified but not yet in
 force, the text says so and names the bead that closes it.
@@ -94,13 +96,18 @@ which renders a block ending in `AgentSession: not created`, and each refusal is
 `observability.db` as forensic evidence. A refusal is cheap; a child that already spent a
 model turn guessing at missing scope is not.
 
-**1. Writers are refused outright.** The Specialist's resolved permission tier decides
-mutation authority — `MEDIUM` and `HIGH` mean `write`, `READ_ONLY` and `LOW` mean `read`.
-Authority is derived from the resolved capability grant and never from the Specialist's
-name: a custom Specialist with edit tools is a writer whatever it is called, and one named
-`executor` with a read-only grant is not. A `write` activation is currently rejected with
-`writer_not_supported_in_phase_1`. Writers are enabled by **`unitAI-rrdnt.36`** (Phase 10),
-and not before the writer lease is wired — see [Known holes](#known-holes).
+**1. Mutation authority is resolved, and a writer takes the lease.** The Specialist's
+resolved permission tier decides it — `MEDIUM` and `HIGH` mean `write`, `READ_ONLY` and
+`LOW` mean `read`. Authority is derived from the resolved capability grant and never from
+the Specialist's name: a custom Specialist with edit tools is a writer whatever it is
+called, and one named `executor` with a read-only grant is not.
+
+A `write` activation acquires the workspace writer lease **before a session exists**, so
+contention is refused without spending a model turn and a refused writer never reaches the
+point where it could mutate anything. The refusal names the holder. An uncertain lease is
+never stolen. A `read` activation acquires nothing — it is not entitled to the lease.
+
+Writers were refused outright with `writer_not_supported_in_phase_1` until `67be44b1`.
 
 **2. The Bead must be a usable task contract.** The gate requires seven non-empty sections
 — `PROBLEM`, `SUCCESS`, `SCOPE`, `NON_GOALS`, `CONSTRAINTS`, `VALIDATION`, `OUTPUT` — plus
@@ -168,16 +175,23 @@ keying it by branch would miss two activations on one branch in one worktree.
 
 ## The writer lease
 
-> **Not in force.** `src/activation/workspace-lease.ts` is implemented and unit-tested, and
-> nothing acquires it. `NativeActivationHost` contains no call to `acquire`, `release` or
-> `admitToolCall`. Wiring it into the admission and tool-call paths is **`unitAI-rrdnt.36`**
-> (Phase 10), the same bead that enables writers. Until .36 lands, no native activation
-> holds a lease, and the lease protects nothing — which costs nothing today only because
-> writers are refused at admission anyway.
+> **Partly in force.** Acquisition and release are wired: a write-capable activation takes
+> the lease at admission (`native-host.ts:316`) and releases it on teardown, and both paths
+> emit forensics. The **per-call mutation guard is not reachable**:
+> `NativeActivationHost.admitToolCall` is a public method with no caller anywhere in `src/`
+> or `tests/`, and the host registers no blocking `tool_call` handler — `session.subscribe`
+> is observation only. The frontend that would call it is the Pi extension
+> (`unitAI-rrdnt.37`, unmerged); the MCP frontend has no agent-loop hook and cannot.
+>
+> What that means concretely: two activations cannot both hold one worktree, because
+> admission refuses the second. What is *not* enforced is the per-call block — a writer
+> whose lease turns uncertain mid-turn is not stopped, and a reader is not refused mutating
+> calls by the lease. A reader is still constrained, but by its fail-closed tool allowlist
+> rather than by the lease.
 
-This section documents the lease as specified, so that the specification is not re-derived
-when .36 wires it. Everything below describes the module's behaviour when called; none of
-it describes the runtime's behaviour today.
+Everything below describes the module's behaviour. Acquisition, contention, uncertainty and
+release are live on the admission path; the admission-verdict subsection is the part with no
+caller.
 
 ### Contention
 
@@ -298,6 +312,13 @@ lease that silently leaks for the remainder of every turn in which it is acquire
 Mutation admission uses an **allowlist** of non-mutating tools, so an unrecognised tool is
 treated as mutating. A denylist would silently admit every tool added after it was written.
 
+**Nothing calls this yet.** `NativeActivationHost.admitToolCall(activationId, toolName)`
+exists, emits `tool_blocked` on a refusal, and fails closed on an unknown activation — and
+`grep -rn admitToolCall src/ tests/` finds no caller of it outside the module and its own
+unit tests. A Pi extension can call it from a `tool_call` handler; that extension is
+`unitAI-rrdnt.37` and is unmerged. The three outcomes below therefore describe the verdict
+the function returns, not a block any Specialist has experienced.
+
 Three admission outcomes are worth stating plainly, because each is deliberate rather than
 incidental:
 
@@ -329,6 +350,19 @@ readable `pending` state rather than disappearing, and the Specialist stays in `
 rather than failing or silently proceeding.
 
 ## Asking without restarting
+
+> **These tools reached no Specialist until `866d4a35`.** `createAgentSession`'s `tools`
+> array is a hard filter on pi 0.85.1 and it applies to `customTools` too: a session given
+> `customTools: [ask_coordinator]` and `tools: ['read']` reports `getAllTools() === ['read']`
+> — the custom tool is dropped silently, with no error and no diagnostic. So
+> `ask_coordinator` and `escalate_to_coordinator` were never delivered to a single
+> Specialist, and PRD Phase 6 was unreachable from the day it was written. `ask-tool.ts` and
+> `interaction.ts` were complete and unit-tested against doubles the whole time; the tools
+> simply never arrived. Fixed by naming both tools in the allowlist (`unitAI-rrdnt.43.1`) —
+> not by omitting the filter, which would admit 50+ builtins including bash, edit and write,
+> and is fail-open. **Whether a live model then calls the tool is `unitAI-rrdnt.43` and is
+> still open.** Everything below describes the protocol as built; treat the end-to-end path
+> as unproven until .43 closes.
 
 A running Specialist reaches its coordinator through two tools it sees in its contract:
 `ask_coordinator` and `escalate_to_coordinator`. Both expect an answer and both leave the
@@ -389,6 +423,8 @@ activation_disposed    step_contract_compiled  turn_started
 turn_completed         retry_started           retry_completed
 output_validation_started  output_validation_passed
 compaction_started     compaction_completed
+lease_acquired         lease_denied            lease_uncertain
+tool_blocked
 ```
 
 Two caveats apply to anything built on this.
@@ -397,33 +433,43 @@ Two caveats apply to anything built on this.
 carried in the event body and in `correlation` where a field exists, so attempt-level
 lineage is present in the data but is not efficiently queryable.
 
-The sink classifies six event names by severity that the host never emits:
-`output_validation_failed`, `retry_failed`, `tool_blocked` and `lease_denied` as errors,
-`activation_uncertain` and `lease_uncertain` as warnings. They are forward declarations, not
-evidence that those events occur. Do not write a dashboard that treats their absence as a
-healthy signal — four of the six are the negative half of a pair whose positive half *is*
-emitted, so a failure filter returns nothing whether or not failures happened. Tracked as
-`unitAI-rrdnt.38`; three of the six cannot be emitted before the lease is wired
-(`unitAI-rrdnt.36`).
+The sink classifies three event names by severity that the host never emits:
+`output_validation_failed` and `retry_failed` as errors, `activation_uncertain` as a
+warning. They are forward declarations, not evidence that those events occur. All three are
+the negative half of a pair whose positive half *is* emitted, so a failure filter over them
+returns nothing whether or not failures happened. Tracked as `unitAI-rrdnt.38`, whose title
+still says six — `lease_denied`, `lease_uncertain` and `tool_blocked` gained producers when
+the lease was wired in `67be44b1`.
 
 ## Known holes
 
-Every entry is unclosed as of `bea7957a`. Where a bead exists it is named; where one does
+Every entry is unclosed as of `ee7f847c`. Where a bead exists it is named; where one does
 not, that is stated rather than implied.
 
 | Hole | Consequence | Bead |
 |---|---|---|
-| No operator surface on `master`. `NativeActivationHost` has no production consumer there; the only live path is the gated smoke test. The four MCP tools exist unmerged on `xt/phase13-mcp`. | The runtime cannot be invoked by an operator until .33 merges. | `unitAI-rrdnt.33` (Phase 13) |
+| The per-call mutation guard has no caller. `admitToolCall` is a public method; nothing in `src/` invokes it and the host registers no blocking `tool_call` handler. | Admission-time exclusion works; a writer whose lease turns uncertain mid-turn is not stopped. | `unitAI-rrdnt.37` (the Pi extension is the only frontend that can call it) |
+| A live model has never been observed calling `ask_coordinator`. The tools reached no Specialist at all until `866d4a35`. | The clarification path is built and unit-tested but unproven end to end. | `unitAI-rrdnt.43` |
 | The 7-section contract gate applies only to native admission. `use_specialist` takes a `bead_id` with no readiness check, and a free-form `prompt` with no Bead at all. | A Bead refused by `specialist_dispatch` still runs through `use_specialist`. Pre-existing and by design; surprising if the gate is read as a property of Beads. | None; stated so the boundary is not mistaken |
-| The writer lease is implemented but not wired. No activation acquires, releases, or admits tool calls against it. | Temporal exclusion does not exist yet. Currently harmless only because writers are refused at admission. | `unitAI-rrdnt.36` (Phase 10) |
-| Writers are refused at admission (`writer_not_supported_in_phase_1`). | Only `READ_ONLY` and `LOW` Specialists activate natively. | `unitAI-rrdnt.36` (Phase 10) |
-| Lease bypasses H3 (`pi.exec`) and H4 (direct `node:fs` / `child_process` in extension code) cannot be closed on Pi 0.85.1. | A trusted extension can mutate a leased workspace unobserved. Not a delegated-agent threat. | No bead; requires a Pi interposition layer that does not exist |
+| Lease bypasses H3 (`pi.exec`) and H4 (direct `node:fs` / `child_process` in extension code) cannot be closed on Pi 0.85.1. `executeBash()` and `pi.exec()` fire the `tool_call` handler zero times. | A trusted extension can mutate a leased workspace unobserved. Not a delegated-agent threat. | No bead; requires a Pi interposition layer that does not exist |
+| `unitAI-rrdnt.36` is still open although the writer admission and lease wiring merged as `67be44b1`. | The board and the tree disagree about whether Phase 10 shipped. | `unitAI-rrdnt.36` |
 | Reconciling an uncertain workspace requires a named decider and durable basis; nothing resolves one automatically. | By design, not a gap — but an uncertain workspace stays unusable until a person decides. | `unitAI-rrdnt.31`, closed |
 | `attempt_id` and `pi_session_id` are not indexed columns. | Attempt-level lineage is present but not efficiently queryable. | Tracked separately per `src/activation/forensic-sink.ts` |
-| Six forensic event names are classified by the sink but never emitted. | Their absence is not a health signal. | `unitAI-rrdnt.38` |
+| Three forensic event names are classified by the sink but never emitted. | Their absence is not a health signal. | `unitAI-rrdnt.38` |
 
-Two items previously listed here are **closed** and are recorded rather than deleted, so
-nobody reinstates them from an older document:
+Four items previously listed here are **closed** and are recorded rather than deleted, so
+nobody reinstates them from an older document.
+
+**There was no operator surface.** `NativeActivationHost` had no production consumer and the
+only live path was a gated smoke test. Closed by `unitAI-rrdnt.33`: four MCP tools, merged.
+
+**Writers were refused, and the lease was wired to nothing.** These were two rows and one
+defect. The lease was complete, mutation-tested, closed on the board, and imported by
+nothing in `src/`; writers were refused outright, so nothing was fenced because nothing
+wrote. Three lanes found it independently on the same day. Closed by `67be44b1`, which
+enabled writers and acquired the lease in one change — flipping admission without the
+acquire call would have shipped write-capable Specialists guarded by a lease that was
+present, tested, closed on the board, and never called.
 
 **The refusal renderer dropped its explanation.** `reject()` was called with
 `{ detail: <explanation> }` at four sites while `DispatchRejectedError`'s only free-text
@@ -450,11 +496,8 @@ still not an exclusion primitive. Do not build on it.
 
 ## Running one — the MCP surface
 
-> **Pending `unitAI-rrdnt.33`.** The four tools below exist on branch `xt/phase13-mcp` and
-> are not merged. Field names, return shapes and the refusal shape were read from
-> `src/tools/specialist/activation.tool.ts` on that branch and confirmed by the lane that
-> wrote it against a live run of the built server over a real stdio MCP client. Until .33
-> merges, treat this section as the contract you will get, not as one you can call today.
+`unitAI-rrdnt.33` is merged; these tools are registered in `src/server.ts` and callable.
+Field names and shapes below were read from `src/tools/specialist/activation.tool.ts`.
 
 Four tools, three new and one extended. They call `NativeActivationHost` in-process and
 construct no child process — a subprocess running `sp` would satisfy the letter of
@@ -568,10 +611,15 @@ forks `sh` and `bd`. Those are the contract gate reading the board, not the Spec
 runtime. A live run on a working provider observed exactly two descendants of the MCP server
 pid: `sh` and `bd`.
 
-There is no lease behaviour on this path. Writers are refused at admission, the MCP surface
-passes that refusal through unchanged rather than filtering writers out itself, and nothing
-acquires a lease. When `unitAI-rrdnt.36` flips the single admission decision there is no
-second dispatch path to teach.
+The MCP surface does not decide mutation authority and never filtered writers out itself,
+which is why enabling writers in `67be44b1` needed no change here: it flipped one admission
+decision inside the host and there was no second dispatch path to teach. A dispatch of a
+write-capable Specialist now acquires the lease, and a contended or uncertain workspace
+comes back as a `status: "rejected"` result naming the holder, exactly like any other
+refusal.
+
+What this path still cannot do is call the per-call mutation guard — MCP has no agent-loop
+hook. See [Known holes](#known-holes).
 
 ## See also
 
