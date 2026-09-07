@@ -106,6 +106,7 @@ export interface ForensicEventRecord {
     participant_kind: string | null;
     participant_role: string | null;
     participant_id: string | null;
+    attempt_id?: string | null;
     redaction_status: string;
     event_json: string;
 }
