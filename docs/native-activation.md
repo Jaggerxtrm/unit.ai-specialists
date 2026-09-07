@@ -359,9 +359,12 @@ lineage is present in the data but is not efficiently queryable.
 
 The sink classifies six event names by severity that the host never emits:
 `output_validation_failed`, `retry_failed`, `tool_blocked` and `lease_denied` as errors,
-`activation_uncertain` and `lease_uncertain` as warnings. They are forward declarations for
-Phase 10 and later, not evidence that those events occur. Do not write a dashboard that
-treats their absence as a healthy signal.
+`activation_uncertain` and `lease_uncertain` as warnings. They are forward declarations, not
+evidence that those events occur. Do not write a dashboard that treats their absence as a
+healthy signal — four of the six are the negative half of a pair whose positive half *is*
+emitted, so a failure filter returns nothing whether or not failures happened. Tracked as
+`unitAI-rrdnt.38`; three of the six cannot be emitted before the lease is wired
+(`unitAI-rrdnt.36`).
 
 ## Known holes
 
@@ -376,7 +379,7 @@ not, that is stated rather than implied.
 | Lease bypasses H3 (`pi.exec`) and H4 (direct `node:fs` / `child_process` in extension code) cannot be closed on Pi 0.85.1. | A trusted extension can mutate a leased workspace unobserved. Not a delegated-agent threat. | No bead; requires a Pi interposition layer that does not exist |
 | Uncertain-lease recovery is unimplemented. `release` throws and acquisition is refused; nothing resolves the state. | An uncertain lease requires a human. | `unitAI-rrdnt.31` (Phase 9, in progress) |
 | `attempt_id` and `pi_session_id` are not indexed columns. | Attempt-level lineage is present but not efficiently queryable. | Tracked separately per `src/activation/forensic-sink.ts` |
-| Six forensic event names are classified by the sink but never emitted. | Their absence is not a health signal. | Follows Phase 10 |
+| Six forensic event names are classified by the sink but never emitted. | Their absence is not a health signal. | `unitAI-rrdnt.38` |
 
 One hole named in the Phase 0 reconciliation is **closed**, and is recorded here because
 that document still describes it as open: `docs/design/native-activation-reconciliation.md`
