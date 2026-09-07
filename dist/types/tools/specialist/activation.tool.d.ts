@@ -21,6 +21,8 @@ export interface ActivationView {
     worktree_path: string;
     branch?: string;
     pi_session_id?: string;
+    /** What was asked for — the override when one was given, the configured model otherwise. */
+    requested_model?: string;
     resolved_model: string;
     model_override: boolean;
 }
@@ -116,6 +118,8 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
         worktree_path: string;
         branch?: string;
         pi_session_id?: string;
+        /** What was asked for — the override when one was given, the configured model otherwise. */
+        requested_model?: string;
         resolved_model: string;
         model_override: boolean;
         status: "dispatched";
