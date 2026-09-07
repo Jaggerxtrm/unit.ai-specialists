@@ -29,6 +29,12 @@
  *   SPECIALISTS_MCP_PROBE_MODEL=<provider/model> \
  *     bun --bun vitest run tests/integration/activation/mcp-activation.live.test.ts
  *
+ *
+ * Getting STATE out of a PASSING live case: vitest swallows `console.log` for tests that
+ * pass, so a green run prints a pass count and nothing else — which is the exact shape
+ * that let this epic nearly report an acceptance proven while the activation sat in
+ * `failed`. Re-run with `--disable-console-intercept` to see the observed activation.
+ * `--silent=false` does NOT work for this.
  * Both Beads must be OPEN. A closed Bead is dead scope, so the gate refuses it with
  * "bead is closed and is not dispatchable" — correct behaviour that reads as a broken
  * dispatch path if you reuse a probe Bead you closed after an earlier run. Mint fresh

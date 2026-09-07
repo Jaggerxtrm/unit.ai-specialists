@@ -16,6 +16,12 @@
  *   SPECIALISTS_LIVE_SMOKE_MODEL_ALT=<a different provider/model> \
  *     bun --bun vitest run tests/integration/activation/native-activation.live.test.ts
  *
+ *
+ * Getting STATE out of a PASSING live case: vitest swallows `console.log` for tests that
+ * pass, so a green run prints a pass count and nothing else — which is the exact shape
+ * that let this epic nearly report an acceptance proven while the activation sat in
+ * `failed`. Re-run with `--disable-console-intercept` to see the observed activation.
+ * `--silent=false` does NOT work for this.
  * MODEL_ALT must be SOLVENT, not merely resolvable: the Phase 11 acceptance C case (bead
  * unitAI-rrdnt.35) asks it to serve a real turn, because "the override resolved" and "the
  * child ran on the override" are different claims and only the second one is acceptance C.
