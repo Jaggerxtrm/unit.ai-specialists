@@ -6,7 +6,7 @@
  * ran on a fallback produces results nobody can attribute.
  *
  * Two checks are required and neither is sufficient alone. This is not defensiveness; both
- * failure modes were reproduced against pi 0.84.3:
+ * failure modes were reproduced against pi 0.84.3 and re-verified against 0.85.1:
  *
  *   - `resolveCliModel` given a KNOWN provider and an unknown model id returns a
  *     *fabricated* model with `error: undefined` and only a warning ("Using custom model
@@ -44,9 +44,15 @@ export interface ModelGateResult {
 /**
  * Create a ModelRuntime suitable for availability checking.
  *
- * `refreshOnCreate: false` must NOT be used: it yields zero configured-auth providers and
- * an empty `getAvailable()`, which would make this gate reject every model. Suppress
- * network with `allowModelNetwork: false` instead and leave refresh alone.
+ * `refreshOnCreate: false` must NOT be used: it yields zero providers with configured
+ * auth, which would make this gate reject every model. Suppress network with
+ * `allowModelNetwork: false` instead and leave refresh alone.
+ *
+ * Measure auth with `hasConfiguredAuth(providerId)`, never with `getAvailable()`. On
+ * 0.85.1 `getAvailable()` returns the full catalogue regardless of auth or of either
+ * option, so a count-based check cannot tell the two modes apart. `hasConfiguredAuth`
+ * reports 8 authed providers under normal creation and zero under `refreshOnCreate: false`,
+ * which is the distinction this gate depends on.
  */
 export async function createGateModelRuntime(sdk: PiSdk): Promise<PiModelRuntimeLike> {
   return sdk.ModelRuntime.create({ allowModelNetwork: false });

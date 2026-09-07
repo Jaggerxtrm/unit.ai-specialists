@@ -4,14 +4,18 @@
 **PRD:** `~/dev/xtrm/docs/specialists/PRD—Native-Specialist-Subagents-for-Pi.md` (v0.3, 4517 lines)
 **Branch:** `feature/unitAI-rrdnt.1-phase0-reconciliation`
 **Repo HEAD at authoring:** `5543365f`
-**Pi runtime inspected:** `@earendil-works/pi-coding-agent@0.84.3`, installed at
+**Pi runtime inspected:** `@earendil-works/pi-coding-agent@0.85.1`, installed at
 `/home/dawid/.nvm/versions/node/v24.15.0/lib/node_modules/@earendil-works/pi-coding-agent`
+
+**Re-baselined 0.84.3 → 0.85.1** on 2026-09-07 (`unitAI-rrdnt.17`). The original findings
+were established against 0.84.3. Every behavioural claim below was re-verified BY EXECUTION
+against 0.85.1 — see §5.6 for the method, the results, and the two claims that changed.
 
 PRD §129 Phase 0 forbids production coding before the reusable seams are identified.
 This note is that identification. It states what exists, what is reusable, what must be
 built, and where the current implementation conflicts with the PRD.
 
-Claims cite `file:line`. Pi SDK claims cite the installed 0.84.3 `.d.ts` surface.
+Claims cite `file:line`. Pi SDK claims cite the installed 0.85.1 `.d.ts` surface.
 
 ---
 
@@ -23,7 +27,7 @@ Claims cite `file:line`. Pi SDK claims cite the installed 0.84.3 `.d.ts` surface
 This was the primary open risk. Every runtime primitive the PRD names is exported from
 the package root (`dist/index.d.ts`, the `"."` export condition):
 
-| PRD requirement | Public Pi 0.84.3 export | Verdict |
+| PRD requirement | Public Pi 0.85.1 export | Verdict |
 |---|---|---|
 | §19 `createAgentSession` | `createAgentSession(options?: CreateAgentSessionOptions): Promise<CreateAgentSessionResult>` — `core/sdk.ts` | available |
 | §19 `prompt` / `steer` / `followUp` / `abort` / `dispose` | `AgentSession.prompt/steer/followUp/abort/dispose` — `core/agent-session.d.ts:361,377,385,439,289` | available |
@@ -61,7 +65,7 @@ currently depend on `@earendil-works/pi-coding-agent`.
 Decision required before Phase 13, recorded here so it is not discovered late. Options:
 add `@earendil-works/pi-coding-agent` as a dependency (version-couples us to pi releases),
 as a `peerDependency` (defers the pin to the operator, matches how `pi` is installed
-today at 0.84.3 globally), or resolve the globally installed pi at runtime (already
+today at 0.85.1 globally), or resolve the globally installed pi at runtime (already
 precedented — `resolveGlobalNodeModulesDir()` at `src/pi/session.ts:499`).
 
 ---
@@ -514,7 +518,7 @@ field in `schema.ts` has no row here.
 
 PRD §66 wants `editor → XTRM statusline → Specialist Fleet`.
 
-Pi 0.84.3 offers two mechanisms:
+Pi 0.85.1 offers two mechanisms:
 - `setWidget(key, content, { placement })` where `WidgetPlacement = "aboveEditor" | "belowEditor"`
   (`extensions/types.d.ts:43-48, 97-100`);
 - `setFooter(factory)` — a **single-owner** replacement of the built-in footer
@@ -612,20 +616,42 @@ and (b) deterministic branch naming causing worktree *reuse*. Neither survives t
 change to a shared worktree, which is why the lease is a hard prerequisite for Phase 10
 rather than an enhancement.
 
-### 5.6 Pi version drift — pin to installed, not upstream
+### 5.6 Pi version baseline — re-verified at 0.85.1
 
-Upstream `earendil-works/pi` HEAD is `9767ba275f3e9a5ee0f5c5342249b629ab1b2282` (0.85.1);
-the runtime installed here is **0.84.3**. A citation/drift pass over 330 declarations found
-**no signature drift** on any API this project depends on — `AgentSession`, the SDK
-factories, the extension veto, active-tool APIs, `ModelRegistry`/`ModelRuntime`. Two
-differences do exist and both matter:
+The runtime installed here is **0.85.1** (was 0.84.3 when this note was written). Rather
+than assume the findings carried over, each behavioural claim was re-run against 0.85.1
+with a control, in a scratch project with an extension registering a `tool_call` handler.
+The live smoke (`tests/integration/activation/native-activation.live.test.ts`) also passes
+unchanged on 0.85.1, which is the end-to-end confirmation that the runtime seam holds.
 
-- installed `SessionManager.inMemory` lacks upstream's third `entries` argument;
-- installed exports lack `./experimental/plugin`
-  (`node_modules/@earendil-works/pi-coding-agent/package.json:14`).
+| Claim | Verdict on 0.85.1 | How it was re-verified |
+|---|---|---|
+| `tool_call` veto blocks an LLM tool call | **holds** | LLM-issued `bash` with `{block:true, reason}` produced `isError:true` carrying the reason; the command never ran. `ToolCallEventResult` shape unchanged (`block`/`reason`/`terminate`). |
+| `executeBash()` / `pi.exec()` bypass the veto | **holds — still unfixed** | `executeBash` ran and returned real output with the handler invoked **zero** times; same for `pi.exec` from inside an extension. See §5.8. |
+| All `tool_call` handlers in a batch fire before any execution | **holds** | Two-call batch (`sleep 0.4 && echo one`, `echo two`): both handlers fired 11ms apart, both results completed ~430ms later, so handler 2 ran well before execution 1 finished. |
+| Active-tool revocation cannot cancel an already-planned call | **holds** | Revoking mid-batch left both planned `bash` calls executing; the narrowed list applied only to subsequent calls. |
+| `agent_end` and `agent_settled` are distinct | **holds, with a narrowing** | See below. |
+| `createAgentSession` takes a `Model` object; `noTools:'builtin'` + `tools` allowlist works | **holds** | Live-tested in every probe. **No new option** for tool permissions, exec confinement or workspace sandboxing exists — nothing in 0.85.1 closes the §5.8 bypass. |
+| Model gate needs both halves | **holds — but one instrument changed** | See below. |
 
-**Implement against the installed 0.84.3 surface.** Anything reachable only on 0.85.1 —
-notably `./experimental/plugin` — is out of scope until the runtime is upgraded.
+Two things genuinely changed, and both are recorded because they would mislead a reader
+who trusted the 0.84.3 text:
+
+- **`agent_end`'s extension-facing type no longer declares `willRetry`.** The
+  session-subscriber event still carries it — `agent-session.js:386` splices it in for
+  `session.subscribe()` consumers — so `NativeActivationHost`, which subscribes that way
+  (`native-host.ts:306`), is unaffected. An *extension-side* `agent_end` handler would not
+  see it. Any future extension that needs retry state must read it from the session
+  subscription, not from its own handler.
+- **`ModelRuntime.getAvailable()` no longer distinguishes auth state**, returning the full
+  catalogue regardless of `allowModelNetwork` or `refreshOnCreate`. The auth half of the
+  model gate must be measured with `hasConfiguredAuth(providerId)`, which behaves exactly
+  as originally claimed: 8 authed providers under normal creation, zero under
+  `refreshOnCreate:false`. `model-gate.ts` already uses `hasConfiguredAuth` and never
+  `getAvailable`, so the gate is correct; only its comment was wrong and is now fixed.
+
+Upstream-only surface (`./experimental/plugin`) remains out of scope; nothing in the
+current design needs it.
 
 ### 5.7 Quiescence: use `await prompt()` + `agent_settled`, not raw `agent_end`
 
@@ -638,7 +664,7 @@ settled, activation completed, activation accepted — maps onto: `agent_end` �
 `agent_settled` → settled, validated `ActivationResult` → completed, coordinator decision
 → accepted.
 
-### 5.8 Lease guard reach — PRD §54 is partially unsatisfiable on Pi 0.84.3
+### 5.8 Lease guard reach — PRD §54 is partially unsatisfiable on Pi 0.85.1
 
 `tool_call` is a genuine single choke point for **LLM tool calls**. `AgentSession`
 installs `agent.beforeToolCall`, which calls `runner.emitToolCall(...)` and converts
@@ -664,7 +690,7 @@ Four paths are **not** covered, and each is a lease bypass:
 Edit/Write are protected while custom mutation remains unrestricted") is satisfiable for
 H1 and H2 by our own discipline — we simply never call `executeBash` from the host, and we
 route the MCP server's shell work through prompt-induced tool calls rather than RPC `bash`.
-It is **not** satisfiable for H3 and H4 on Pi 0.84.3, because no `exec`/filesystem
+It is **not** satisfiable for H3 and H4 on Pi 0.85.1, because no `exec`/filesystem
 interposition layer exists. A trusted extension can mutate the workspace without the agent
 loop ever seeing it.
 
@@ -793,7 +819,7 @@ layer stack is stale. Nothing else in this document depends on the count.
 ### 5.15 Empirical verification of §5.8-§5.10
 
 The claims in §5.8, §5.9 and §5.10 were originally derived from reading Pi's shipped
-JavaScript. They have since been **verified by execution** against 0.84.3 (harness and
+JavaScript. They have since been **verified by execution** against 0.84.3 and re-verified against 0.85.1 (harness and
 results at `/tmp/xtrm-pi-veto-probe/`, 5 short model turns). Everything below is EXECUTED,
 not READ.
 
@@ -922,5 +948,5 @@ stack is three layers, not four (§5.14), and per-activation model override alre
 (§7.2) — the new work is pre-creation validation.
 
 `buildSystemPrompt` is extracted (`unitAI-rrdnt.3`, commit `378e55fe`), so **Phase 1
-(read-only native Specialist) is unblocked** and can start against the installed Pi 0.84.3
+(read-only native Specialist) is unblocked** and can start against the installed Pi 0.85.1
 surface.
