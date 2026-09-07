@@ -53,7 +53,15 @@ function nodeSqliteAdapter(): (new (path: string) => BunDb) | null {
       // PRAGMAs and DDL arrive here with no parameters; exec handles multi-statement SQL,
       // which prepare() refuses.
       if (params.length === 0) { this.inner.exec(sql); return undefined; }
-      return this.inner.prepare(sql).run(...params);
+      // bun accepts db.run(sql, [a, b]) (single array) and db.run(sql, a, b); the module
+      // calls the array form in many places. node:sqlite instead treats a single OBJECT
+      // argument as the named-parameter map (array keys '0','1',... => 'Unknown named
+      // parameter'), so normalize the array form before binding (rrdnt.37.1.1).
+      let flat = params.length === 1 && Array.isArray(params[0]) ? params[0] : params;
+      // bun binds `undefined` as NULL; node:sqlite refuses to bind it. Normalize so a
+      // missed `?? null` in one call site cannot silently kill writes under node.
+      flat = flat.map((value) => (value === undefined ? null : value));
+      return this.inner.prepare(sql).run(...flat);
     }
     query(sql: string) { return this.inner.prepare(sql); }
     transaction<T extends (...args: never[]) => unknown>(fn: T): T {
