@@ -119,7 +119,11 @@ function rejectionResult(error: DispatchRejectedError) {
 export const specialistDispatchSchema = z.object({
   specialist: z.string().describe('Specialist name, e.g. codebase-explorer'),
   bead_id: z.string().describe(
-    'The Bead that is this activation\'s task contract. `--bead` is the prompt: there is no free-form task field, because supplementing an incomplete Bead through delegation prose is how durable work loses its scope.',
+    "The Bead that is this activation's task contract — a COMPLETE 7-section contract " +
+    '(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY ' +
+    'level. A draft or incomplete Bead is refused before any model turn. No free-form task ' +
+    'text is accepted: a task that needs more definition belongs in the Bead (see the ' +
+    'planning skill).',
   ),
   model_override: z.string().optional().describe(
     'Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced.',
@@ -145,9 +149,12 @@ export function createSpecialistDispatchTool(getHost: () => NativeActivationHost
       'Dispatch a Specialist on the native in-process runtime. No CLI process is spawned. ' +
       'Returns once the activation is ADMITTED and started, not when it completes — poll ' +
       'specialist_status for state and for any question it raises, and answer with ' +
-      'specialist_reply. The Bead is the prompt and must be a complete 7-section contract ' +
-      'with a SCRUTINY level; a draft or incomplete Bead is refused here, before a model ' +
-      'turn is spent guessing at scope it does not carry.',
+      'specialist_reply. The Bead is the prompt and MUST be a complete 7-section contract ' +
+      'plus a SCRUTINY level; a draft or incomplete Bead is refused here, before a model ' +
+      'turn is spent guessing at scope it does not carry — if the Bead is not dispatchable, ' +
+      'fix the Bead (planning skill), not the dispatch. Write-capable Specialists ' +
+      '(MEDIUM/HIGH tiers) activate only when they can acquire the workspace lease; ' +
+      'otherwise dispatch is refused with a structured reason.',
     inputSchema: specialistDispatchSchema,
     async execute(input: z.infer<typeof specialistDispatchSchema>) {
       try {

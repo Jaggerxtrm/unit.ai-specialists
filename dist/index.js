@@ -11415,7 +11415,9 @@ function nodeSqliteAdapter() {
         this.inner.exec(sql);
         return;
       }
-      return this.inner.prepare(sql).run(...params);
+      let flat = params.length === 1 && Array.isArray(params[0]) ? params[0] : params;
+      flat = flat.map((value) => value === undefined ? null : value);
+      return this.inner.prepare(sql).run(...flat);
     }
     query(sql) {
       return this.inner.prepare(sql);
@@ -76301,7 +76303,7 @@ function rejectionResult(error2) {
 }
 var specialistDispatchSchema = objectType({
   specialist: stringType().describe("Specialist name, e.g. codebase-explorer"),
-  bead_id: stringType().describe("The Bead that is this activation's task contract. `--bead` is the prompt: there is no free-form task field, because supplementing an incomplete Bead through delegation prose is how durable work loses its scope."),
+  bead_id: stringType().describe("The Bead that is this activation's task contract \u2014 a COMPLETE 7-section contract " + "(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY " + "level. A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill)."),
   model_override: stringType().optional().describe("Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced."),
   requested_by: stringType().optional().describe("ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant."),
   coordinator_session_id: stringType().optional().describe("MCP session id, for lineage.")
@@ -76309,7 +76311,7 @@ var specialistDispatchSchema = objectType({
 function createSpecialistDispatchTool(getHost) {
   return {
     name: "specialist_dispatch",
-    description: "Dispatch a Specialist on the native in-process runtime. No CLI process is spawned. " + "Returns once the activation is ADMITTED and started, not when it completes \u2014 poll " + "specialist_status for state and for any question it raises, and answer with " + "specialist_reply. The Bead is the prompt and must be a complete 7-section contract " + "with a SCRUTINY level; a draft or incomplete Bead is refused here, before a model " + "turn is spent guessing at scope it does not carry.",
+    description: "Dispatch a Specialist on the native in-process runtime. No CLI process is spawned. " + "Returns once the activation is ADMITTED and started, not when it completes \u2014 poll " + "specialist_status for state and for any question it raises, and answer with " + "specialist_reply. The Bead is the prompt and MUST be a complete 7-section contract " + "plus a SCRUTINY level; a draft or incomplete Bead is refused here, before a model " + "turn is spent guessing at scope it does not carry \u2014 if the Bead is not dispatchable, " + "fix the Bead (planning skill), not the dispatch. Write-capable Specialists " + "(MEDIUM/HIGH tiers) activate only when they can acquire the workspace lease; " + "otherwise dispatch is refused with a structured reason.",
     inputSchema: specialistDispatchSchema,
     async execute(input) {
       try {
