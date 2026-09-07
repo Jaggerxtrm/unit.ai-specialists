@@ -171,13 +171,17 @@ export class DispatchRejectedError extends Error {
       workspace?: string;
       holder?: string;
       requestedModel?: string;
+      activationId?: string;
+      note?: string;
     } = {},
   ) {
     const lines = [
       'SPECIALIST_DISPATCH_REJECTED',
       '',
+      ...(detail.activationId ? [`activation:\n  ${detail.activationId}`, ''] : []),
       ...(detail.beadId ? [`bead:\n  ${detail.beadId}`, ''] : []),
       ...(detail.specialist ? [`specialist:\n  ${detail.specialist}`, ''] : []),
+      ...(detail.note ? [`note:\n  ${detail.note}`, ''] : []),
       `reason:\n  ${reason}`,
       ...(detail.missing?.length ? ['', `missing:\n${detail.missing.map(m => `  - ${m}`).join('\n')}`] : []),
       ...(detail.requestedModel ? ['', `requested model:\n  ${detail.requestedModel}`] : []),
