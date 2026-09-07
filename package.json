@@ -36,6 +36,7 @@
     "config/nodes/",
     "config/hooks/",
     "config/pi-extensions/",
+  "config/pi-extensions/specialist-subagents/",
     "config/presets.json",
     "docs/overrides-guide.md",
     "CHANGELOG.md",

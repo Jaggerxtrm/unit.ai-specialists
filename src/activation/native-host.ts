@@ -413,7 +413,18 @@ export class NativeActivationHost {
       // Fail-closed: only the resolved contract's tools, never pi's defaults. `noTools`
       // must be "builtin" rather than `tools: []`, which would also empty customTools.
       noTools: 'builtin',
-      tools: [...toolContract.toolsList],
+      // `tools` is a HARD FILTER on pi 0.85.1 and it applies to `customTools` too: a
+      // session given customTools: [ask_coordinator] and tools: ['read'] reports exactly
+      // ['read'], dropping the custom tool silently — no error, no diagnostic. So the ask
+      // tools have to be named here as well as passed above, or no Specialist can ever
+      // reach its coordinator (unitAI-rrdnt.43). Measured on a live session by enumerating
+      // getAllTools(), not inferred.
+      //
+      // Omitting `tools` entirely is NOT the alternative: that admits every builtin,
+      // measured at 50+ including bash, edit, write and powershell. Fail-open is worse than
+      // the bug. Naming the two ask tools keeps admission fail-closed and widens nothing —
+      // asking is not a workspace operation and neither tool can mutate anything.
+      tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text,
     });
 

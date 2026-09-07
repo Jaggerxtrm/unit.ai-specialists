@@ -735,3 +735,47 @@ describe('per-call mutation admission', () => {
     expect(host.admitToolCall('act:does-not-exist', 'write').allow).toBe(false);
   });
 });
+
+/**
+ * unitAI-rrdnt.43. `tools` is a hard filter on pi 0.85.1 and it applies to `customTools`
+ * too, so the ask tools have to be NAMED in the allowlist as well as supplied. Before the
+ * fix, `customTools: [ask_coordinator]` with `tools: ['read']` produced a session whose
+ * tool set was exactly `['read']` — silently, with no error and no diagnostic. No
+ * Specialist could ever reach its coordinator.
+ *
+ * This asserts on what is REQUESTED, which is the most a double can see; the SDK-side
+ * behaviour is proven by a live probe recorded on the bead. The complementary trap is
+ * worth stating: a test that only checked `customTools` was passed would have been green
+ * for the entire life of the defect, because that argument was always correct.
+ */
+describe('ask tools reach the child', () => {
+  it('names both ask tools in the allowlist without widening it', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, fakeSession({ record })),
+      cwd: hostWorkspace(),
+    });
+
+    await host.start({
+      specialist: 'reader', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+
+    const tools = (record.createArgs?.tools ?? []) as string[];
+    expect(tools).toContain('ask_coordinator');
+    expect(tools).toContain('escalate_to_coordinator');
+
+    // Asking is not a workspace operation. A read-only Specialist gains the ability to ask
+    // and gains no mutation capability — widening the allowlist to admit the ask tools must
+    // not smuggle an edit tool in with them.
+    for (const forbidden of ['bash', 'edit', 'write', 'powershell']) {
+      expect(tools).not.toContain(forbidden);
+    }
+
+    // And they are still supplied as custom tools: naming them is necessary, not sufficient.
+    const custom = (record.createArgs?.customTools ?? []) as Array<{ name: string }>;
+    expect(custom.map(t => t.name).sort()).toEqual(['ask_coordinator', 'escalate_to_coordinator']);
+  });
+});

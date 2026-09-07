@@ -77073,7 +77073,7 @@ function createAskTools(sdk, ctx) {
         },
         required: ["question"]
       },
-      execute: async (args) => ask("question", args.question)
+      execute: async (_toolCallId, args) => ask("question", args.question)
     }),
     sdk.defineTool({
       name: ESCALATE_TOOL,
@@ -77085,7 +77085,7 @@ function createAskTools(sdk, ctx) {
         },
         required: ["blocker"]
       },
-      execute: async (args) => ask("escalation", args.blocker)
+      execute: async (_toolCallId, args) => ask("escalation", args.blocker)
     })
   ];
 }
@@ -77419,7 +77419,7 @@ class NativeActivationHost {
       model: modelCheck.model,
       ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
       noTools: "builtin",
-      tools: [...toolContract.toolsList],
+      tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
     });
     const startedAt = this.now();
