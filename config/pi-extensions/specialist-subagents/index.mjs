@@ -69,8 +69,12 @@ export function createCoordinatorHost({ createClient, wrapSink, Host } = {}) {
     ? createClient()
     : createObservabilitySqliteClientAtPath(resolveObservabilityDbLocation(process.cwd()).dbPath);
   const HostCtor = Host ?? NativeActivationHost;
-  if (!client) return new HostCtor();
-  const sink = createActivationForensicSink(client);
+  // A null client means forensics could not open, not that nothing is listening: the
+  // wake rides this sink, so the wrapper must still run over a no-op base. Returning
+  // `new HostCtor()` here would make a coordinator whose observability.db failed to
+  // open silently lose every escalation notification — the exact silence this bead
+  // exists to remove, reappearing only in the degraded case nobody runs (rrdnt.45).
+  const sink = client ? createActivationForensicSink(client) : { emit: () => {} };
   // unitAI-rrdnt.45 seam: the wake lane wraps the sink so the extension can
   // observe host emits (escalation_raised / clarification_requested) without
   // touching NativeActivationHost or this constructor's internals.

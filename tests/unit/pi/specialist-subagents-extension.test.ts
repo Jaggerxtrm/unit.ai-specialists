@@ -376,12 +376,17 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     });
     expect(withClient.deps.forensics).toBeDefined();
 
-    // Null client (the node-pi runtime case: bun:sqlite unavailable) -> host is
-    // built without a sink; construction must not throw.
+    // Null client (the node-pi runtime case when the sqlite layer cannot open):
+    // the host is built with a no-op sink so the wake wrapper still installs over
+    // it — a forensics outage must not become a notification outage (.45).
+    let wrapped;
     const withoutClient = mod.createCoordinatorHost({
       createClient: () => null,
+      wrapSink: (sink) => { wrapped = sink; return sink; },
       Host: class { constructor(deps) { this.deps = deps; } },
     });
-    expect(withoutClient.deps).toBeUndefined();
+    expect(withoutClient.deps.forensics).toBeDefined();
+    expect(wrapped).toBeDefined();
+    expect(() => withoutClient.deps.forensics.emit({ name: 'x' })).not.toThrow();
   });
 });

@@ -11415,7 +11415,9 @@ function nodeSqliteAdapter() {
         this.inner.exec(sql);
         return;
       }
-      return this.inner.prepare(sql).run(...params);
+      let flat = params.length === 1 && Array.isArray(params[0]) ? params[0] : params;
+      flat = flat.map((value) => value === undefined ? null : value);
+      return this.inner.prepare(sql).run(...flat);
     }
     query(sql) {
       return this.inner.prepare(sql);
