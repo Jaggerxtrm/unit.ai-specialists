@@ -28,6 +28,15 @@
  *   SPECIALISTS_MCP_PROBE_DRAFT_BEAD=<a bead with contract=draft> \
  *   SPECIALISTS_MCP_PROBE_MODEL=<provider/model> \
  *     bun --bun vitest run tests/integration/activation/mcp-activation.live.test.ts
+ *
+ * Both Beads must be OPEN. A closed Bead is dead scope, so the gate refuses it with
+ * "bead is closed and is not dispatchable" — correct behaviour that reads as a broken
+ * dispatch path if you reuse a probe Bead you closed after an earlier run. Mint fresh
+ * ones rather than reopening old ones.
+ *
+ * The specialist must have a resolvable model. `explorer` has `execution.model: null`,
+ * which is why SPECIALISTS_MCP_PROBE_MODEL is required rather than optional; without it
+ * the dispatch is refused with `no_model_configured`.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
