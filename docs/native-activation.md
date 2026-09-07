@@ -28,16 +28,17 @@ domain:
 | [Results are not messages](#results-are-not-messages) | The distinction the runtime exists to preserve |
 | [Asking without restarting](#asking-without-restarting) | Clarification versus restart |
 | [Forensics](#forensics) | One store, one query, and the vocabulary gap |
+| [Running one](#running-one--the-mcp-surface) | The four MCP tools, pending `unitAI-rrdnt.33` |
 | [Known holes](#known-holes) | Every unclosed gap, with its bead |
 
 # Native Activation Runtime
 
 ## Status — read this first
 
-The native activation runtime is **not operator-invocable today**. There is no CLI
-command, no MCP tool, and no export from `src/lib.ts` or `src/index.ts` that starts a
-native activation. `NativeActivationHost` has no production consumer: every reference to
-it outside its own module is a test.
+The native activation runtime is **not operator-invocable on `master`**. There is no CLI
+command, no merged MCP tool, and no export from `src/lib.ts` or `src/index.ts` that starts a
+native activation. `NativeActivationHost` has no production consumer there: every reference
+to it outside its own module is a test.
 
 The only way to run one is the gated live smoke, which is a test harness and not an
 operator surface:
@@ -52,11 +53,10 @@ SPECIALISTS_LIVE_SMOKE_MODEL_ALT=<a different provider/model> \
 It skips cleanly rather than failing when the environment variables or provider
 credentials are absent.
 
-The operator surface is MCP tools being built under **`unitAI-rrdnt.33`** (Phase 13). Until
-that lands, treat this document as the developer reference for the runtime, not as an
-operator runbook. The operator section will be written against the shipped tool contract
-rather than against its design, because this epic has already produced three claims that
-passed inspection and were then falsified by a live probe.
+The operator surface is four MCP tools built under **`unitAI-rrdnt.33`** (Phase 13), which
+exist on branch `xt/phase13-mcp` and are not merged. Their contract is documented in
+[Running one](#running-one--the-mcp-surface), read from that branch and confirmed against a
+live run by the lane that wrote them. Nothing there is callable until .33 merges.
 
 Nothing below describes a planned behaviour. Where a behaviour is specified but not yet in
 force, the text says so and names the bead that closes it.
@@ -120,6 +120,14 @@ That is the only surface carrying it — `bd show --json` does not include it.
 The gate proves each section exists and is non-empty. It does not judge whether the
 sections are any good; no parser makes that judgement, and pretending otherwise would trade
 a useful gate for a bureaucratic one.
+
+**The gate belongs to the native admission path, not to Beads.** The legacy `use_specialist`
+tool also accepts a `bead_id`, reads it with `buildBeadContext`, and applies no readiness
+check at all — it also accepts a free-form `prompt` with no Bead. So a Bead that
+`specialist_dispatch` refuses can still be run through `use_specialist`. That is
+pre-existing and by design: the gate lives where admission lives. It is stated here because
+a reader who learns "a draft Bead is refused" from this document would otherwise be
+surprised.
 
 **3. An explicitly requested model must exist and be authenticated.** Both halves are
 required and neither is sufficient alone. A known provider with an unknown model id
@@ -373,7 +381,9 @@ not, that is stated rather than implied.
 
 | Hole | Consequence | Bead |
 |---|---|---|
-| No operator surface. `NativeActivationHost` has no production consumer; the only live path is the gated smoke test. | The runtime cannot be invoked by an operator at all. | `unitAI-rrdnt.33` (Phase 13, in progress) |
+| No operator surface on `master`. `NativeActivationHost` has no production consumer there; the only live path is the gated smoke test. The four MCP tools exist unmerged on `xt/phase13-mcp`. | The runtime cannot be invoked by an operator until .33 merges. | `unitAI-rrdnt.33` (Phase 13) |
+| The 7-section contract gate applies only to native admission. `use_specialist` takes a `bead_id` with no readiness check, and a free-form `prompt` with no Bead at all. | A Bead refused by `specialist_dispatch` still runs through `use_specialist`. Pre-existing and by design; surprising if the gate is read as a property of Beads. | None; stated so the boundary is not mistaken |
+| A refusal's explanation is dropped by the renderer: `reject()` passes `detail:` where `DispatchRejectedError` reads `note:`, at four sites in `native-host.ts`. | A draft-marked Bead refuses with no missing sections and no mention of "draft". One-word fix, four call sites. | Proposed to the coordinator lane; no bead yet |
 | The writer lease is implemented but not wired. No activation acquires, releases, or admits tool calls against it. | Temporal exclusion does not exist yet. Currently harmless only because writers are refused at admission. | `unitAI-rrdnt.36` (Phase 10) |
 | Writers are refused at admission (`writer_not_supported_in_phase_1`). | Only `READ_ONLY` and `LOW` Specialists activate natively. | `unitAI-rrdnt.36` (Phase 10) |
 | Lease bypasses H3 (`pi.exec`) and H4 (direct `node:fs` / `child_process` in extension code) cannot be closed on Pi 0.85.1. | A trusted extension can mutate a leased workspace unobserved. Not a delegated-agent threat. | No bead; requires a Pi interposition layer that does not exist |
@@ -390,6 +400,137 @@ exists. It was removed by `0b76f3f6` — "fix(console): remove fabricated lease 
 
 `worktree_owner_job_id` itself remains chain-provenance metadata for `--job` reuse and is
 still not an exclusion primitive. Do not build on it.
+
+## Running one — the MCP surface
+
+> **Pending `unitAI-rrdnt.33`.** The four tools below exist on branch `xt/phase13-mcp` and
+> are not merged. Field names, return shapes and the refusal shape were read from
+> `src/tools/specialist/activation.tool.ts` on that branch and confirmed by the lane that
+> wrote it against a live run of the built server over a real stdio MCP client. Until .33
+> merges, treat this section as the contract you will get, not as one you can call today.
+
+Four tools, three new and one extended. They call `NativeActivationHost` in-process and
+construct no child process — a subprocess running `sp` would satisfy the letter of
+"expose the runtime over MCP" and defeat its purpose.
+
+`use_specialist` **stays, unchanged, alongside them.** It is the legacy `SpecialistRunner`
+path: synchronous, returns the final output, not backed by the native runtime. These are two
+surfaces, not one migrating into the other.
+
+### Dispatching
+
+`specialist_dispatch` takes `specialist` and `bead_id` (both required), plus optional
+`model_override`, `requested_by` (defaults to `adapter::specialists-mcp`) and
+`coordinator_session_id`.
+
+There is **no task or prompt field**. The Bead is the prompt. There is also **no workspace
+hint**: the activation runs in the server's working directory, and a writer would not get a
+new worktree anyway.
+
+Pass `model_override` for any Specialist whose `execution.model` is null — `explorer` is
+one. Without it the dispatch is refused with `no_model_configured`, which is a poor first
+experience for someone following these docs literally.
+
+On success it returns the activation's **identity and state**, not a result:
+
+```json
+{ "status": "dispatched",
+  "activation_id": "...", "participant_id": "...", "attempt_id": "...",
+  "specialist": "...", "bead_id": "...",
+  "state": "...", "access": "read",
+  "worktree_path": "...", "branch": "...", "pi_session_id": "...",
+  "resolved_model": "...", "model_override": false,
+  "step_contract": { "root_work_ref": "...", "inputs": 0, "outputs": 1 } }
+```
+
+`inputs` and `outputs` are **counts**, not the compiled objects.
+
+**`status: "dispatched"` means admitted and started. It does not mean succeeded.** An
+activation can be dispatched and then fail; read `state` from `specialist_status` for the
+outcome.
+
+The call returns at admission rather than at completion, and that is what keeps
+[results and messages](#results-are-not-messages) from being conflated on this surface. A
+tool that blocked until a validated `ActivationResult` existed would deadlock on the first
+clarification, because the coordinator cannot answer a question it is blocked waiting on. So
+the session outlives the call, **no `ActivationResult` is ever delivered through this tool**,
+and there is no place in the surface where a result and a message could be mistaken for each
+other. That is AU held by construction rather than by discipline.
+
+### Refusals are results, not errors
+
+A `DispatchRejectedError` does not propagate as an MCP error. It comes back as:
+
+```json
+{ "status": "rejected",
+  "reason": "<the full rendered block, ending \"AgentSession:\\n  not created\">",
+  "detail": { "specialist": "...", "beadId": "...", "missing": ["NON_GOALS"] } }
+```
+
+`detail` carries the machine-readable fields — `specialist`, `beadId`, and where present
+`missing[]`, `requestedModel`, `workspace`, `holder`, `note`. Throwing would have reached the
+caller as an opaque string and lost `missing`, which is the part an operator acts on. A
+genuine fault still throws.
+
+**Known defect — a refusal can arrive with its explanation missing.** `native-host.ts`
+passes `{ detail: <explanation> }` into `reject()` at four sites (lines 186, 210, 232, 249),
+but `DispatchRejectedError`'s detail object has no `detail` field; its only free-text field
+is `note`. The rendered block therefore drops the explanation silently. Verified at
+`5bdff6b5`. Concretely: dispatch a Bead marked `contract=draft` and the operator-visible
+refusal reads `reason: bead_contract_incomplete` with no missing sections and no mention of
+the word "draft" — for a Bead whose seven sections are all present and correct. That is the
+least actionable form the gate can take. The explanation survives only in `detail.detail`,
+which no renderer reads; `reject()`'s parameter is `Record<string, unknown>`, so the compiler
+never objected. The fix is one word at four call sites. `native-host.ts` is owned by the
+coordinator lane, so it is proposed rather than applied.
+
+### Answering a question
+
+`specialist_reply` takes `message_id` and `body`. It resumes a child sitting in the blocking
+`ask_coordinator` or `escalate_to_coordinator` call: the answer returns as that tool call's
+result and the same `AgentSession` continues with its context intact. It is not a restart
+with the answer pasted into a new prompt.
+
+**`message_id` is the only correlation key**, read from
+`specialist_status.pending_asks[].message_id`. There is deliberately no "answer the latest
+ask" convenience — with two asks outstanding that is a coin flip. An unknown or
+already-answered id returns `{ "status": "error", ... }` naming the id, never a silent
+accept.
+
+`specialist_stop_activation` takes `activation_id` and an optional `reason`, recorded
+forensically with the disposal.
+
+### Reading state
+
+`specialist_status` takes no arguments and gained two additive keys, each an empty list
+rather than absent when there is nothing:
+
+- `activations[]` — the same projection `specialist_dispatch` returns.
+- `pending_asks[]` — `message_id`, `kind` (`question` or `escalation`), `activation_id`,
+  `attempt_id`, `from`, `to`, `body`, `delivery`, `asked_at`.
+
+`delivery` is `pending`, `delivered` or `refused`, where `delivered` means a receipt was
+seen and not merely that no error was thrown.
+
+Until the asynchronous push channel exists (Phase 14), a coordinator learns about a question
+by **reading**. A reader that cannot see the ask leaves the Specialist stuck forever, which
+is why pending asks are projected here rather than waited for.
+
+### What a dispatch actually spawns
+
+No `sp` or `specialists` process is created — that is acceptance AV, asserted against
+`/proc` rather than against intent.
+
+The dispatch is **not subprocess-free in general**, and the loose claim is falsifiable with
+one `ps`. The Bead gate shells out to `bd state <id> contract` via `spawnSync`, so a dispatch
+forks `sh` and `bd`. Those are the contract gate reading the board, not the Specialist
+runtime. A live run on a working provider observed exactly two descendants of the MCP server
+pid: `sh` and `bd`.
+
+There is no lease behaviour on this path. Writers are refused at admission, the MCP surface
+passes that refusal through unchanged rather than filtering writers out itself, and nothing
+acquires a lease. When `unitAI-rrdnt.36` flips the single admission decision there is no
+second dispatch path to teach.
 
 ## See also
 
