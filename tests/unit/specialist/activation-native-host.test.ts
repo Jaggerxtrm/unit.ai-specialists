@@ -560,3 +560,64 @@ describe('NativeActivationHost — raw session event hook', () => {
     await expect(handle.result).resolves.toMatchObject({ status: 'completed' });
   });
 });
+
+/**
+ * unitAI-rrdnt.40. `reject()` takes `Record<string, unknown>`, so passing a key that
+ * `DispatchRejectedError` does not render compiles cleanly and the explanation is dropped.
+ * Four call sites had drifted onto `detail:` when the only free-text field is `note:`.
+ *
+ * These assert on the RENDERED message, which is the whole point. A test that checked the
+ * object handed to `reject()` would have passed for as long as the defect existed — the
+ * object was always right; the rendering discarded it.
+ */
+describe('dispatch refusals carry their explanation', () => {
+  it('names the draft state when a contract:draft bead is refused', async () => {
+    const spec = readOnlySpec();
+    const host = new NativeActivationHost({
+      beadGate: { readContractState: () => 'draft' },
+      loader: loaderFor(spec),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      cwd: process.cwd(),
+    });
+
+    const error = await host.start({
+      specialist: 'reader', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    }).catch((caught: unknown) => caught as DispatchRejectedError);
+
+    expect(error).toBeInstanceOf(DispatchRejectedError);
+    // Without this, the operator sees `reason: bead_contract_incomplete` and nothing else —
+    // for a bead whose seven sections are all present and correct.
+    expect(String((error as Error).message)).toMatch(/draft/i);
+  });
+
+  it('renders the provider explanation when a model cannot be resolved', async () => {
+    const spec = readOnlySpec();
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(spec),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => ({
+        ...makeSdk({}, fakeSession({ record: {} })),
+        resolveModelScopeWithDiagnostics: () => ({
+          scopedModels: [],
+          diagnostics: [{ kind: 'no-match', requested: 'nowhere/nothing' }],
+        }),
+      }) as never,
+      cwd: process.cwd(),
+    });
+
+    const error = await host.start({
+      specialist: 'reader',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator',
+      execution: { model: 'nowhere/nothing' },
+    } as never).catch((caught: unknown) => caught as DispatchRejectedError);
+
+    expect(error).toBeInstanceOf(DispatchRejectedError);
+    const message = String((error as Error).message);
+    expect(message).toContain('reason:');
+    // The refusal must say something beyond its reason code, or the gate is unhelpful.
+    expect(message).toMatch(/note:/);
+  });
+});

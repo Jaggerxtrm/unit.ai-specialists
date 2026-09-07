@@ -232,7 +232,7 @@ export class NativeActivationHost {
 
     const specialist = await this.loader.get(request.specialist).catch((error: unknown) => {
       return reject('unknown_specialist', {
-        detail: error instanceof Error ? error.message : String(error),
+        note: error instanceof Error ? error.message : String(error),
       });
     });
     if (!specialist) return reject('unknown_specialist');
@@ -256,7 +256,7 @@ export class NativeActivationHost {
     const readiness = evaluateBeadReadiness(bead, this.beadGate);
     if (!readiness.ok) {
       return reject('bead_contract_incomplete', {
-        detail: readiness.reason,
+        note: readiness.reason,
         ...(readiness.missing.length > 0 ? { missing: readiness.missing } : {}),
       });
     }
@@ -278,7 +278,7 @@ export class NativeActivationHost {
       validateBeforeRun(specialist, tier, toolContract);
     } catch (error) {
       return reject('preflight_failed', {
-        detail: error instanceof Error ? error.message : String(error),
+        note: error instanceof Error ? error.message : String(error),
       });
     }
 
@@ -295,7 +295,7 @@ export class NativeActivationHost {
     if (!modelCheck.ok) {
       return reject('model_unavailable', {
         requestedModel,
-        detail: modelCheck.reason,
+        note: modelCheck.reason,
       });
     }
     const resolvedModel = modelCheck.resolvedModel ?? requestedModel;
