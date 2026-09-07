@@ -209,7 +209,13 @@ export function leaseDir(workspace: WorkspaceIdentity): string {
   return join(workspace.gitCommonDir ?? workspace.repositoryRoot, '.specialists', 'leases');
 }
 
-function leasePath(workspace: WorkspaceIdentity): string {
+/**
+ * The lease record for a workspace.
+ *
+ * Exported because Phase 9 reconciliation resolves the same record without going through
+ * `release`, which refuses an uncertain lease by design.
+ */
+export function leasePath(workspace: WorkspaceIdentity): string {
   return join(leaseDir(workspace), `${workspaceKey(workspace)}.json`);
 }
 

@@ -7,6 +7,7 @@ import { createObservabilitySqliteClient } from '../../specialist/observability-
 import { isJobDead } from '../../specialist/supervisor.js';
 import { detectJobOutputMode } from '../../cli/status.js';
 import { projectOutstandingAsks, type PendingInteractionProjection } from '../../activation/transport/polling.js';
+import { leaseScopeFor, projectUncertainWorkspaces, type UncertainWorkspaceProjection } from '../../activation/workspace-reconcile.js';
 
 const BACKENDS = ['gemini', 'qwen', 'anthropic', 'openai'];
 
@@ -56,9 +57,23 @@ export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBrea
         pending_interactions = [];
       }
 
+      // A workspace whose writer disappeared mid-mutation is refused to every acquirer until
+      // someone reconciles it, and a refused reconciliation leaves it refused. Both states
+      // are invisible without this: the lease record is under the git common dir and nothing
+      // else reports it, so an operator would see a Specialist that cannot start and no
+      // reason why. Reads the durable lease store only — same contract as the projection
+      // above — and an empty list is the normal case.
+      let uncertain_workspaces: UncertainWorkspaceProjection[] = [];
+      try {
+        uncertain_workspaces = projectUncertainWorkspaces(leaseScopeFor(process.cwd()));
+      } catch {
+        uncertain_workspaces = [];
+      }
+
       return {
         loaded_count: list.length,
         pending_interactions,
+        uncertain_workspaces,
         backends_health: Object.fromEntries(BACKENDS.map(b => [b, circuitBreaker.getState(b)])),
         specialists: list.map((s, i) => ({
           name: s.name,
