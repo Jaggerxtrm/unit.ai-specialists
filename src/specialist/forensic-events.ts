@@ -1,5 +1,26 @@
 export const FORENSIC_SCHEMA_VERSION = 'xtrm.forensic.v1' as const;
 
+/**
+ * The deployment environment this process is RUNNING in.
+ *
+ * Read through a computed key on purpose. `bun build` statically substitutes the literal
+ * token `process.env.NODE_ENV` at bundle time, so writing it directly freezes the builder's
+ * environment into `dist/` as a string constant. That had two effects, both measured at
+ * c23d5dbc: every shipped artifact reported the environment of the machine that built it,
+ * making the `production` branch unreachable in any packed install; and because `dist/` is
+ * tracked and CI rebuilds and diffs it, a CI build (NODE_ENV=test) could never match a local
+ * build, so packed-smoke and payload-contract failed at every head for a reason that had
+ * nothing to do with stale artifacts.
+ *
+ * Do not inline this back into `process.env.NODE_ENV`. The regression test in
+ * tests/unit/specialist/forensic-deployment-environment.test.ts fails if you do.
+ */
+const NODE_ENV_KEY = ['NODE', 'ENV'].join('_');
+
+export function deploymentEnvironment(): string {
+  return process.env[NODE_ENV_KEY]?.trim() || 'local';
+}
+
 export type ForensicSeverity = 'debug' | 'info' | 'warn' | 'error' | 'critical';
 export type RedactionStatus = 'clean' | 'redacted' | 'unknown';
 
@@ -560,7 +581,7 @@ export function forensicEventFromTimelineEvent(
       service_namespace: 'xtrm',
       service_name: 'specialists',
       service_component: context.serviceComponent ?? 'runtime',
-      deployment_environment: process.env.NODE_ENV === 'production' ? 'production' : 'local',
+      deployment_environment: deploymentEnvironment(),
       repo: context.repo ?? 'unknown',
       participant_kind: participantKind,
       participant_role: participantRole,

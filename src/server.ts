@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { MCP_CONFIG } from './constants.js';
-import { createForensicEvent } from './specialist/forensic-events.js';
+import { createForensicEvent, deploymentEnvironment } from './specialist/forensic-events.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './specialist/observability-sqlite.js';
 import { SpecialistLoader } from './specialist/loader.js';
 import { SpecialistRunner } from './specialist/runner.js';
@@ -75,7 +75,7 @@ export function emitMcpForensicEvent(
         service_namespace: 'xtrm',
         service_name: 'specialists',
         service_component: 'mcp-gateway',
-        deployment_environment: process.env.NODE_ENV === 'production' ? 'production' : 'local',
+        deployment_environment: deploymentEnvironment(),
         repo: 'specialists',
         participant_kind: 'adapter',
         participant_role: 'specialists-mcp',

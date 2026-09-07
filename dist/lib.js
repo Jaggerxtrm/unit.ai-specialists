@@ -12460,6 +12460,10 @@ function ensureObservabilityDbFile(location) {
 
 // src/specialist/forensic-events.ts
 var FORENSIC_SCHEMA_VERSION = "xtrm.forensic.v1";
+var NODE_ENV_KEY = ["NODE", "ENV"].join("_");
+function deploymentEnvironment() {
+  return process.env[NODE_ENV_KEY]?.trim() || "local";
+}
 var FORBIDDEN_PROMETHEUS_LABELS = new Set([
   "participant_id",
   "job_id",
@@ -12788,7 +12792,7 @@ function forensicEventFromTimelineEvent(event, context) {
       service_namespace: "xtrm",
       service_name: "specialists",
       service_component: context.serviceComponent ?? "runtime",
-      deployment_environment: "local",
+      deployment_environment: deploymentEnvironment(),
       repo: context.repo ?? "unknown",
       participant_kind: participantKind,
       participant_role: participantRole,

@@ -1,4 +1,5 @@
 export declare const FORENSIC_SCHEMA_VERSION: "xtrm.forensic.v1";
+export declare function deploymentEnvironment(): string;
 export type ForensicSeverity = 'debug' | 'info' | 'warn' | 'error' | 'critical';
 export type RedactionStatus = 'clean' | 'redacted' | 'unknown';
 export interface ForensicResource {

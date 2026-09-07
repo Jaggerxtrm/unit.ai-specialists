@@ -16,7 +16,7 @@
  * lineage is present in the data but not efficiently queryable.
  */
 
-import { createForensicEvent, type ForensicSeverity } from './../specialist/forensic-events.js';
+import { createForensicEvent, deploymentEnvironment, type ForensicSeverity } from './../specialist/forensic-events.js';
 import type { ObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import type { ActivationForensicSink } from './native-host.js';
 
@@ -69,7 +69,7 @@ export function createActivationForensicSink(
               service_namespace: 'xtrm',
               service_name: 'specialists',
               service_component: 'native-activation-host',
-              deployment_environment: process.env.NODE_ENV === 'production' ? 'production' : 'local',
+              deployment_environment: deploymentEnvironment(),
               repo: 'specialists',
               participant_kind: 'specialist',
               participant_role: event.specialist,

@@ -6,7 +6,7 @@ import {
   evaluateEpicMergeReadiness
 } from '../specialist/epic-lifecycle.js';
 import { abandonEpic, syncEpicState, withEpicAdvisoryLock } from '../specialist/epic-reconciler.js';
-import { createForensicEvent } from '../specialist/forensic-events.js';
+import { createForensicEvent, deploymentEnvironment } from '../specialist/forensic-events.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import type { ObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import {
@@ -433,7 +433,7 @@ function emitEpicForensicEvent(epicId: string, eventFamily: 'chain' | 'worktree'
         service_namespace: 'xtrm',
         service_name: 'specialists',
         service_component: 'epic',
-        deployment_environment: process.env.NODE_ENV ?? 'local',
+        deployment_environment: deploymentEnvironment(),
         repo: 'specialists',
         participant_kind: 'specialist',
         participant_role: 'epic',

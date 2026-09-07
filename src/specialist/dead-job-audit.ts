@@ -3,7 +3,7 @@
 // Column moves job→container; the logic is dropped, not renamed.
 
 import type { ObservabilitySqliteClient } from './observability-sqlite.js';
-import { createForensicEvent } from './forensic-events.js';
+import { createForensicEvent, deploymentEnvironment } from './forensic-events.js';
 
 export interface DeadJobAuditFinding {
   job_id: string;
@@ -73,7 +73,7 @@ export function auditDeadJobs(opts: {
             service_namespace: 'xtrm',
             service_name: 'specialists',
             service_component: 'dead-job-audit',
-            deployment_environment: process.env.NODE_ENV ?? 'local',
+            deployment_environment: deploymentEnvironment(),
             repo: 'specialists',
             participant_kind: 'specialist',
             participant_role: row.specialist,

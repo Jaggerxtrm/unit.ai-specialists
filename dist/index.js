@@ -10573,6 +10573,9 @@ var init_zod = __esm(() => {
 });
 
 // src/specialist/forensic-events.ts
+function deploymentEnvironment() {
+  return process.env[NODE_ENV_KEY]?.trim() || "local";
+}
 function redactForensicValue(value, path = "body") {
   const fields = new Set;
   const rules = new Set;
@@ -10785,7 +10788,7 @@ function forensicEventFromTimelineEvent(event, context) {
       service_namespace: "xtrm",
       service_name: "specialists",
       service_component: context.serviceComponent ?? "runtime",
-      deployment_environment: "local",
+      deployment_environment: deploymentEnvironment(),
       repo: context.repo ?? "unknown",
       participant_kind: participantKind,
       participant_role: participantRole,
@@ -11122,8 +11125,9 @@ function redactionStatusForTimelineEvent(event) {
     return "redacted";
   return "clean";
 }
-var FORENSIC_SCHEMA_VERSION = "xtrm.forensic.v1", FORBIDDEN_PROMETHEUS_LABELS, DEFAULT_LABEL_ALLOWLIST, ALLOWED_TOP_LEVEL_FIELDS, REDACTED = "[REDACTED]", REDACTION_RULES, SENSITIVE_FIELD_RE, SECRET_VALUE_RE, NON_SENSITIVE_TELEMETRY_BODY_FIELDS;
+var FORENSIC_SCHEMA_VERSION = "xtrm.forensic.v1", NODE_ENV_KEY, FORBIDDEN_PROMETHEUS_LABELS, DEFAULT_LABEL_ALLOWLIST, ALLOWED_TOP_LEVEL_FIELDS, REDACTED = "[REDACTED]", REDACTION_RULES, SENSITIVE_FIELD_RE, SECRET_VALUE_RE, NON_SENSITIVE_TELEMETRY_BODY_FIELDS;
 var init_forensic_events = __esm(() => {
+  NODE_ENV_KEY = ["NODE", "ENV"].join("_");
   FORBIDDEN_PROMETHEUS_LABELS = new Set([
     "participant_id",
     "job_id",
@@ -28107,7 +28111,7 @@ function emitParentNotification(statusSnapshot, activeSiblingAssignee) {
         service_namespace: "xtrm",
         service_name: "specialists",
         service_component: "supervisor",
-        deployment_environment: "local",
+        deployment_environment: deploymentEnvironment(),
         repo: "specialists",
         participant_kind: "specialist",
         participant_role: statusSnapshot.specialist
@@ -59022,7 +59026,7 @@ function emitEpicForensicEvent(epicId, eventFamily, eventName, body, correlation
         service_namespace: "xtrm",
         service_name: "specialists",
         service_component: "epic",
-        deployment_environment: "development",
+        deployment_environment: deploymentEnvironment(),
         repo: "specialists",
         participant_kind: "specialist",
         participant_role: "epic"
@@ -65717,7 +65721,7 @@ function auditDeadJobs(opts) {
           service_namespace: "xtrm",
           service_name: "specialists",
           service_component: "dead-job-audit",
-          deployment_environment: "development",
+          deployment_environment: deploymentEnvironment(),
           repo: "specialists",
           participant_kind: "specialist",
           participant_role: row.specialist
@@ -75753,7 +75757,7 @@ function emitMcpForensicEvent(observability, eventName, context, body, durationM
       service_namespace: "xtrm",
       service_name: "specialists",
       service_component: "mcp-gateway",
-      deployment_environment: "local",
+      deployment_environment: deploymentEnvironment(),
       repo: "specialists",
       participant_kind: "adapter",
       participant_role: "specialists-mcp"
