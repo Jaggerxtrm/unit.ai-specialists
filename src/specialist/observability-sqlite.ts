@@ -1,12 +1,82 @@
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, normalize, resolve } from 'node:path';
 
-// bun:sqlite is Bun-only — lazy-load to avoid breaking Node/vitest imports.
+/**
+ * The sqlite driver, resolved at first use — `bun:sqlite` when running under bun, and
+ * `node:sqlite` otherwise, behind a shim that presents bun's surface.
+ *
+ * The node path is not a convenience. `pi` ships with `#!/usr/bin/env node`, so every
+ * in-process activation — including the Pi extension, which the PRD calls the PRIMARY
+ * coordinator surface — runs under node. With bun-only loading, `require('bun:sqlite')`
+ * threw MODULE_NOT_FOUND, the client came back null, the sink degraded to a no-op, and
+ * every such activation wrote ZERO forensic rows while appearing to succeed. Measured in
+ * an interactive TUI run and independently noticed by the operator as "job progress is not
+ * being persisted" (unitAI-rrdnt.37.1.1).
+ *
+ * Both drivers write the same file, which the bun CLI reads. Returning null remains a
+ * supported outcome — an older node without `node:sqlite` degrades to the no-op sink
+ * exactly as before, because a forensics failure must never fail an activation.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type BunDb = any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _BunDatabase: (new (path: string) => BunDb) | null = null;
 let _probed = false;
+
+/**
+ * Present `node:sqlite`'s DatabaseSync through the four methods this module uses.
+ *
+ * Only `run`, `query`, `transaction` and `close` are called anywhere here, so the shim is
+ * those four and nothing speculative. `query` returns node's prepared statement directly:
+ * its `get`/`all`/`run` already match what the call sites expect.
+ */
+function nodeSqliteAdapter(): (new (path: string) => BunDb) | null {
+  let DatabaseSync: (new (path: string) => {
+    prepare: (sql: string) => { run: (...p: unknown[]) => unknown; get: (...p: unknown[]) => unknown; all: (...p: unknown[]) => unknown[] };
+    exec: (sql: string) => void;
+    close: () => void;
+  }) | undefined;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    DatabaseSync = require('node:sqlite').DatabaseSync;
+  } catch {
+    return null;
+  }
+  if (!DatabaseSync) return null;
+
+  return class NodeSqliteDatabase {
+    private readonly inner: InstanceType<NonNullable<typeof DatabaseSync>>;
+    constructor(path: string) {
+      this.inner = new (DatabaseSync as NonNullable<typeof DatabaseSync>)(path);
+    }
+    run(sql: string, ...params: unknown[]): unknown {
+      // PRAGMAs and DDL arrive here with no parameters; exec handles multi-statement SQL,
+      // which prepare() refuses.
+      if (params.length === 0) { this.inner.exec(sql); return undefined; }
+      return this.inner.prepare(sql).run(...params);
+    }
+    query(sql: string) { return this.inner.prepare(sql); }
+    transaction<T extends (...args: never[]) => unknown>(fn: T): T {
+      // bun's `transaction` returns a callable that wraps the body. node:sqlite has no
+      // equivalent, so the wrapper is explicit — and it must ROLL BACK on throw, or a
+      // partial write survives an error the caller believes was atomic.
+      const self = this;
+      return function wrapped(this: unknown, ...args: never[]) {
+        self.inner.exec('BEGIN');
+        try {
+          const out = fn.apply(this, args);
+          self.inner.exec('COMMIT');
+          return out;
+        } catch (error) {
+          try { self.inner.exec('ROLLBACK'); } catch { /* the transaction is already gone */ }
+          throw error;
+        }
+      } as T;
+    }
+    close(): void { this.inner.close(); }
+  } as unknown as new (path: string) => BunDb;
+}
+
 function loadBunDatabase(): (new (path: string) => BunDb) | null {
   if (_probed) return _BunDatabase;
   _probed = true;
@@ -14,7 +84,7 @@ function loadBunDatabase(): (new (path: string) => BunDb) | null {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     _BunDatabase = require('bun:sqlite').Database;
   } catch {
-    _BunDatabase = null;
+    _BunDatabase = nodeSqliteAdapter();
   }
   return _BunDatabase;
 }

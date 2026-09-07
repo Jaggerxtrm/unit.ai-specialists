@@ -1,3 +1,19 @@
+/**
+ * The sqlite driver, resolved at first use — `bun:sqlite` when running under bun, and
+ * `node:sqlite` otherwise, behind a shim that presents bun's surface.
+ *
+ * The node path is not a convenience. `pi` ships with `#!/usr/bin/env node`, so every
+ * in-process activation — including the Pi extension, which the PRD calls the PRIMARY
+ * coordinator surface — runs under node. With bun-only loading, `require('bun:sqlite')`
+ * threw MODULE_NOT_FOUND, the client came back null, the sink degraded to a no-op, and
+ * every such activation wrote ZERO forensic rows while appearing to succeed. Measured in
+ * an interactive TUI run and independently noticed by the operator as "job progress is not
+ * being persisted" (unitAI-rrdnt.37.1.1).
+ *
+ * Both drivers write the same file, which the bun CLI reads. Returning null remains a
+ * supported outcome — an older node without `node:sqlite` degrades to the no-op sink
+ * exactly as before, because a forensics failure must never fail an activation.
+ */
 type BunDb = any;
 import type { TimelineEvent, TimelineEventTool } from './timeline-events.js';
 import { type ForensicEvent } from './forensic-events.js';
