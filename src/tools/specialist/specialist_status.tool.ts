@@ -6,6 +6,7 @@ import type { CircuitBreaker } from '../../utils/circuitBreaker.js';
 import { createObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
 import { isJobDead } from '../../specialist/supervisor.js';
 import { detectJobOutputMode } from '../../cli/status.js';
+import { projectOutstandingAsks, type PendingInteractionProjection } from '../../activation/transport/polling.js';
 
 const BACKENDS = ['gemini', 'qwen', 'anthropic', 'openai'];
 
@@ -44,8 +45,20 @@ export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBrea
       }
       jobs.sort((a, b) => (b.started_at_ms ?? 0) - (a.started_at_ms ?? 0));
 
+      // The degraded path from the Claude transport decision: outstanding clarifications
+      // must be readable WITHOUT the peer channel working. Projection only — never a
+      // branch on wire_delivery, which is diagnosis. Absent state is the normal case, so a
+      // repo with no interactions directory yields an empty list rather than an error.
+      let pending_interactions: PendingInteractionProjection[] = [];
+      try {
+        pending_interactions = projectOutstandingAsks(process.cwd());
+      } catch {
+        pending_interactions = [];
+      }
+
       return {
         loaded_count: list.length,
+        pending_interactions,
         backends_health: Object.fromEntries(BACKENDS.map(b => [b, circuitBreaker.getState(b)])),
         specialists: list.map((s, i) => ({
           name: s.name,
