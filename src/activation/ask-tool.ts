@@ -12,6 +12,14 @@
  * context and turns a clarification into a restart, which is the failure mode this phase
  * exists to prevent and the one that looks like success.
  *
+ * The `execute` signature is `(toolCallId, args, ...)`, NOT `(args)`. Measured on pi
+ * 0.85.1: the SDK invokes a custom tool's execute with five arguments and the parameters
+ * object is the SECOND. Writing `(args)` binds the tool-call id string to `args`, so
+ * `args.question` is undefined and the tool refuses every call as empty — the child sees a
+ * tool that returns nothing and reasons about the harness being broken. Nothing catches
+ * this: the parameter is typed, the call compiles, and a unit test that invokes
+ * `tool.execute({ question })` directly asserts the wrong contract and passes.
+ *
  * Blocking here does not block the host: `prompt()` is already awaited elsewhere, the
  * session stays alive, and `agent_settled` never fires while a tool call is outstanding.
  * There is deliberately no timeout — an unanswered question is a state an operator
@@ -81,7 +89,7 @@ export function createAskTools(sdk: PiSdk, ctx: AskToolContext): unknown[] {
         },
         required: ['question'],
       },
-      execute: async (args: { question: string }) => ask('question', args.question),
+      execute: async (_toolCallId: string, args: { question: string }) => ask('question', args.question),
     }),
 
     sdk.defineTool({
@@ -97,7 +105,7 @@ export function createAskTools(sdk: PiSdk, ctx: AskToolContext): unknown[] {
         },
         required: ['blocker'],
       },
-      execute: async (args: { blocker: string }) => ask('escalation', args.blocker),
+      execute: async (_toolCallId: string, args: { blocker: string }) => ask('escalation', args.blocker),
     }),
   ];
 }
