@@ -33,14 +33,39 @@
 
 import { Type } from 'typebox';
 import {
+  createActivationForensicSink,
+  createObservabilitySqliteClientAtPath,
   DispatchRejectedError,
   NativeActivationHost,
+  resolveObservabilityDbLocation,
   toActivationView,
   toPendingAskView,
 } from '../../../dist/lib.js';
 
 /** Default coordinator ParticipantId: <participant_kind>::<participant_role>, matching MCP. */
 export const DEFAULT_REQUESTED_BY = 'adapter::pi-extension';
+
+// ── Forensic wiring (unitAI-rrdnt.37.1) ──────────────────────────────────────
+//
+// Native activations must be answerable from the SAME observability.db the legacy
+// runner and the MCP frontend write — no second telemetry store (PRD §73/AP). The
+// MCP server wires `createActivationForensicSink(createObservabilitySqliteClient())`
+// at construction; this extension does the equivalent through the lib seam. The
+// canonical file is created when absent (exactly what `sp run` does), then opened
+// by the same client the CLI reads, so resolution parity holds by construction.
+// Null-safe: if the client cannot open (e.g. `bun:sqlite` unavailable under the
+// node-based pi runtime), the host falls back to its no-op sink exactly as MCP
+// does when its client is null.
+
+export function createCoordinatorHost({ createClient, Host } = {}) {
+  const client = createClient
+    ? createClient()
+    : createObservabilitySqliteClientAtPath(resolveObservabilityDbLocation(process.cwd()).dbPath);
+  const HostCtor = Host ?? NativeActivationHost;
+  return client
+    ? new HostCtor({ forensics: createActivationForensicSink(client) })
+    : new HostCtor();
+}
 
 // ── Pi-surface result projection ─────────────────────────────────────────────
 
@@ -104,7 +129,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   /** One host for the life of the pi process — never per-turn (VALIDATION 5). */
   let host = null;
   const getHost = () => {
-    if (!host) host = options.createHost ? options.createHost() : new NativeActivationHost();
+    if (!host) host = options.createHost ? options.createHost() : createCoordinatorHost();
     return host;
   };
 
