@@ -100,3 +100,35 @@ serves the Fleet, no crash (null-sink fallback verified).
 Operator VALIDATION 1 interactive leg closed by dawid-0b (act:36a8720f-f30,
 zai/glm-5.3-flash, validation valid, model_override honoured; bead-gate refusal
 with note + missing SCRUTINY handled correctly by the coordinator).
+
+## unitAI-rrdnt.43 / acceptance AX — PROVEN END TO END (post .43.3, live pi session)
+
+Transcript /tmp/pi-ask-probe3.jsonl. dispatch act:0b19fc88-8c3 (explorer, unitAI-gvyb8) ->
+child asked (msg:8b61870c-4dc) -> specialist_reply answered by message_id ->
+child SETTLED completed, validation valid, pending_asks empty, and used the answer:
+  "summary": "TARGET_FILE: src/activation/registry.ts: 65 lines."
+  "verification": ["Path obtained from coordinator via ask_coordinator; line count read from file."]
+Earlier 11-min non-settling outlier did not reproduce.
+
+## unitAI-rrdnt.48 — inline-contract dispatch (implemented, unit-tested 14/14)
+bead_id XOR contract; SAME readiness gate runs BEFORE bead creation (refusal leaves
+board unchanged); both-together = structured refusal; neither = refusal.
+## unitAI-rrdnt.49 — specialist_list tool (.49)
+Resolved registry (repo+user overrides) + native dispatchability via the SAME host
+checks (seam exports) + access tier + 'sp help' pointer.
+## unitAI-rrdnt.37.1.1 THIRD defect — node driver write path (fixed 1a7ffeeb, host-side to place)
+Measurement: client opened but 0 rows; append threw 'Unknown named parameter 0'.
+Cause: module calls db.run(sql, [array]) (bun array form); adapter spread -> node:sqlite
+read the array as named-param map. Fix: normalize single-array form + undefined->null.
+Measured after: node writes rows; bun reads same WAL file.
+
+## unitAI-rrdnt.37.1.1 — LIVE ROWS UNDER NODE-PI (definitive)
+
+Probe rows2 (real pi, node process; coordinator opencode-go/deepseek-v4-flash):
+dispatch act:198ce538-0c7 -> 10 forensic rows in the CANONICAL observability.db
+(/home/dawid/dev/specialists/.specialists/db/observability.db) written by the
+in-process node driver: activation_requested, step_contract_compiled,
+activation_admitted, activation_starting, activation_started, turn_started,
+turn_completed, activation_settled, activation_disposed, activation_failed.
+Pre-fix control (act:2031b28d-b69) still 0 rows. The failed/disposed tail is the
+probe process ending and session_shutdown disposing the still-running child.

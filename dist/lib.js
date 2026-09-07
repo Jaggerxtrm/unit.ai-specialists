@@ -13155,7 +13155,9 @@ function nodeSqliteAdapter() {
         this.inner.exec(sql);
         return;
       }
-      return this.inner.prepare(sql).run(...params);
+      let flat = params.length === 1 && Array.isArray(params[0]) ? params[0] : params;
+      flat = flat.map((value) => value === undefined ? null : value);
+      return this.inner.prepare(sql).run(...flat);
     }
     query(sql) {
       return this.inner.prepare(sql);
@@ -21488,7 +21490,7 @@ function toPendingAskView(ask) {
 }
 var specialistDispatchSchema = objectType({
   specialist: stringType().describe("Specialist name, e.g. codebase-explorer"),
-  bead_id: stringType().describe("The Bead that is this activation's task contract. `--bead` is the prompt: there is no free-form task field, because supplementing an incomplete Bead through delegation prose is how durable work loses its scope."),
+  bead_id: stringType().describe("The Bead that is this activation's task contract — a COMPLETE 7-section contract " + "(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY " + "level. A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill)."),
   model_override: stringType().optional().describe("Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced."),
   requested_by: stringType().optional().describe("ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant."),
   coordinator_session_id: stringType().optional().describe("MCP session id, for lineage.")
@@ -21901,13 +21903,18 @@ async function verifyExactLineCitation(evidence, claim) {
 export {
   verifyExactLineCitation,
   validateLaunchOutcome,
+  validateBeforeRun,
   toPendingAskView,
   toActivationView,
   runScriptSpecialist as runScript,
+  resolveRuntimeToolContract,
   resolveObservabilityDbLocation,
+  resolveModelChain,
   readVerifiedCitationWindow,
   projectLaunchOutcome,
   parseLaunchOutcome,
+  extractSections,
+  evaluateBeadReadiness,
   createObservabilitySqliteClientAtPath,
   createActivationForensicSink,
   SpecialistLoader,

@@ -26,6 +26,14 @@ export type {
 export { SpecialistLoader } from './specialist/loader.js';
 export type { Specialist } from './specialist/schema.js';
 
+// Dispatchability projection (unitAI-rrdnt.49): the SAME checks the host runs at
+// admission (model chain, tool contract, preflight), exposed so a frontend can
+// distinguish dispatchable specialists from undispatchable ones without writing a
+// second resolution.
+export { resolveModelChain } from './specialist/model-chain.js';
+export { resolveRuntimeToolContract } from './pi/session.js';
+export { validateBeforeRun } from './specialist/runner.js';
+
 // ── Native activation seam (unitAI-rrdnt.37) ─────────────────────────────────
 // One host process-lifetime per coordinator surface; both frontends and a future
 // Chain scheduler construct the same `ActivationRequest` against it.
@@ -71,6 +79,12 @@ export {
   createObservabilitySqliteClientAtPath,
 } from './specialist/observability-sqlite.js';
 export { resolveObservabilityDbLocation } from './specialist/observability-db.js';
+
+// Bead readiness gate (unitAI-rrdnt.48): the SAME parser and gate the host runs,
+// exposed so a frontend can gate an inline dispatch contract BEFORE creating a
+// bead — a refused dispatch must leave the board unchanged.
+export { evaluateBeadReadiness, extractSections } from './activation/bead-gate.js';
+export type { BeadRecord } from './specialist/beads.js';
 
 // K4 (unitAI-e67up.4): Core K2 launcher-outcome consumer contract surface.
 export {
