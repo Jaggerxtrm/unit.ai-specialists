@@ -23,12 +23,22 @@
 // is Phase 14 and is why `specialist_status` reports pending asks by projection: until
 // the push channel exists, a coordinator learns about a question by reading, and a
 // reader that cannot see the ask is a Specialist stuck forever.
+//
+// Phase 14 (unitAI-rrdnt.34) adds the push half WITHOUT removing that read half. The
+// coordinator address is a property of the dispatch, not of the runtime — the server
+// builds one host for its whole life and learns a coordinator session only per call — so
+// the dispatch registers the route and the settled result with `RuntimeEventPusher`, and
+// `specialist_status` projects the same recorded results. A coordinator that never
+// received the push reads the identical object here; that is what makes the notification
+// a projection rather than the authority.
 
 import * as z from 'zod';
 import type { NativeActivationHost } from '../../activation/native-host.js';
 import type { ActivationSnapshot } from '../../activation/types.js';
 import { DispatchRejectedError } from '../../activation/types.js';
 import type { PendingAsk } from '../../activation/interaction.js';
+import type { RuntimeEventPusher } from '../../activation/async-events.js';
+import type { ActivationResult } from '../../activation/types.js';
 
 /**
  * Transport-neutral projection of one activation.
@@ -101,6 +111,55 @@ export function toPendingAskView(ask: PendingAsk): PendingAskView {
 }
 
 /**
+ * A validated result, projected for a coordinator that reads instead of being pushed.
+ *
+ * This is the ONE projection of `ActivationResult`, and it carries its own identity so it
+ * can stand alone in a list. The Pi extension attaches its result to an `ActivationView`
+ * that already names the activation, so the identity fields are redundant there — but
+ * redundant is not divergent, and two functions that describe the same settled activation
+ * with different field sets is exactly how a Pi coordinator and a Claude coordinator end
+ * up disagreeing about one object (`config/pi-extensions/specialist-subagents/index.mjs`,
+ * unitAI-rrdnt.45). Exported from `lib.js` so the extension imports it rather than
+ * restating it, the way it already does for `toActivationView`.
+ */
+export interface ActivationResultView {
+  activation_id: string;
+  participant_id: string;
+  attempt_id: string;
+  bead_id: string;
+  status: string;
+  /** Explicitly `null` rather than absent: a missing key reads as "not projected yet". */
+  output: unknown;
+  validation: { valid: boolean; schema?: string; errors?: string[] };
+  pi_session_id?: string;
+  configured_model?: string;
+  requested_model?: string;
+  resolved_model: string;
+  model_override: boolean;
+  fallback_used: boolean;
+  completed_at: number;
+}
+
+export function toActivationResultView(result: ActivationResult): ActivationResultView {
+  return {
+    activation_id: result.activationId,
+    participant_id: result.participantId,
+    attempt_id: result.attemptId,
+    bead_id: result.beadId,
+    status: result.status,
+    output: result.output ?? null,
+    validation: result.validation,
+    ...(result.piSessionId ? { pi_session_id: result.piSessionId } : {}),
+    ...(result.configuredModel ? { configured_model: result.configuredModel } : {}),
+    ...(result.requestedModel ? { requested_model: result.requestedModel } : {}),
+    resolved_model: result.resolvedModel,
+    model_override: result.modelOverride,
+    fallback_used: result.fallbackUsed,
+    completed_at: result.completedAt,
+  };
+}
+
+/**
  * Render a refusal as a tool RESULT rather than a thrown error.
  *
  * A `DispatchRejectedError` is not a malfunction — it is the gate working, and it carries
@@ -138,7 +197,10 @@ export const specialistDispatchSchema = z.object({
  * and resumable, and a tool that blocked until completion would make every clarification
  * a deadlock — the coordinator cannot answer a question it is blocked waiting on.
  */
-export function createSpecialistDispatchTool(getHost: () => NativeActivationHost) {
+export function createSpecialistDispatchTool(
+  getHost: () => NativeActivationHost,
+  getPusher?: () => RuntimeEventPusher | undefined,
+) {
   return {
     name: 'specialist_dispatch' as const,
     description:
@@ -163,7 +225,26 @@ export function createSpecialistDispatchTool(getHost: () => NativeActivationHost
         // dropped either: an unhandled rejection on a failed activation would take the
         // MCP server down with it. The host has already recorded the failure forensically
         // and in the snapshot, which is where a reader looks for it.
-        handle.result.catch(() => { /* observed via specialist_status */ });
+        //
+        // It IS observed, though: settling records the validated result so a completion can
+        // be projected from it, and only then is the notification pushed. The order is the
+        // contract — `pushCompletion` refuses an activation that has not settled, so a push
+        // can never describe a result that does not exist.
+        const pusher = getPusher?.();
+        pusher?.track(handle.activationId, {
+          ...(input.coordinator_session_id ? { coordinatorSessionId: input.coordinator_session_id } : {}),
+          coordinatorParticipantId: input.requested_by ?? 'adapter::specialists-mcp',
+        });
+        handle.result.then(
+          async (result) => {
+            if (!pusher) return;
+            pusher.settle(result);
+            // A push that cannot be routed is not an error: the durable record is already
+            // written and the result is readable through specialist_status either way.
+            await pusher.pushCompletion(handle.activationId).catch(() => { /* degraded to polling */ });
+          },
+          () => { /* observed via specialist_status */ },
+        );
 
         const snapshot = getHost().inspect(handle.activationId);
         return {

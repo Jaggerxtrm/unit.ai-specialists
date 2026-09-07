@@ -7,8 +7,10 @@ export type { NativeActivationHostDeps, ActivationForensicSink, ActivationAttach
 export { DispatchRejectedError } from './activation/types.js';
 export type { ActivationId, ActivationRequest, ActivationResult, ActivationSnapshot, ActivationState, ActivationHandle, AttemptId, ParticipantId, PiSessionId, WorkspaceAccess, WorkspaceIdentity, } from './activation/types.js';
 export type { DeliveryState, InteractionKind, InteractionMessage, MessageId, PendingAsk, } from './activation/interaction.js';
-export { toActivationView, toPendingAskView } from './tools/specialist/activation.tool.js';
-export type { ActivationView, PendingAskView } from './tools/specialist/activation.tool.js';
+export { toActivationView, toActivationResultView, toPendingAskView } from './tools/specialist/activation.tool.js';
+export type { ActivationView, ActivationResultView, PendingAskView } from './tools/specialist/activation.tool.js';
+export { RuntimeEventPusher, ResultNotValidatedError, completionBody, parseCompletionBody } from './activation/async-events.js';
+export type { EventRoute, RuntimeEventPusherOptions } from './activation/async-events.js';
 export { createActivationForensicSink, } from './activation/forensic-sink.js';
 export { createObservabilitySqliteClientAtPath, } from './specialist/observability-sqlite.js';
 export { resolveObservabilityDbLocation } from './specialist/observability-db.js';

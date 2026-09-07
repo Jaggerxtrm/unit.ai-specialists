@@ -19934,17 +19934,10 @@ class InteractionTransport {
     return [...this.log];
   }
   compose(input, messageId) {
-    return {
+    return composeInteractionMessage(input, {
       messageId: messageId ?? this.newId(),
-      kind: input.kind,
-      from: input.from,
-      to: input.to,
-      activationId: input.activationId,
-      attemptId: input.attemptId,
-      body: input.body,
-      ...input.inReplyTo ? { inReplyTo: input.inReplyTo } : {},
       createdAt: this.now()
-    };
+    });
   }
   async attemptDelivery(message) {
     if (!this.deliver)
@@ -19955,6 +19948,20 @@ class InteractionTransport {
       return false;
     }
   }
+}
+function composeInteractionMessage(input, identity2) {
+  return {
+    messageId: identity2.messageId,
+    kind: input.kind,
+    from: input.from,
+    to: input.to,
+    activationId: input.activationId,
+    attemptId: input.attemptId,
+    ...input.piSessionId ? { piSessionId: input.piSessionId } : {},
+    body: input.body,
+    ...input.inReplyTo ? { inReplyTo: input.inReplyTo } : {},
+    createdAt: identity2.createdAt
+  };
 }
 
 // src/activation/transport/pending-store.ts
@@ -21486,6 +21493,24 @@ function toPendingAskView(ask) {
     asked_at: ask.askedAt
   };
 }
+function toActivationResultView(result) {
+  return {
+    activation_id: result.activationId,
+    participant_id: result.participantId,
+    attempt_id: result.attemptId,
+    bead_id: result.beadId,
+    status: result.status,
+    output: result.output ?? null,
+    validation: result.validation,
+    ...result.piSessionId ? { pi_session_id: result.piSessionId } : {},
+    ...result.configuredModel ? { configured_model: result.configuredModel } : {},
+    ...result.requestedModel ? { requested_model: result.requestedModel } : {},
+    resolved_model: result.resolvedModel,
+    model_override: result.modelOverride,
+    fallback_used: result.fallbackUsed,
+    completed_at: result.completedAt
+  };
+}
 var specialistDispatchSchema = objectType({
   specialist: stringType().describe("Specialist name, e.g. codebase-explorer"),
   bead_id: stringType().describe("The Bead that is this activation's task contract. `--bead` is the prompt: there is no free-form task field, because supplementing an incomplete Bead through delegation prose is how durable work loses its scope."),
@@ -21501,6 +21526,81 @@ var specialistStopSchema = objectType({
   activation_id: stringType().describe("Activation to stop and dispose."),
   reason: stringType().optional().describe("Recorded forensically with the disposal.")
 });
+// src/activation/async-events.ts
+import { randomUUID as randomUUID4 } from "node:crypto";
+class ResultNotValidatedError extends Error {
+  activationId;
+  constructor(activationId) {
+    super(`activation "${activationId}" has no validated result — a completion notification is a ` + "projection of ActivationResult and cannot be pushed before one exists");
+    this.activationId = activationId;
+    this.name = "ResultNotValidatedError";
+  }
+}
+
+class RuntimeEventPusher {
+  adapter;
+  now;
+  newMessageId;
+  onPush;
+  routes = new Map;
+  results = new Map;
+  constructor(options) {
+    this.adapter = options.adapter;
+    this.now = options.now ?? (() => Date.now());
+    this.newMessageId = options.newMessageId ?? (() => `msg:${randomUUID4().slice(0, 12)}`);
+    this.onPush = options.onPush;
+  }
+  track(activationId, route) {
+    this.routes.set(activationId, route);
+  }
+  settle(result) {
+    this.results.set(result.activationId, result);
+  }
+  result(activationId) {
+    return this.results.get(activationId);
+  }
+  allResults() {
+    return [...this.results.values()];
+  }
+  async pushCompletion(activationId) {
+    const result = this.results.get(activationId);
+    if (!result)
+      throw new ResultNotValidatedError(activationId);
+    const route = this.routes.get(activationId);
+    const message = composeInteractionMessage({
+      kind: "completion",
+      from: result.participantId,
+      to: route?.coordinatorParticipantId ?? "adapter::specialists-mcp",
+      activationId: result.activationId,
+      attemptId: result.attemptId,
+      ...result.piSessionId ? { piSessionId: result.piSessionId } : {},
+      body: completionBody(result)
+    }, { messageId: this.newMessageId(), createdAt: this.now() });
+    const push = await this.adapter.push({
+      messageId: message.messageId,
+      activationId: message.activationId,
+      kind: message.kind,
+      message,
+      body: message.body,
+      coordinatorSessionId: route?.coordinatorSessionId ?? ""
+    });
+    this.onPush?.(message, push);
+    return push;
+  }
+}
+function completionBody(result) {
+  return JSON.stringify(result);
+}
+function parseCompletionBody(body) {
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.activationId !== "string" || typeof parsed?.status !== "string")
+      return;
+    return parsed;
+  } catch {
+    return;
+  }
+}
 // src/activation/forensic-sink.ts
 var ERROR_EVENTS = new Set([
   "activation_rejected",
@@ -21903,14 +22003,19 @@ export {
   validateLaunchOutcome,
   toPendingAskView,
   toActivationView,
+  toActivationResultView,
   runScriptSpecialist as runScript,
   resolveObservabilityDbLocation,
   readVerifiedCitationWindow,
   projectLaunchOutcome,
   parseLaunchOutcome,
+  parseCompletionBody,
   createObservabilitySqliteClientAtPath,
   createActivationForensicSink,
+  completionBody,
   SpecialistLoader,
+  RuntimeEventPusher,
+  ResultNotValidatedError,
   NativeActivationHost,
   LaunchOutcomeError,
   LAUNCH_OUTCOME_SCHEMA_VERSION,

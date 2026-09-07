@@ -59,8 +59,10 @@ export type {
 // Shared frontend projections (unitAI-rrdnt.33): the SAME snapshot→wire mapping both
 // coordinator surfaces use. One vocabulary, imported not re-implemented — two
 // hand-written projections agree until the next field is added, then diverge silently.
-export { toActivationView, toPendingAskView } from './tools/specialist/activation.tool.js';
-export type { ActivationView, PendingAskView } from './tools/specialist/activation.tool.js';
+export { toActivationView, toActivationResultView, toPendingAskView } from './tools/specialist/activation.tool.js';
+export type { ActivationView, ActivationResultView, PendingAskView } from './tools/specialist/activation.tool.js';
+export { RuntimeEventPusher, ResultNotValidatedError, completionBody, parseCompletionBody } from './activation/async-events.js';
+export type { EventRoute, RuntimeEventPusherOptions } from './activation/async-events.js';
 
 // Canonical forensic store (unitAI-rrdnt.37.1): the SAME observability.db the
 // legacy runner and the MCP frontend write. No parallel store (PRD §73/AP).

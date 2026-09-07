@@ -21,7 +21,7 @@
  * notion of who is allowed to answer. Delivery over MCP or the peer channel is
  * unitAI-rrdnt.12 and PRD Phase 13/14; this module defines what they carry.
  */
-import type { ActivationId, AttemptId, ParticipantId } from './types.js';
+import type { ActivationId, AttemptId, ParticipantId, PiSessionId } from './types.js';
 /** Message id. Distinct from every activation identity — a message is not a participant. */
 export type MessageId = string;
 /**
@@ -47,6 +47,15 @@ export interface InteractionMessage {
     to: ParticipantId;
     activationId: ActivationId;
     attemptId: AttemptId;
+    /**
+     * The physical session that produced this message, when one exists.
+     *
+     * Correlation metadata, never identity (`types.ts`). It is on the message rather than
+     * derived by the reader because a pushed event leaves this process: a coordinator that
+     * received a completion over the peer channel has no registry to look the session up in,
+     * and PRD acceptance AY requires the full lineage to survive the push.
+     */
+    piSessionId?: PiSessionId;
     /** Set on a `reply`: the message this answers. The ONLY correlation mechanism. */
     inReplyTo?: MessageId;
     body: string;
@@ -74,6 +83,7 @@ export interface SendInput {
     to: ParticipantId;
     activationId: ActivationId;
     attemptId: AttemptId;
+    piSessionId?: PiSessionId;
     body: string;
     inReplyTo?: MessageId;
 }
@@ -142,4 +152,17 @@ export declare class InteractionTransport {
     /** A throwing delivery is a failed delivery, never a lost message. */
     private attemptDelivery;
 }
+/**
+ * Build one canonical message.
+ *
+ * Exported because the peer channel composes messages the in-process transport never sees
+ * — a completion push originates from the runtime and expects no reply, so it needs the
+ * vocabulary without needing correlation, waiters or a pending-ask registration. Sharing
+ * this function is what keeps that a serialisation of `InteractionMessage` rather than a
+ * second message shape that happens to have similar field names (invariant BH).
+ */
+export declare function composeInteractionMessage(input: SendInput, identity: {
+    messageId: MessageId;
+    createdAt: number;
+}): InteractionMessage;
 //# sourceMappingURL=interaction.d.ts.map

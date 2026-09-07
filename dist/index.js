@@ -34670,7 +34670,7 @@ var init_integration = __esm(() => {
 
 // src/specialist/script-runner.ts
 import { spawn as spawn3 } from "child_process";
-import { createHash as createHash6, randomUUID as randomUUID5 } from "crypto";
+import { createHash as createHash6, randomUUID as randomUUID6 } from "crypto";
 import {
   accessSync as accessSync2,
   closeSync as closeSync2,
@@ -35163,7 +35163,7 @@ function resolveRequestedTemplate(input2, spec) {
   return template;
 }
 async function runScriptSpecialist(input2, options) {
-  const traceId = randomUUID5();
+  const traceId = randomUUID6();
   const startedAt = Date.now();
   try {
     const resolvedSpecialist = resolveScriptSpecialistName(input2.specialist);
@@ -58328,7 +58328,7 @@ __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
 import { existsSync as existsSync41, readFileSync as readFileSync34, readdirSync as readdirSync17 } from "fs";
-import { randomUUID as randomUUID6 } from "crypto";
+import { randomUUID as randomUUID7 } from "crypto";
 import { basename as basename9, join as join45, resolve as resolve17 } from "path";
 function parseNodeArgs(argv) {
   const command = argv[0];
@@ -58650,7 +58650,7 @@ async function handleNodeRun(args) {
       hooks: new HookEmitter({ tracePath: join45(process.cwd(), ".specialists", "trace.jsonl") }),
       circuitBreaker: new CircuitBreaker
     });
-    const nodeId = `${config2.name}-${randomUUID6().slice(0, 8)}`;
+    const nodeId = `${config2.name}-${randomUUID7().slice(0, 8)}`;
     const effectiveContextDepth = args.contextDepth ?? config2.defaultContextDepth;
     const { NodeSupervisor: NodeSupervisor2 } = await Promise.resolve().then(() => (init_node_supervisor(), exports_node_supervisor));
     let beadContext;
@@ -66685,7 +66685,7 @@ var init_doctor = __esm(() => {
 });
 
 // src/specialist/benchmarks.ts
-import { randomUUID as randomUUID7 } from "crypto";
+import { randomUUID as randomUUID8 } from "crypto";
 import { closeSync as closeSync5, existsSync as existsSync50, fsyncSync as fsyncSync2, mkdirSync as mkdirSync20, openSync as openSync6, readFileSync as readFileSync42, renameSync as renameSync8, writeFileSync as writeFileSync23 } from "fs";
 import { homedir as homedir14 } from "os";
 import { dirname as dirname21, join as join54 } from "path";
@@ -66809,7 +66809,7 @@ function getBenchmarkCachePath(source, cacheDir = join54(homedir14(), ".cache", 
 }
 function writeCache2(path3, snapshot) {
   mkdirSync20(dirname21(path3), { recursive: true, mode: 448 });
-  const tmpPath = `${path3}.${process.pid}.${randomUUID7()}.tmp`;
+  const tmpPath = `${path3}.${process.pid}.${randomUUID8()}.tmp`;
   writeFileSync23(tmpPath, `${JSON.stringify(snapshot, null, 2)}
 `, { mode: 384 });
   const fd = openSync6(tmpPath, "r");
@@ -66841,7 +66841,7 @@ var init_benchmarks = __esm(() => {
 });
 
 // src/specialist/model-probes.ts
-import { createHash as createHash11, randomUUID as randomUUID8 } from "crypto";
+import { createHash as createHash11, randomUUID as randomUUID9 } from "crypto";
 import { mkdirSync as mkdirSync21, readdirSync as readdirSync25, readFileSync as readFileSync43, writeFileSync as writeFileSync24 } from "fs";
 import { homedir as homedir15 } from "os";
 import { dirname as dirname22, join as join55, resolve as resolve21 } from "path";
@@ -66948,7 +66948,7 @@ function withTimeout(promise2, timeoutMs) {
   return Promise.race([promise2, timeoutPromise]).finally(() => clearTimeout(timeout));
 }
 function getProbeRunDir(model, specName, cacheDir = join55(homedir15(), ".cache", "specialists", "probes")) {
-  return resolve21(getProbeCanonicalPath(model, specName, cacheDir).replace(/\.json$/u, ""), randomUUID8());
+  return resolve21(getProbeCanonicalPath(model, specName, cacheDir).replace(/\.json$/u, ""), randomUUID9());
 }
 function getProbeCanonicalPath(model, specName, cacheDir = join55(homedir15(), ".cache", "specialists", "probes")) {
   const probeId = createHash11("sha256").update(`${model}\x00${specName}\x00${PROBE_TEMPLATE}`).digest("hex").slice(0, 12);
@@ -67593,7 +67593,7 @@ __export(exports_serve, {
   checkPiHelpForFlags: () => checkPiHelpForFlags
 });
 import { createServer as createServer2 } from "http";
-import { randomUUID as randomUUID9 } from "crypto";
+import { randomUUID as randomUUID10 } from "crypto";
 import { once } from "events";
 import { spawnSync as spawnSync28 } from "child_process";
 import { access, readdir as readdir2, readFile as readFile4, constants as constants3 } from "fs/promises";
@@ -67871,7 +67871,7 @@ async function startServe(argv = process.argv.slice(3)) {
     const requestStartedAt = Date.now();
     const method = req.method ?? "POST";
     const path3 = req.url ?? "/v1/generate";
-    const requestTraceId = randomUUID9();
+    const requestTraceId = randomUUID10();
     if (readinessState.shuttingDown) {
       emitGenerateLog(args.logLevel, {
         trace_id: requestTraceId,
@@ -75646,7 +75646,7 @@ class StdioServerTransport {
 
 // src/server.ts
 init_zod();
-import { randomUUID as randomUUID4 } from "crypto";
+import { randomUUID as randomUUID5 } from "crypto";
 import { join as join22 } from "path";
 
 // src/constants.ts
@@ -76292,6 +76292,24 @@ function toPendingAskView(ask) {
     asked_at: ask.askedAt
   };
 }
+function toActivationResultView(result) {
+  return {
+    activation_id: result.activationId,
+    participant_id: result.participantId,
+    attempt_id: result.attemptId,
+    bead_id: result.beadId,
+    status: result.status,
+    output: result.output ?? null,
+    validation: result.validation,
+    ...result.piSessionId ? { pi_session_id: result.piSessionId } : {},
+    ...result.configuredModel ? { configured_model: result.configuredModel } : {},
+    ...result.requestedModel ? { requested_model: result.requestedModel } : {},
+    resolved_model: result.resolvedModel,
+    model_override: result.modelOverride,
+    fallback_used: result.fallbackUsed,
+    completed_at: result.completedAt
+  };
+}
 function rejectionResult(error2) {
   return {
     status: "rejected",
@@ -76306,7 +76324,7 @@ var specialistDispatchSchema = objectType({
   requested_by: stringType().optional().describe("ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant."),
   coordinator_session_id: stringType().optional().describe("MCP session id, for lineage.")
 });
-function createSpecialistDispatchTool(getHost) {
+function createSpecialistDispatchTool(getHost, getPusher) {
   return {
     name: "specialist_dispatch",
     description: "Dispatch a Specialist on the native in-process runtime. No CLI process is spawned. " + "Returns once the activation is ADMITTED and started, not when it completes \u2014 poll " + "specialist_status for state and for any question it raises, and answer with " + "specialist_reply. The Bead is the prompt and must be a complete 7-section contract " + "with a SCRUTINY level; a draft or incomplete Bead is refused here, before a model " + "turn is spent guessing at scope it does not carry.",
@@ -76320,7 +76338,17 @@ function createSpecialistDispatchTool(getHost) {
           requestedByParticipantId: input.requested_by ?? "adapter::specialists-mcp",
           ...input.coordinator_session_id ? { coordinatorSessionId: input.coordinator_session_id } : {}
         });
-        handle.result.catch(() => {});
+        const pusher = getPusher?.();
+        pusher?.track(handle.activationId, {
+          ...input.coordinator_session_id ? { coordinatorSessionId: input.coordinator_session_id } : {},
+          coordinatorParticipantId: input.requested_by ?? "adapter::specialists-mcp"
+        });
+        handle.result.then(async (result) => {
+          if (!pusher)
+            return;
+          pusher.settle(result);
+          await pusher.pushCompletion(handle.activationId).catch(() => {});
+        }, () => {});
         const snapshot = getHost().inspect(handle.activationId);
         return {
           status: "dispatched",
@@ -76393,7 +76421,7 @@ function createSpecialistStopActivationTool(getHost) {
 
 // src/tools/specialist/specialist_status.tool.ts
 var BACKENDS2 = ["gemini", "qwen", "anthropic", "openai"];
-function createSpecialistStatusTool(loader, circuitBreaker, getHost) {
+function createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher) {
   return {
     name: "specialist_status",
     description: "System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from DB-backed runtime state (.specialists/jobs/ is legacy/operator-only), and native in-process activations with any question they are waiting on \u2014 answer those with specialist_reply.",
@@ -76441,10 +76469,12 @@ function createSpecialistStatusTool(loader, circuitBreaker, getHost) {
       const host = getHost?.();
       const activations = host ? host.list().map(toActivationView) : [];
       const pending_asks = host ? host.pendingAsks().map(toPendingAskView) : [];
+      const activation_results = getPusher?.()?.allResults().map(toActivationResultView) ?? [];
       return {
         loaded_count: list.length,
         activations,
         pending_asks,
+        activation_results,
         pending_interactions,
         uncertain_workspaces,
         backends_health: Object.fromEntries(BACKENDS2.map((b) => [b, circuitBreaker.getState(b)])),
@@ -76704,17 +76734,10 @@ class InteractionTransport {
     return [...this.log];
   }
   compose(input, messageId) {
-    return {
+    return composeInteractionMessage(input, {
       messageId: messageId ?? this.newId(),
-      kind: input.kind,
-      from: input.from,
-      to: input.to,
-      activationId: input.activationId,
-      attemptId: input.attemptId,
-      body: input.body,
-      ...input.inReplyTo ? { inReplyTo: input.inReplyTo } : {},
       createdAt: this.now()
-    };
+    });
   }
   async attemptDelivery(message) {
     if (!this.deliver)
@@ -76725,6 +76748,20 @@ class InteractionTransport {
       return false;
     }
   }
+}
+function composeInteractionMessage(input, identity2) {
+  return {
+    messageId: identity2.messageId,
+    kind: input.kind,
+    from: input.from,
+    to: input.to,
+    activationId: input.activationId,
+    attemptId: input.attemptId,
+    ...input.piSessionId ? { piSessionId: input.piSessionId } : {},
+    body: input.body,
+    ...input.inReplyTo ? { inReplyTo: input.inReplyTo } : {},
+    createdAt: identity2.createdAt
+  };
 }
 
 // src/activation/peer-bridge.ts
@@ -77860,6 +77897,72 @@ function textOf(message) {
   return content.filter((part) => typeof part === "object" && part !== null && part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
 }
 
+// src/activation/async-events.ts
+import { randomUUID as randomUUID4 } from "crypto";
+class ResultNotValidatedError extends Error {
+  activationId;
+  constructor(activationId) {
+    super(`activation "${activationId}" has no validated result \u2014 a completion notification is a ` + "projection of ActivationResult and cannot be pushed before one exists");
+    this.activationId = activationId;
+    this.name = "ResultNotValidatedError";
+  }
+}
+
+class RuntimeEventPusher {
+  adapter;
+  now;
+  newMessageId;
+  onPush;
+  routes = new Map;
+  results = new Map;
+  constructor(options) {
+    this.adapter = options.adapter;
+    this.now = options.now ?? (() => Date.now());
+    this.newMessageId = options.newMessageId ?? (() => `msg:${randomUUID4().slice(0, 12)}`);
+    this.onPush = options.onPush;
+  }
+  track(activationId, route) {
+    this.routes.set(activationId, route);
+  }
+  settle(result) {
+    this.results.set(result.activationId, result);
+  }
+  result(activationId) {
+    return this.results.get(activationId);
+  }
+  allResults() {
+    return [...this.results.values()];
+  }
+  async pushCompletion(activationId) {
+    const result = this.results.get(activationId);
+    if (!result)
+      throw new ResultNotValidatedError(activationId);
+    const route = this.routes.get(activationId);
+    const message = composeInteractionMessage({
+      kind: "completion",
+      from: result.participantId,
+      to: route?.coordinatorParticipantId ?? "adapter::specialists-mcp",
+      activationId: result.activationId,
+      attemptId: result.attemptId,
+      ...result.piSessionId ? { piSessionId: result.piSessionId } : {},
+      body: completionBody(result)
+    }, { messageId: this.newMessageId(), createdAt: this.now() });
+    const push = await this.adapter.push({
+      messageId: message.messageId,
+      activationId: message.activationId,
+      kind: message.kind,
+      message,
+      body: message.body,
+      coordinatorSessionId: route?.coordinatorSessionId ?? ""
+    });
+    this.onPush?.(message, push);
+    return push;
+  }
+}
+function completionBody(result) {
+  return JSON.stringify(result);
+}
+
 // src/activation/forensic-sink.ts
 init_forensic_events();
 var ERROR_EVENTS = new Set([
@@ -77942,8 +78045,8 @@ function createMcpCallContext(sessionId, request = {}) {
   return {
     mcpSessionId: sessionId,
     jsonrpcRequestId: typeof request.id === "string" || typeof request.id === "number" ? String(request.id) : undefined,
-    traceId: randomUUID4(),
-    spanId: randomUUID4()
+    traceId: randomUUID5(),
+    spanId: randomUUID5()
   };
 }
 function toMcpMeta(context) {
@@ -77992,6 +78095,7 @@ class SpecialistsServer {
   observability;
   mcpSessionId;
   activationHost;
+  eventPusher;
   constructor() {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
@@ -78005,14 +78109,18 @@ class SpecialistsServer {
       ...this.observability ? { forensics: createActivationForensicSink(this.observability) } : {}
     });
     const getHost = () => this.activationHost;
+    this.eventPusher = new RuntimeEventPusher({
+      adapter: new PeerAdapter({ repoRoot: process.cwd() })
+    });
+    const getPusher = () => this.eventPusher;
     this.tools = [
       createUseSpecialistTool(runner),
-      createSpecialistStatusTool(loader, circuitBreaker, getHost),
-      createSpecialistDispatchTool(getHost),
+      createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher),
+      createSpecialistDispatchTool(getHost, getPusher),
       createSpecialistReplyTool(getHost),
       createSpecialistStopActivationTool(getHost)
     ];
-    this.mcpSessionId = randomUUID4();
+    this.mcpSessionId = randomUUID5();
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
     this.setupHandlers();
   }
