@@ -174,17 +174,14 @@ describe('specialist_dispatch — the MCP dispatch path is the same admission pa
     // The gate refuses BEFORE a session exists. This is the property, not the message.
     expect(String(out.reason)).toContain('AgentSession:\n  not created');
 
-    // The draft-specific explanation survives in `detail` but NOT in the rendered block.
-    // `native-host.ts` passes `{ detail: readiness.reason }` into a detail object whose
-    // only free-text field is `note`, so the renderer drops it; `reject`'s parameter is
-    // Record<string, unknown>, which is why the compiler does not object. The rendered
-    // refusal therefore reads "bead_contract_incomplete" with no missing sections — for a
-    // bead whose sections are all present — which is the least actionable form the gate
-    // could take. Asserted as it BEHAVES, not as it should behave. Fix proposed to the
-    // native-host.ts owner (one-word change, `detail:` -> `note:`, five call sites);
-    // when it lands, the `note` expectation below replaces the negative one.
-    expect((out.detail as Record<string, unknown>).detail).toContain('draft');
-    expect(String(out.reason)).not.toContain('draft');
+    // The draft-specific explanation reaches the operator. This assertion was written
+    // inverted — pinning the defect where `native-host.ts` passed `{ detail: ... }` into a
+    // detail object whose only free-text field is `note`, so the renderer silently dropped
+    // it and the refusal read "bead_contract_incomplete" with nothing else, for a bead
+    // whose sections are all present. Fixed at four call sites under unitAI-rrdnt.40, so
+    // the negative expectation is now the positive one it was always meant to become.
+    expect((out.detail as Record<string, unknown>).note).toContain('draft');
+    expect(String(out.reason)).toContain('draft');
     expect(sessionsCreated.count).toBe(0);
     expect(events).toContain('activation_rejected');
     expect(events).not.toContain('activation_admitted');
