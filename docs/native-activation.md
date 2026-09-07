@@ -28,7 +28,7 @@ domain:
 | [Results are not messages](#results-are-not-messages) | The distinction the runtime exists to preserve |
 | [Asking without restarting](#asking-without-restarting) | Clarification versus restart |
 | [Forensics](#forensics) | One store, one query, and the vocabulary gap |
-| [Running one](#running-one--the-mcp-surface) | The four MCP tools, merged and callable |
+| [Running one](#running-one--two-frontends-one-vocabulary) | The four tools, over MCP and over Pi |
 | [Known holes](#known-holes) | Every unclosed gap, with its bead |
 
 # Native Activation Runtime
@@ -57,8 +57,9 @@ SPECIALISTS_LIVE_SMOKE_MODEL_ALT=<a different provider/model> \
 It skips cleanly rather than failing when the environment variables or provider credentials
 are absent.
 
-A second frontend — a Pi extension over the same host — is in progress as
-`unitAI-rrdnt.37` and is not merged. It is not documented here.
+There are two frontends: the Claude Code MCP server and a Pi extension
+(`config/pi-extensions/specialist-subagents`, `unitAI-rrdnt.37`, merged as `08d37047`).
+Both call the same host and share one tool vocabulary.
 
 Nothing below describes a planned behaviour. Where a behaviour is specified but not yet in
 force, the text says so and names the bead that closes it.
@@ -508,10 +509,18 @@ exists. It was removed by `0b76f3f6` — "fix(console): remove fabricated lease 
 `worktree_owner_job_id` itself remains chain-provenance metadata for `--job` reuse and is
 still not an exclusion primitive. Do not build on it.
 
-## Running one — the MCP surface
+## Running one — two frontends, one vocabulary
 
-`unitAI-rrdnt.33` is merged; these tools are registered in `src/server.ts` and callable.
-Field names and shapes below were read from `src/tools/specialist/activation.tool.ts`.
+Both frontends are merged: the MCP tools are registered in `src/server.ts`
+(`unitAI-rrdnt.33`), and the Pi extension registers the same four names in
+`config/pi-extensions/specialist-subagents/index.mjs` (`unitAI-rrdnt.37`). Field names and
+shapes below were read from `src/tools/specialist/activation.tool.ts` and that file, and
+apply to both unless the [Pi delta](#the-pi-delta-and-why-it-is-the-risky-part) says
+otherwise.
+
+The one-vocabulary claim is checkable rather than aspirational: the Pi extension **imports**
+`toActivationView` and `toPendingAskView` from the MCP frontend's module rather than
+reimplementing them. A shared projection cannot drift.
 
 Four tools, three new and one extended. They call `NativeActivationHost` in-process and
 construct no child process — a subprocess running `sp` would satisfy the letter of
@@ -632,8 +641,32 @@ write-capable Specialist now acquires the lease, and a contended or uncertain wo
 comes back as a `status: "rejected"` result naming the holder, exactly like any other
 refusal.
 
-What this path still cannot do is call the per-call mutation guard — MCP has no agent-loop
-hook. See [Known holes](#known-holes).
+Neither frontend calls the per-call mutation guard, and neither should — that belongs in the
+host (`unitAI-rrdnt.36.2`). See [Known holes](#known-holes).
+
+### The Pi delta, and why it is the risky part
+
+One projection is Pi-specific, and it is the answer to acceptance AU for a Pi coordinator: a
+**settled** activation carries a `result` object, projected by `toResultView`, alongside the
+shared view in `specialist_status`. It carries `status`, `output`, the `validation` record,
+`configured_model`, `resolved_model`, `model_override`, `fallback_used` and `completed_at`.
+The MCP surface does not project it.
+
+So the AU rule across both frontends is: **no tool returns a result in place of a message**.
+Dispatch returns identity and admission on both. Where a validated `ActivationResult` is
+available at all, it is *read* — a distinct object with its own `validation` record — never
+substituted for an interaction message. The deadlock argument still holds, because nothing
+blocks waiting for it.
+
+The delta is also exactly where drift reappears, and there is already a live example.
+`toResultView` does not carry `requested_model`, while the shared `toActivationView` does
+(`activation.tool.ts:70`), and `ActivationResult.requestedModel` exists on the type
+(`types.ts:162`). For a settled activation the two frontends therefore answer "what was this
+asked to run on?" differently. Verified at `becda97d`; found by the Phase 11 lane and not yet
+fixed, with no bead of its own that I could find.
+
+That is a better argument for the one-vocabulary rule than any assertion of it: shared
+projections stop drift where they are used, and the delta is where it comes back.
 
 ## See also
 
