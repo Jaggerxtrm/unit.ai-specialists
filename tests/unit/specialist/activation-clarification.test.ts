@@ -17,7 +17,18 @@ import type { PiSdk } from '../../../src/activation/pi-sdk.js';
  * tool the way it wished the SDK did, so it passed against a tool no live model could use.
  * Every call below therefore goes through `call()`, which supplies the id.
  */
-interface Tool { name: string; description: string; execute: (toolCallId: string, args: never) => Promise<string> }
+interface AgentToolResult { content: Array<{ type: 'text'; text: string }>; details: Record<string, unknown> }
+interface Tool { name: string; description: string; execute: (toolCallId: string, args: never) => Promise<AgentToolResult> }
+
+/**
+ * The text the CHILD actually sees.
+ *
+ * A custom tool returns `AgentToolResult`, and pi normalises `result.content ?? []`. A bare
+ * string therefore yields empty content and the child sees "(no tool output)" — which is
+ * what happened live for the whole life of Phase 6. Asserting on the return value directly
+ * would have been green against that, so every assertion below goes through this.
+ */
+const seen = (r: AgentToolResult) => r.content.map(c => c.text).join('');
 
 let callSeq = 0;
 const call = (tool: Tool, args: unknown) => tool.execute(`call_${++callSeq}`, args as never);
@@ -81,7 +92,7 @@ describe('ask/escalate tools', () => {
     });
 
     // The answer is the TOOL RESULT — this is what keeps the same session running.
-    await expect(inFlight).resolves.toBe('the repo user layer wins');
+    expect(seen(await inFlight)).toBe('the repo user layer wins');
     expect(answered).toEqual(['question']);
   });
 
@@ -105,7 +116,7 @@ describe('ask/escalate tools', () => {
       inReplyTo: pending.message.messageId,
     });
 
-    await expect(inFlight).resolves.toBe('permission granted, proceed');
+    expect(seen(await inFlight)).toBe('permission granted, proceed');
     expect(transport.impliedState('act:abc')).toBeUndefined();
   });
 
@@ -134,8 +145,8 @@ describe('ask/escalate tools', () => {
     await reply(pending[1].message.messageId, 'answer two');
     await reply(pending[0].message.messageId, 'answer one');
 
-    await expect(first).resolves.toBe('answer one');
-    await expect(second).resolves.toBe('answer two');
+    expect(seen(await first)).toBe('answer one');
+    expect(seen(await second)).toBe('answer two');
   });
 
   it('reads the attempt id at call time so a resumed activation attributes correctly', async () => {
@@ -151,7 +162,7 @@ describe('ask/escalate tools', () => {
 
   it('refuses an empty question rather than asking one nobody can answer', async () => {
     const { transport, ask, asked } = harness();
-    await expect(call(ask, { question: '   '  })).resolves.toContain('Refused');
+    expect(seen(await call(ask, { question: '   ' }))).toContain('Refused');
     expect(asked).toEqual([]);
     expect(transport.pendingAsks()).toHaveLength(0);
   });

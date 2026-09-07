@@ -20642,10 +20642,14 @@ function admitToolCall(input, probe = procLeaseProbe()) {
 // src/activation/ask-tool.ts
 var ASK_TOOL = "ask_coordinator";
 var ESCALATE_TOOL = "escalate_to_coordinator";
+var toolText = (text) => ({
+  content: [{ type: "text", text }],
+  details: {}
+});
 function createAskTools(sdk, ctx) {
   const ask = async (kind, body) => {
     if (!body?.trim()) {
-      return "Refused: an empty question cannot be answered. State the question.";
+      return toolText("Refused: an empty question cannot be answered. State the question.");
     }
     ctx.onAsk?.(kind, body);
     const reply = await ctx.transport.request({
@@ -20657,7 +20661,7 @@ function createAskTools(sdk, ctx) {
       body
     });
     ctx.onAnswered?.(kind);
-    return reply.body;
+    return toolText(reply.body);
   };
   return [
     sdk.defineTool({
