@@ -2,9 +2,9 @@
 title: Native Activation Runtime
 scope: native-activation
 category: guide
-version: 0.3.0
+version: 0.3.1
 updated: 2026-09-07
-synced_at: ee7f847c
+synced_at: e78d120d
 description: What the native Specialist activation runtime does today, what it refuses, and which of its guarantees are not yet in force.
 source_of_truth_for:
   - "src/activation/native-host.ts"
@@ -180,8 +180,9 @@ keying it by branch would miss two activations on one branch in one worktree.
 > emit forensics. The **per-call mutation guard is not reachable**:
 > `NativeActivationHost.admitToolCall` is a public method with no caller anywhere in `src/`
 > or `tests/`, and the host registers no blocking `tool_call` handler — `session.subscribe`
-> is observation only. The frontend that would call it is the Pi extension
-> (`unitAI-rrdnt.37`, unmerged); the MCP frontend has no agent-loop hook and cannot.
+> is observation only. No frontend should be the one to call it either — an enforcement
+> point invoked by a frontend is optional enforcement, because the next frontend forgets and
+> nothing goes red. Tracked as `unitAI-rrdnt.36.2`.
 >
 > What that means concretely: two activations cannot both hold one worktree, because
 > admission refuses the second. What is *not* enforced is the per-call block — a writer
@@ -315,9 +316,9 @@ treated as mutating. A denylist would silently admit every tool added after it w
 **Nothing calls this yet.** `NativeActivationHost.admitToolCall(activationId, toolName)`
 exists, emits `tool_blocked` on a refusal, and fails closed on an unknown activation — and
 `grep -rn admitToolCall src/ tests/` finds no caller of it outside the module and its own
-unit tests. A Pi extension can call it from a `tool_call` handler; that extension is
-`unitAI-rrdnt.37` and is unmerged. The three outcomes below therefore describe the verdict
-the function returns, not a block any Specialist has experienced.
+unit tests. The three outcomes below therefore describe the verdict the function returns, not a block
+any Specialist has experienced. Tracked as `unitAI-rrdnt.36.2`, which requires the host to
+invoke it rather than a frontend.
 
 Three admission outcomes are worth stating plainly, because each is deliberate rather than
 incidental:
@@ -351,18 +352,32 @@ rather than failing or silently proceeding.
 
 ## Asking without restarting
 
-> **These tools reached no Specialist until `866d4a35`.** `createAgentSession`'s `tools`
-> array is a hard filter on pi 0.85.1 and it applies to `customTools` too: a session given
+> **Two defects, one file, both invisible to the same class of test. The end-to-end path is
+> still unproven.**
+>
+> First, the tools reached no Specialist at all. `createAgentSession`'s `tools` array is a
+> hard filter on pi 0.85.1 and it applies to `customTools` too: a session given
 > `customTools: [ask_coordinator]` and `tools: ['read']` reports `getAllTools() === ['read']`
-> — the custom tool is dropped silently, with no error and no diagnostic. So
-> `ask_coordinator` and `escalate_to_coordinator` were never delivered to a single
-> Specialist, and PRD Phase 6 was unreachable from the day it was written. `ask-tool.ts` and
-> `interaction.ts` were complete and unit-tested against doubles the whole time; the tools
-> simply never arrived. Fixed by naming both tools in the allowlist (`unitAI-rrdnt.43.1`) —
-> not by omitting the filter, which would admit 50+ builtins including bash, edit and write,
-> and is fail-open. **Whether a live model then calls the tool is `unitAI-rrdnt.43` and is
-> still open.** Everything below describes the protocol as built; treat the end-to-end path
-> as unproven until .43 closes.
+> — the custom tool is dropped silently, with no error and no diagnostic. PRD Phase 6 was
+> unreachable from the day it was written. Fixed by naming both tools in the allowlist
+> (`unitAI-rrdnt.43.1`) — not by omitting the filter, which admits 50+ builtins including
+> bash, edit and write, and is fail-open.
+>
+> Second, fixing that only made the next defect reachable. pi calls a custom tool's
+> `execute` with five arguments and the parameters object is the **second**; `ask-tool.ts`
+> declared `(args)`, so `args` bound to the tool-call id string, `args.question` was
+> `undefined`, and the tool refused every call as empty. In a live probe the child's own
+> reasoning reads "The tool returned no output. That's odd." — it starts debugging the
+> harness instead of doing its task. Fixed in `75cdce74` (`unitAI-rrdnt.43.2`).
+>
+> Neither defect was catchable by the tests that existed, and that is the transferable
+> lesson: the unit test called `tool.execute({ question })` directly, asserting the contract
+> it wished the SDK had rather than the one the SDK has. Green tests, against a tool no live
+> model could use. `ask-tool.ts` and `interaction.ts` were complete and unit-tested against
+> doubles the whole time.
+>
+> **Whether a live model calls the tool is `unitAI-rrdnt.43` and is still open.** Everything
+> below describes the protocol as built. Treat the end-to-end path as unproven.
 
 A running Specialist reaches its coordinator through two tools it sees in its contract:
 `ask_coordinator` and `escalate_to_coordinator`. Both expect an answer and both leave the
@@ -437,25 +452,24 @@ The sink classifies three event names by severity that the host never emits:
 `output_validation_failed` and `retry_failed` as errors, `activation_uncertain` as a
 warning. They are forward declarations, not evidence that those events occur. All three are
 the negative half of a pair whose positive half *is* emitted, so a failure filter over them
-returns nothing whether or not failures happened. Tracked as `unitAI-rrdnt.38`, whose title
-still says six — `lease_denied`, `lease_uncertain` and `tool_blocked` gained producers when
-the lease was wired in `67be44b1`.
+returns nothing whether or not failures happened. Tracked as `unitAI-rrdnt.38`, narrowed from six:
+`lease_denied`, `lease_uncertain` and `tool_blocked` gained producers when the lease was
+wired in `67be44b1`.
 
 ## Known holes
 
-Every entry is unclosed as of `ee7f847c`. Where a bead exists it is named; where one does
+Every entry is unclosed as of `e78d120d`. Where a bead exists it is named; where one does
 not, that is stated rather than implied.
 
 | Hole | Consequence | Bead |
 |---|---|---|
-| The per-call mutation guard has no caller. `admitToolCall` is a public method; nothing in `src/` invokes it and the host registers no blocking `tool_call` handler. | Admission-time exclusion works; a writer whose lease turns uncertain mid-turn is not stopped. | `unitAI-rrdnt.37` (the Pi extension is the only frontend that can call it) |
+| The per-call mutation guard has no caller. `admitToolCall` is a public method; nothing in `src/` invokes it and the host registers no blocking `tool_call` handler. | Admission-time exclusion works. The block *during* a turn is absent: a writer whose lease turns uncertain mid-turn is not stopped, and a reader is constrained by its fail-closed tool allowlist rather than by the lease. | `unitAI-rrdnt.36.2` |
 | A live model has never been observed calling `ask_coordinator`. The tools reached no Specialist at all until `866d4a35`. | The clarification path is built and unit-tested but unproven end to end. | `unitAI-rrdnt.43` |
 | The 7-section contract gate applies only to native admission. `use_specialist` takes a `bead_id` with no readiness check, and a free-form `prompt` with no Bead at all. | A Bead refused by `specialist_dispatch` still runs through `use_specialist`. Pre-existing and by design; surprising if the gate is read as a property of Beads. | None; stated so the boundary is not mistaken |
 | Lease bypasses H3 (`pi.exec`) and H4 (direct `node:fs` / `child_process` in extension code) cannot be closed on Pi 0.85.1. `executeBash()` and `pi.exec()` fire the `tool_call` handler zero times. | A trusted extension can mutate a leased workspace unobserved. Not a delegated-agent threat. | No bead; requires a Pi interposition layer that does not exist |
-| `unitAI-rrdnt.36` is still open although the writer admission and lease wiring merged as `67be44b1`. | The board and the tree disagree about whether Phase 10 shipped. | `unitAI-rrdnt.36` |
 | Reconciling an uncertain workspace requires a named decider and durable basis; nothing resolves one automatically. | By design, not a gap — but an uncertain workspace stays unusable until a person decides. | `unitAI-rrdnt.31`, closed |
 | `attempt_id` and `pi_session_id` are not indexed columns. | Attempt-level lineage is present but not efficiently queryable. | Tracked separately per `src/activation/forensic-sink.ts` |
-| Three forensic event names are classified by the sink but never emitted. | Their absence is not a health signal. | `unitAI-rrdnt.38` |
+| Three forensic event names are classified by the sink with no producer: `output_validation_failed`, `retry_failed`, `activation_uncertain`. | Their absence is not a health signal; each is the negative half of a pair whose positive half is emitted. | `unitAI-rrdnt.38` |
 
 Four items previously listed here are **closed** and are recorded rather than deleted, so
 nobody reinstates them from an older document.
