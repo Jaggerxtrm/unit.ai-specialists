@@ -1,5 +1,5 @@
 // src/tools/specialist/specialist_status.tool.ts
-import { z } from 'zod';
+import * as z from 'zod';
 import type { SpecialistLoader } from '../../specialist/loader.js';
 import { checkStaleness } from '../../specialist/loader.js';
 import type { CircuitBreaker } from '../../utils/circuitBreaker.js';
@@ -8,13 +8,27 @@ import { isJobDead } from '../../specialist/supervisor.js';
 import { detectJobOutputMode } from '../../cli/status.js';
 import { projectOutstandingAsks, type PendingInteractionProjection } from '../../activation/transport/polling.js';
 import { leaseScopeFor, projectUncertainWorkspaces, type UncertainWorkspaceProjection } from '../../activation/workspace-reconcile.js';
+import type { NativeActivationHost } from '../../activation/native-host.js';
+import { toActivationView, toPendingAskView, type ActivationView, type PendingAskView } from './activation.tool.js';
 
 const BACKENDS = ['gemini', 'qwen', 'anthropic', 'openai'];
 
-export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBreaker: CircuitBreaker) {
+/**
+ * @param getHost Native runtime, when this process hosts one. Optional so the CLI and the
+ *   tests that build this tool without a Fleet keep working; PRD Phase 13 acceptance
+ *   requires only that an MCP-dispatched activation reads back here IDENTICALLY to a
+ *   CLI-dispatched one, which is why `activations` projects the host's own snapshots
+ *   rather than a shape invented for MCP. A coordinator must not have to know which
+ *   transport dispatched an activation in order to read it.
+ */
+export function createSpecialistStatusTool(
+  loader: SpecialistLoader,
+  circuitBreaker: CircuitBreaker,
+  getHost?: () => NativeActivationHost | undefined,
+) {
   return {
     name: 'specialist_status' as const,
-    description: 'System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from DB-backed runtime state; .specialists/jobs/ is legacy/operator-only.',
+    description: 'System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from DB-backed runtime state (.specialists/jobs/ is legacy/operator-only), and native in-process activations with any question they are waiting on — answer those with specialist_reply.',
     inputSchema: z.object({}),
     async execute(_: object) {
       const list = await loader.list();
@@ -70,8 +84,19 @@ export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBrea
         uncertain_workspaces = [];
       }
 
+      // The native Fleet. Separate from `background_jobs` because they are different
+      // things and merging them would hide it: a background job is a `sp run` child
+      // process with a pid, an activation is an in-process AgentSession with none. The
+      // projection is the host's own `ActivationSnapshot`, so this reads the same whether
+      // the activation was dispatched over MCP or by the Pi extension.
+      const host = getHost?.();
+      const activations: ActivationView[] = host ? host.list().map(toActivationView) : [];
+      const pending_asks: PendingAskView[] = host ? host.pendingAsks().map(toPendingAskView) : [];
+
       return {
         loaded_count: list.length,
+        activations,
+        pending_asks,
         pending_interactions,
         uncertain_workspaces,
         backends_health: Object.fromEntries(BACKENDS.map(b => [b, circuitBreaker.getState(b)])),

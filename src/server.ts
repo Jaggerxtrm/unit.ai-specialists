@@ -1,7 +1,16 @@
 /**
  * Specialists MCP Server
  *
- * Exposes only `use_specialist`. All specialist orchestration runs through the CLI.
+ * Two surfaces, deliberately not merged.
+ *
+ * `use_specialist` is the legacy path: it runs a Specialist through `SpecialistRunner`
+ * and returns its final output synchronously.
+ *
+ * The `specialist_*` activation tools are the native path (PRD Phase 13). They call
+ * `NativeActivationHost` in-process — no `sp` child process is spawned, which is the whole
+ * point of the phase and is asserted against the process table rather than against intent.
+ * They are what makes a Specialist obtainable from Claude Code without a terminal or an
+ * `xt` session (acceptance AV and AW).
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -19,6 +28,17 @@ import { HookEmitter } from './specialist/hooks.js';
 import { CircuitBreaker } from './utils/circuitBreaker.js';
 import { BeadsClient } from './specialist/beads.js';
 import { createUseSpecialistTool, useSpecialistSchema } from './tools/specialist/use_specialist.tool.js';
+import { createSpecialistStatusTool } from './tools/specialist/specialist_status.tool.js';
+import {
+  createSpecialistDispatchTool,
+  createSpecialistReplyTool,
+  createSpecialistStopActivationTool,
+  specialistDispatchSchema,
+  specialistReplySchema,
+  specialistStopSchema,
+} from './tools/specialist/activation.tool.js';
+import { NativeActivationHost } from './activation/native-host.js';
+import { createActivationForensicSink } from './activation/forensic-sink.js';
 import { logger } from './utils/logger.js';
 
 type AnyTool = {
@@ -102,6 +122,16 @@ export class SpecialistsServer {
   private observability: ObservabilitySqliteClient | null;
   private mcpSessionId: string;
 
+  /**
+   * The native runtime, one instance for the life of the server process.
+   *
+   * This must NOT be per-call or per-turn. The FleetRegistry inside it is the seam that
+   * survives a turn boundary: a Specialist that reaches `settled` is waiting and
+   * resumable, and a host rebuilt per call would lose every live AgentSession and answer
+   * `specialist_status` with an empty Fleet while children were still running.
+   */
+  private activationHost: NativeActivationHost;
+
   constructor() {
     const circuitBreaker = new CircuitBreaker();
     const loader = new SpecialistLoader();
@@ -109,8 +139,24 @@ export class SpecialistsServer {
     const beadsClient = new BeadsClient();
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
 
-    this.tools = [createUseSpecialistTool(runner)];
     this.observability = createObservabilitySqliteClient();
+
+    // Native activations write the SAME observability.db as the legacy runner — there is
+    // no separate native telemetry store, which is what makes Phase 7 parity meaningful.
+    this.activationHost = new NativeActivationHost({
+      loader,
+      beadsClient,
+      ...(this.observability ? { forensics: createActivationForensicSink(this.observability) } : {}),
+    });
+    const getHost = () => this.activationHost;
+
+    this.tools = [
+      createUseSpecialistTool(runner),
+      createSpecialistStatusTool(loader, circuitBreaker, getHost),
+      createSpecialistDispatchTool(getHost),
+      createSpecialistReplyTool(getHost),
+      createSpecialistStopActivationTool(getHost),
+    ];
     this.mcpSessionId = randomUUID();
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
     this.setupHandlers();
@@ -119,7 +165,13 @@ export class SpecialistsServer {
   private toolSchemas: Record<string, z.ZodTypeAny> = {};
 
   private setupHandlers(): void {
-    const schemaMap: Record<string, z.ZodTypeAny> = { use_specialist: useSpecialistSchema };
+    const schemaMap: Record<string, z.ZodTypeAny> = {
+      use_specialist: useSpecialistSchema,
+      specialist_dispatch: specialistDispatchSchema,
+      specialist_reply: specialistReplySchema,
+      specialist_stop_activation: specialistStopSchema,
+      // specialist_status takes no arguments; the empty-object default applies.
+    };
     this.toolSchemas = schemaMap;
 
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
