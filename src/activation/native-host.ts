@@ -28,6 +28,7 @@ import { evaluateBeadReadiness, type BeadGateOptions } from './bead-gate.js';
 import { compileStepContract, type StepContract } from './step-contract.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
+import { FleetRegistry, RESUMABLE_STATES, nextAttemptId } from './registry.js';
 import {
   DispatchRejectedError,
   type ActivationHandle,
@@ -77,11 +78,15 @@ export interface NativeActivationHostDeps {
   now?: () => number;
 }
 
-interface ActivationRecord {
+/**
+ * A live activation view attached to a running or resumable session.
+ *
+ * `detach` only removes this listener; it is symmetric with `attach`/`return` and never
+ * touches the session's turn, its state, or any other attachment on the same activation.
+ */
+export interface ActivationAttachment {
   snapshot: ActivationSnapshot;
-  session: PiAgentSessionLike;
-  unsubscribe: () => void;
-  result: Promise<ActivationResult>;
+  detach: () => void;
 }
 
 export class NativeActivationHost {
@@ -93,7 +98,7 @@ export class NativeActivationHost {
   private readonly cwd: string;
   private readonly now: () => number;
 
-  private readonly activations = new Map<string, ActivationRecord>();
+  private readonly registry = new FleetRegistry();
 
   constructor(deps: NativeActivationHostDeps = {}) {
     this.cwd = deps.cwd ?? process.cwd();
@@ -302,7 +307,7 @@ export class NativeActivationHost {
 
     const result = this.runToSettled(snapshot, session, rendered.initial_prompt, emit);
 
-    this.activations.set(activationId, { snapshot, session, unsubscribe, result });
+    this.registry.register({ snapshot, session, unsubscribe, result, stepContract });
 
     return {
       activationId, participantId, attemptId,
@@ -446,11 +451,12 @@ export class NativeActivationHost {
 
   /** Current state of one activation, or undefined if unknown to this host. */
   inspect(activationId: string): ActivationSnapshot | undefined {
-    return this.activations.get(activationId)?.snapshot;
+    return this.registry.projection(activationId);
   }
 
+  /** The Fleet projection: every activation this process knows about, transport-neutral. */
   list(): ActivationSnapshot[] {
-    return [...this.activations.values()].map(r => r.snapshot);
+    return this.registry.list();
   }
 
   /**
@@ -459,7 +465,7 @@ export class NativeActivationHost {
    * This is the only ordinary path to disposal — settling is not one.
    */
   async stop(activationId: string, reason = 'operator request'): Promise<void> {
-    const record = this.activations.get(activationId);
+    const record = this.registry.get(activationId);
     if (!record) return;
 
     record.snapshot.state = 'stopping';
@@ -478,8 +484,75 @@ export class NativeActivationHost {
         name: 'activation_disposed',
         payload: { reason },
       });
-      this.activations.delete(activationId);
+      this.registry.remove(activationId);
     }
+  }
+
+  /**
+   * Attach a listener to a live activation's event stream without perturbing its turn.
+   *
+   * Subscribing is additive — `PiAgentSessionLike.subscribe` fans out to every listener —
+   * so an attached observer (a Fleet view, a follow MCP call) never displaces the host's
+   * own lifecycle subscription or any other attachment on the same activation.
+   */
+  attach(
+    activationId: string,
+    listener: (event: PiAgentSessionEvent) => void,
+  ): ActivationAttachment | undefined {
+    const record = this.registry.get(activationId);
+    if (!record) return undefined;
+    return { snapshot: record.snapshot, detach: record.session.subscribe(listener) };
+  }
+
+  /** Release an attachment. Symmetric with `attach`; the activation itself is unaffected. */
+  return(attachment: ActivationAttachment): void {
+    attachment.detach();
+  }
+
+  /**
+   * Resume a settled or waiting activation with a new prompt.
+   *
+   * Keeps `activationId` and advances `attemptId` — a resume is never a second activation.
+   * The host's own lifecycle listener is re-subscribed so forensics for the new attempt
+   * carry the new `attemptId` rather than the one closed over at `start()`.
+   */
+  async resume(activationId: string, prompt: string): Promise<ActivationHandle> {
+    const record = this.registry.get(activationId);
+    if (!record) {
+      throw new DispatchRejectedError('unknown_activation', { activationId });
+    }
+    if (!RESUMABLE_STATES.has(record.snapshot.state)) {
+      throw new DispatchRejectedError('not_resumable', {
+        activationId,
+        note: `state is "${record.snapshot.state}"`,
+      });
+    }
+
+    const attemptId = nextAttemptId(record.snapshot.attemptId);
+    record.snapshot.attemptId = attemptId;
+    record.snapshot.state = 'starting';
+
+    const emit = (name: string, payload?: Record<string, unknown>) =>
+      this.forensics.emit({
+        activationId, attemptId, participantId: record.snapshot.participantId,
+        specialist: record.snapshot.specialist, beadId: record.snapshot.beadId, name, payload,
+      });
+    emit('activation_resumed');
+
+    record.unsubscribe();
+    record.unsubscribe = record.session.subscribe((event) => this.onSessionEvent(record.snapshot, event, emit));
+
+    const result = this.runToSettled(record.snapshot, record.session, prompt, emit);
+    record.result = result;
+
+    return {
+      activationId, participantId: record.snapshot.participantId, attemptId,
+      specialist: record.snapshot.specialist, beadId: record.snapshot.beadId,
+      access: record.snapshot.access, workspace: record.snapshot.workspace,
+      resolvedModel: record.snapshot.resolvedModel,
+      stepContract: record.stepContract,
+      result,
+    };
   }
 }
 
