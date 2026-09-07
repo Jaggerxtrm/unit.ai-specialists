@@ -485,7 +485,7 @@ describe('live smoke: native Specialist activation', () => {
       // and .43.2), and both were diagnosed by enumerating the session's own tool set
       // rather than by reading the code, so the enumeration belongs in the assertion.
       if (outstanding.length === 0) {
-        const live = host.snapshot(handle.activationId);
+        const live = host.inspect(handle.activationId);
         const session = (host as unknown as {
           registry: { get: (id: string) => { session: { getAllTools?: () => Promise<Array<{ name: string }>> } } | undefined };
         }).registry.get(handle.activationId)?.session;
@@ -510,7 +510,7 @@ describe('live smoke: native Specialist activation', () => {
       // No receipt exists on any transport here, so `pending` is the honest state.
       expect(ask.delivery).toBe('pending');
 
-      const sessionBeforeAnswer = host.snapshot(handle.activationId)?.piSessionId;
+      const sessionBeforeAnswer = host.inspect(handle.activationId)?.piSessionId;
       expect(sessionBeforeAnswer).toBeTruthy();
 
       const replied = await host.answer(ask.message.messageId, 'chartreuse');
@@ -523,7 +523,7 @@ describe('live smoke: native Specialist activation', () => {
       expect(String(result.output).toLowerCase()).toContain('chartreuse');
 
       // THE assertion: same session across the ask. A restart would allocate a new id.
-      expect(host.snapshot(handle.activationId)?.piSessionId).toBe(sessionBeforeAnswer);
+      expect(host.inspect(handle.activationId)?.piSessionId).toBe(sessionBeforeAnswer);
       expect(host.pendingAsks()).toHaveLength(0);
 
       await host.stop(handle.activationId, 'live AX smoke complete');
@@ -561,7 +561,7 @@ describe('live smoke: native Specialist activation', () => {
       expect(handle.resolvedModel).toContain(altModel.split('/').pop());
       expect(handle.resolvedModel).not.toContain(baseModel.split('/').pop());
 
-      const admitted = host.snapshot(handle.activationId);
+      const admitted = host.inspect(handle.activationId);
       expect(admitted?.modelOverride).toBe(true);
       expect(admitted?.requestedModel).toBe(altModel);
       // The configured model is retained alongside, which is what makes "ran on something
@@ -636,7 +636,7 @@ describe('live smoke: native Specialist activation', () => {
       expect(handle.resolvedModel).toContain(baseModel.split('/').pop());
       expect(handle.resolvedModel).not.toContain(altModel.split('/').pop());
 
-      const snapshot = host.snapshot(handle.activationId);
+      const snapshot = host.inspect(handle.activationId);
       expect(snapshot?.modelOverride).toBe(false);
       // VALIDATION 1's "including when they are equal" case: requested is still recorded.
       expect(snapshot?.requestedModel).toContain(baseModel.split('/').pop());

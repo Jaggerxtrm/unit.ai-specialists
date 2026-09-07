@@ -157,6 +157,46 @@ describe.skipIf(!runLive)('MCP activation surface — live', () => {
     expect(legacyCliProcesses(descendants(serverPid))).toEqual([]);
   }, 60_000);
 
+  it('acceptance AZ — Claude sets the model override through the same runtime, and the runtime reports it back', async () => {
+    // Every dispatch in this file already passes `model_override`, because `explorer` has
+    // `execution.model: null`. That EXERCISES the override; it asserts nothing about it.
+    // Acceptance AZ is the second claim — that the runtime honoured what Claude asked for
+    // and can say so — and it is the one no test made until bead unitAI-rrdnt.35.
+    const dispatched = textOf(await client.callTool({
+      name: 'specialist_dispatch',
+      arguments: { specialist: SPECIALIST, bead_id: readyBead, model_override: probeModel },
+    }));
+    expect(dispatched.status, JSON.stringify(dispatched)).toBe('dispatched');
+
+    const status = textOf(await client.callTool({ name: 'specialist_status', arguments: {} }));
+    const found = (status.activations as Array<Record<string, unknown>>)
+      .find(a => a.activation_id === dispatched.activation_id);
+    expect(found, `activation absent from specialist_status: ${JSON.stringify(status.activations)}`).toBeDefined();
+
+    expect(found?.model_override).toBe(true);
+    expect(found?.requested_model).toBe(probeModel);
+    expect(String(found?.resolved_model)).toContain(probeModel.split('/').pop());
+
+    // State, not presence. An override reported on an activation that died at admission
+    // proves nothing — a pi_session_id exists only once a real AgentSession was created,
+    // and `failed` here is a failed probe, not a pass.
+    expect(
+      found?.pi_session_id,
+      `no Pi session: the override was recorded but nothing ran. ${JSON.stringify(found)}`,
+    ).toBeTruthy();
+    expect(
+      found?.state,
+      `activation failed during the AZ probe: ${JSON.stringify(found)}`,
+    ).not.toBe('failed');
+    console.log('[live] AZ observed activation:', JSON.stringify(found));
+
+    const stopped = textOf(await client.callTool({
+      name: 'specialist_stop_activation',
+      arguments: { activation_id: String(dispatched.activation_id), reason: 'AZ probe complete' },
+    }));
+    expect(stopped.status).toBe('stopped');
+  }, 120_000);
+
   it('VALIDATION 1 and 4 — dispatches a real Specialist with no sp process, and status reflects it', async () => {
     // Sample the process table continuously across the dispatch, so the assertion covers
     // the window in which a child would exist rather than one instant after admission.

@@ -86,6 +86,7 @@ export function toResultView(result) {
     validation: result.validation,
     ...(result.piSessionId ? { pi_session_id: result.piSessionId } : {}),
     ...(result.configuredModel ? { configured_model: result.configuredModel } : {}),
+    ...(result.requestedModel ? { requested_model: result.requestedModel } : {}),
     resolved_model: result.resolvedModel,
     model_override: result.modelOverride,
     fallback_used: result.fallbackUsed,
