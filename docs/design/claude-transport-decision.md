@@ -64,10 +64,30 @@ verified by inspection:
   `procStart`, `sessionId`, `name`, `nameSource`, `kind`, `status`,
   `messagingSocketPath`, and `peerProtocol`.
 
-`pi-claude-link` already implements registration, colocated socket, route identity separate
-from display name, idle `sendUserMessage` versus busy `steer`, `agent_end` reply relay, and
-a receipt frame carrying `orig_msg_id`. The adapter reuses that shape; it does not invent a
-protocol.
+**`procStart` has TWO formats and an implementation must accept both.** Measured across all
+18 registrations on this host: **13** carry it as a **number** — raw field 22 of
+`/proc/<pid>/stat`, ticks since boot — and every one of those was written by Claude Code
+itself (2.1.257 / 2.1.263), verified by exact equality for pids 1100092, 2176609, 3574376
+and 404065. Only the **5** `pi-claude-link` entries use the `ps`-style string
+(`"Mon Sep  7 11:10:29 2026"`). An earlier version of this section documented only the
+string form, having generalised from a sample that excluded every registration Claude Code
+writes. An adapter following it literally rejected 13 of 18 live sessions as
+`missing_proc_start` — it would have refused to route to every native Claude coordinator,
+and the symptom would have read as "the peer channel does not work" rather than "the
+liveness check is wrong". Prefer the numeric form: it is an exact integer comparison with
+no tolerance, where the string form needs a ±2s window.
+
+`pi-claude-link` already implements registration, a colocated socket, route identity
+separate from display name, `agent_end` reply relay, and a receipt frame carrying
+`orig_msg_id`. The adapter reuses that shape; it does not invent a protocol.
+
+**`steer` is a receiver-side behaviour, not a sender's choice.** An earlier draft of this
+record listed "idle `sendUserMessage` versus busy `steer`" as something the adapter does.
+It is not. `pi-claude-link/index.ts:91` selects `deliverAs: "steer"` for its *own* agent
+when *it* is busy — the receiver injecting an inbound message into its current turn. Every
+outbound frame carries the default `priority: "next"`. A sender that tried to choose would
+have to branch on the registration's self-reported `status`, which §4 measures as
+unreliable, so the adapter must not branch on it.
 
 ## 4. What the roster actually guarantees — measured
 
@@ -108,6 +128,20 @@ must never lose a message (PRD §30). Therefore:
   `specialist_status`. The Specialist stays in `needs_reply`; it does not fail and does not
   silently proceed.
 - A receipt is required to mark a push delivered. Absence of an error is not a receipt.
+
+**Delivery and confirmation are separable, and measured to be.** A probe frame built by the
+adapter itself — not by the host's own messaging tool — was written directly to a
+coordinator's socket and **arrived** in that session. No `peer_message_status` receipt
+returned to the sender's colocated socket within 15s. So raw delivery works from an
+unregistered sender, while confirmation does not: receipts appear to be emitted only to
+senders holding a `~/.claude/sessions/<pid>.json` registration, which `pi-claude-link`
+writes via `registerPeer()` and the probe deliberately did not.
+
+The consequence is a decision, not an implementation detail: **acceptance AX requires the
+runtime to register itself as a peer**, and that writes to the user's environment. It is
+the operator's call and is deliberately left open here. Until it is made, the correct
+behaviour is the one the adapter already has — record `sent_unconfirmed`, claim nothing,
+and leave the question readable through the polling projection.
 
 ## 6. One protocol, two transports
 
