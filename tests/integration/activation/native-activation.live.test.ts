@@ -39,6 +39,7 @@ const baseModel = process.env.SPECIALISTS_LIVE_SMOKE_MODEL ?? '';
 const altModel = process.env.SPECIALISTS_LIVE_SMOKE_MODEL_ALT ?? '';
 
 const SPECIALIST = 'live-smoke-reader';
+const ASKING_SPECIALIST = 'live-smoke-asker';
 
 /**
  * The documented query for "what did this activation do?". One store, one table — a
@@ -88,6 +89,28 @@ function specialistSpec(model: string) {
       beads_write_notes: false,
     },
   };
+}
+
+
+/**
+ * A specialist whose contract makes asking the ONLY way to finish.
+ *
+ * The system prompt withholds a fact the task requires and names the tool that supplies
+ * it. A probe that merely *may* ask will usually guess instead, and the test would then
+ * pass or fail on model temperament rather than on the runtime.
+ */
+function askingSpecialistSpec(model: string) {
+  const spec = specialistSpec(model);
+  spec.specialist.metadata.name = ASKING_SPECIALIST;
+  spec.specialist.metadata.description = 'Live smoke asker for native activation. Not for dispatch.';
+  spec.specialist.prompt.system = [
+    'You are a smoke-test probe.',
+    'You must report the coordinator\'s chosen deployment colour.',
+    'You do NOT know it and you cannot derive it. Run no commands.',
+    'Call the ask_coordinator tool with the question, wait for the answer,',
+    'then reply with exactly the colour you were given and stop.',
+  ].join(' ');
+  return spec;
 }
 
 /** Every live `*.db` file under a directory. WAL/SHM sidecars are not `.db` and do not count. */
@@ -174,6 +197,10 @@ describe('live smoke: native Specialist activation', () => {
     await writeFile(
       join(tempRepo, 'config', 'specialists', `${SPECIALIST}.specialist.json`),
       JSON.stringify(specialistSpec(baseModel), null, 2),
+    );
+    await writeFile(
+      join(tempRepo, 'config', 'specialists', `${ASKING_SPECIALIST}.specialist.json`),
+      JSON.stringify(askingSpecialistSpec(baseModel), null, 2),
     );
 
     dbPath = join(tempRepo, '.specialists', 'db', 'observability.db');
@@ -315,4 +342,61 @@ describe('live smoke: native Specialist activation', () => {
     },
     180_000,
   );
+
+  it.skipIf(!runLive)(
+    'acceptance AX: a real Specialist asks, the coordinator answers, and the SAME session resumes',
+    async () => {
+      // The distinction this proves is the one that separates a clarification from a
+      // restart, and it is invisible to a naive "did it get the answer" check: a design
+      // that ended the turn and replayed the answer into a fresh session would also produce
+      // the right final string, having destroyed the child's context to do it. What makes
+      // the resume real is that the answer arrives as the RESULT OF A TOOL CALL the model
+      // is still sitting inside — so `pi_session_id` cannot change across the ask.
+      const handle = await host.start({
+        specialist: ASKING_SPECIALIST,
+        beadId,
+        requestedByParticipantId: 'coordinator:live-smoke',
+      });
+
+      // Wait for the child to reach the ask rather than for a fixed delay: a sleep long
+      // enough for a slow model is a sleep that hides a fast failure.
+      const deadline = Date.now() + 120_000;
+      let outstanding = host.pendingAsks();
+      while (outstanding.length === 0 && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        outstanding = host.pendingAsks();
+      }
+
+      expect(
+        outstanding,
+        'the child never asked — it guessed, or the ask tool was not in its contract',
+      ).toHaveLength(1);
+
+      const [ask] = outstanding;
+      expect(ask.message.kind).toBe('question');
+      expect(ask.message.activationId).toBe(handle.activationId);
+      // No receipt exists on any transport here, so `pending` is the honest state.
+      expect(ask.delivery).toBe('pending');
+
+      const sessionBeforeAnswer = host.snapshot(handle.activationId)?.piSessionId;
+      expect(sessionBeforeAnswer).toBeTruthy();
+
+      const replied = await host.answer(ask.message.messageId, 'chartreuse');
+      expect(replied?.inReplyTo).toBe(ask.message.messageId);
+
+      const result = await handle.result;
+
+      expect(result.status, `activation failed: ${result.validation.errors?.join('; ')}`).toBe('completed');
+      // The child used the answer it was given, so the reply reached it in-context.
+      expect(String(result.output).toLowerCase()).toContain('chartreuse');
+
+      // THE assertion: same session across the ask. A restart would allocate a new id.
+      expect(host.snapshot(handle.activationId)?.piSessionId).toBe(sessionBeforeAnswer);
+      expect(host.pendingAsks()).toHaveLength(0);
+
+      await host.stop(handle.activationId, 'live AX smoke complete');
+    },
+    240_000,
+  );
+
 });

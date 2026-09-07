@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { SpecialistLoader } from '../../specialist/loader.js';
 import type { CircuitBreaker } from '../../utils/circuitBreaker.js';
 import { type PendingInteractionProjection } from '../../activation/transport/polling.js';
+import { type UncertainWorkspaceProjection } from '../../activation/workspace-reconcile.js';
 export declare function createSpecialistStatusTool(loader: SpecialistLoader, circuitBreaker: CircuitBreaker): {
     name: "specialist_status";
     description: string;
@@ -9,6 +10,7 @@ export declare function createSpecialistStatusTool(loader: SpecialistLoader, cir
     execute(_: object): Promise<{
         loaded_count: number;
         pending_interactions: PendingInteractionProjection[];
+        uncertain_workspaces: UncertainWorkspaceProjection[];
         backends_health: {
             [k: string]: "CLOSED" | "HALF_OPEN" | "OPEN";
         };
