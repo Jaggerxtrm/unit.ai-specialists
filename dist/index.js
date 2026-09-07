@@ -77368,6 +77368,7 @@ class NativeActivationHost {
       tier,
       access,
       configured_model: configuredModel ?? null,
+      requested_model: requestedModel,
       resolved_model: resolvedModel,
       model_override: Boolean(request.modelOverride),
       workspace: workspace.worktreePath,
@@ -77434,6 +77435,7 @@ class NativeActivationHost {
       workspace,
       piSessionId: session.sessionId,
       configuredModel,
+      requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
       startedAt,
@@ -77707,7 +77709,11 @@ class NativeActivationHost {
       name,
       payload
     });
-    emit("activation_resumed");
+    emit("activation_resumed", {
+      requested_model: record3.snapshot.requestedModel,
+      resolved_model: record3.snapshot.resolvedModel,
+      model_override: record3.snapshot.modelOverride
+    });
     record3.unsubscribe();
     record3.unsubscribe = record3.session.subscribe((event) => this.onSessionEvent(record3.snapshot, event, emit));
     const result = this.runToSettled(record3.snapshot, record3.session, prompt, emit);
