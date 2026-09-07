@@ -592,6 +592,17 @@ worktree). It is also why the lease must be correct before Phase 10 enables writ
 
 ### 5.5 There is no workspace lease today, and one identifier pretends to be one
 
+> **Correction, measured 2026-09-07: the fabricated console indicator described below no
+> longer exists.** `grep -rn leaseCapacity src/` returns nothing and `grep -rni lease
+> src/cli/` matches only "release" and "legacy". It was removed by commit `0b76f3f6`,
+> "fix(console): remove fabricated lease indicators (unitAI-rrdnt.4)". The rest of this
+> section still holds: there is no workspace lease in force, and `worktree_owner_job_id`
+> remains chain-provenance metadata rather than an exclusion primitive. The paragraph
+> beginning "**The decoy:**" is retained as a record of what was measured before `0b76f3f6`,
+> not as a description of the current tree. Found while writing `docs/native-activation.md`
+> (`unitAI-rrdnt.32`), where the item was about to be carried forward as an open hole on the
+> strength of this section.
+
 Searching `flock|mutex|lock|lease|exclusive` across `src/` finds three real mechanisms,
 none of which is a workspace lease:
 - `withEpicAdvisoryLock` — `openSync(lockPath, 'wx')` at
