@@ -3,7 +3,8 @@ import { validateModelAvailable } from '../../../src/activation/model-gate.js';
 import type { PiSdk, PiModelRuntimeLike, PiModelScopeResult } from '../../../src/activation/pi-sdk.js';
 
 /**
- * These cases mirror behaviour reproduced against pi 0.84.3. The point of the gate is that
+ * These cases mirror behaviour reproduced against pi 0.84.3 and re-verified against 0.85.1
+ * (unitAI-rrdnt.17). The point of the gate is that
  * BOTH halves are load-bearing: each of the first two cases is accepted by one half alone.
  */
 
