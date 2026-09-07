@@ -204,6 +204,28 @@ the criterion and the receipt was only ever a proxy for it. The rule is bounded:
 - A reply upgrades `sent_unconfirmed` to `delivered`. It does not resurrect `refused`: a
   refusal is an explicit signal about this push, and an answer arriving by another route is
   not evidence about it.
+- **Only a push the wire actually accepted may be upgraded at all.** An `undeliverable`
+  push stays undeliverable even when a correlated reply arrives, because that reply means
+  the coordinator was reached by polling — it is evidence about the coordinator, never about
+  a frame that demonstrably never left the process. This boundary was found by a failing
+  test in the peeradapter lane after the first three had been accepted, and the earlier
+  three-boundary version of this rule would have shipped a `delivered` for a push that never
+  landed. Kind alone is not the predicate; prior state is half of it.
+
+### 5.2 Inbound is confirmed; the reply path is real
+
+A `SendMessage` from a live Claude coordinator was logged raw off a registered `0600`
+colocated socket, arriving as a `type: "user"` frame wrapping the standard
+`cross-session-message` envelope. Registration therefore delivers addressability, which is
+the reply path, and that is what it is retained for.
+
+The envelope carried a `hop-chain` attribute that `pi-claude-link`'s `buildEnvelope` does
+not emit and its `stripEnvelope` does not capture. Its semantics are not inferred here. It
+is recorded because it demonstrates the rule this document has now learned three times, at
+§4, at §5.1, and here: **`pi-claude-link` is evidence of what `pi-claude-link` sends, never
+a specification of what Claude Code sends.** Its `procStart` format, its receipt comment,
+and its attribute list were each read as a spec and each was incomplete or wrong. An inbound
+parser must be written against real frames read off a socket.
 
 **What registration is still worth.** It makes the runtime addressable, which is the inbound
 half and therefore the reply path itself. It is retained on that basis rather than the one it
