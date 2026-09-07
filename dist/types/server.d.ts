@@ -15,6 +15,15 @@ export declare class SpecialistsServer {
     private tools;
     private observability;
     private mcpSessionId;
+    /**
+     * The native runtime, one instance for the life of the server process.
+     *
+     * This must NOT be per-call or per-turn. The FleetRegistry inside it is the seam that
+     * survives a turn boundary: a Specialist that reaches `settled` is waiting and
+     * resumable, and a host rebuilt per call would lose every live AgentSession and answer
+     * `specialist_status` with an empty Fleet while children were still running.
+     */
+    private activationHost;
     constructor();
     private toolSchemas;
     private setupHandlers;
