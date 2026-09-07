@@ -103,6 +103,8 @@ jobs:
             config/pi-extensions/extension-tool-policy/index.mjs \
             config/pi-extensions/read-line-numbers/index.mjs \
             config/pi-extensions/read-line-numbers/package.json \
+            config/pi-extensions/specialist-subagents/index.mjs \
+            config/pi-extensions/specialist-subagents/package.json \
             scripts/generate-release-attestation.mjs \
             dist/asset-contract.json \
             LICENSE; then
