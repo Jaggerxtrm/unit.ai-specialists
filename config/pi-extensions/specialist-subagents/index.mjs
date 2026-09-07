@@ -540,9 +540,262 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     },
   });
 
+
+  // ── Operator surface (unitAI-rrdnt.46) ─────────────────────────────────────
+  //
+  // Everything above this line is a MODEL surface: it exists only when the
+  // coordinator decides to call a tool. An operator in an interactive TUI saw
+  // nothing at all — no Fleet, no pending ask, no way to answer one. The PRD
+  // says this extension owns a child viewport; it owned none.
+  //
+  // Measured against pi 0.85.1 before any of this was written (the SDK types at
+  // dist/core/extensions/types.d.ts and @aliou/pi-processes as the worked
+  // example), then proved in a live TUI: `pi.registerCommand` produces a real
+  // slash command with argument completion, and `ctx.ui.setWidget` paints a
+  // persistent panel above or below the editor. Neither needed a host change.
+  //
+  // The view is a PROJECTION and never a second source of state. Every repaint
+  // reads `host.list()` and `host.pendingAsks()` afresh; nothing is cached
+  // between ticks, because a cache would drift exactly when something
+  // interesting happens. `toActivationView`/`toPendingAskView` are the same
+  // projections the tools serialise, so the operator and the model are looking
+  // at one vocabulary rather than two.
+  //
+  // Refresh is a poll, deliberately. `NativeActivationHost` is pull-only
+  // (`list`, `pendingAsks`, `inspect`) and giving it an emitter whose only
+  // subscriber is a widget would couple the host to a UI consumer for no
+  // measured gain. A tick is a read of an in-memory Map. If the latency ever
+  // shows in use, that is the evidence that justifies an emitter.
+
+  // One capture of the live ExtensionContext, shared by every consumer in this
+  // file (unitAI-rrdnt.45 wake-ups, unitAI-rrdnt.46 Fleet UI). Two independent
+  // holders is how a stale ctx survives a session restart, so there is one.
+  let capture = null;          // { ctx, generation, sessionId }
+  let generation = 0;
+
+  pi.on('session_start', (_event, ctx) => {
+    capture = {
+      ctx,
+      generation: ++generation,
+      sessionId: ctx.sessionManager.getSessionId(),
+    };
+  });
+  pi.on('session_shutdown', () => { capture = null; });
+
+  /**
+   * The live context, or null. Null means "no UI right now", never an error:
+   * every consumer must degrade rather than throw, because a context can go
+   * stale mid-flight during a session switch or reload.
+   */
+  function liveContext({ requireUI = false } = {}) {
+    const held = capture;
+    if (!held || held.generation !== generation) return null;
+    try {
+      // A context that outlived its session reports a different id; one that is
+      // torn down throws on property access. Both mean "not live".
+      if (held.sessionId && held.ctx.sessionManager.getSessionId() !== held.sessionId) return null;
+      if (requireUI && !held.ctx.hasUI) return null;
+      return held.ctx;
+    } catch {
+      return null;
+    }
+  }
+
+  const FLEET_WIDGET_KEY = 'specialist-fleet';
+  const FLEET_POLL_MS = 1000;
+
+  /** Operator-facing toggle. The widget is shown by default; `/fleet hide` opts out. */
+  let fleetVisible = true;
+  let fleetTimer = null;
+
+  /** Snapshot state and pending asks together — every caller needs both. */
+  const readFleet = () => {
+    // `host` stays null until the first tool use, and a null host is an empty
+    // Fleet, not an error: creating one here would open the observability
+    // database for a session that has not dispatched anything.
+    if (!host) return { activations: [], asks: [] };
+    return {
+      activations: host.list().map(toActivationView),
+      asks: host.pendingAsks().map(toPendingAskView),
+    };
+  };
+
+  /** One line per activation, then one per outstanding ask. Nothing else fits. */
+  const renderFleetLines = ({ activations, asks }) => {
+    const lines = [`Specialists — ${activations.length} activation(s), ${asks.length} pending ask(s)`];
+    for (const view of activations) {
+      lines.push(
+        `  ${view.state.padEnd(9)} ${view.specialist} ${view.bead_id} ` +
+        `[${view.access}] ${view.activation_id}`,
+      );
+    }
+    for (const ask of asks) {
+      // The body is the operator's whole reason to look, but it must not push
+      // the editor off the screen; one truncated line keeps the panel bounded.
+      const body = ask.body.replace(/\s+/g, ' ').trim();
+      lines.push(
+        `  ASK ${ask.kind} ${ask.message_id} — ` +
+        `${body.length > 96 ? `${body.slice(0, 95)}…` : body}`,
+      );
+      lines.push(`      answer with: /fleet:reply ${ask.message_id} <your answer>`);
+    }
+    return lines;
+  };
+
+  const paintFleet = () => {
+    const ctx = liveContext({ requireUI: true });
+    if (!ctx) return;
+    const fleet = readFleet();
+    // An empty Fleet clears the panel rather than rendering a header for
+    // nothing — an operator with no activations should see their editor.
+    const content =
+      fleetVisible && (fleet.activations.length > 0 || fleet.asks.length > 0)
+        ? renderFleetLines(fleet)
+        : undefined;
+    ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'aboveEditor' });
+    ctx.ui.setStatus(
+      FLEET_WIDGET_KEY,
+      fleet.asks.length > 0
+        ? `specialists: ${fleet.activations.length} · ${fleet.asks.length} waiting`
+        : fleet.activations.length > 0
+          ? `specialists: ${fleet.activations.length}`
+          : undefined,
+    );
+  };
+
+  pi.on('session_start', (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    if (fleetTimer) clearInterval(fleetTimer);
+    // The tick is a null check until the first dispatch creates a host, so an
+    // operator who never dispatches pays nothing for the surface being present.
+    fleetTimer = setInterval(paintFleet, FLEET_POLL_MS);
+    // Do not hold the event loop open on the poll alone.
+    fleetTimer.unref?.();
+    paintFleet();
+  });
+
+  /** Report to the operator on whichever surface the current mode actually has. */
+  const report = (ctx, message, level = 'info') => {
+    if (ctx.hasUI) ctx.ui.notify(message, level);
+    else console.log(message);
+  };
+
+  pi.registerCommand('fleet', {
+    description: 'Show the Specialist Fleet and any pending asks. Usage: /fleet [show|hide]',
+    getArgumentCompletions: (prefix) => {
+      const normalized = prefix.trim().toLowerCase();
+      const items = ['show', 'hide']
+        .filter((value) => value.startsWith(normalized))
+        .map((value) => ({
+          value,
+          label: value,
+          description: value === 'show' ? 'Show the Fleet panel.' : 'Hide the Fleet panel.',
+        }));
+      return items.length > 0 ? items : null;
+    },
+    handler: async (args, ctx) => {
+      const action = args.trim().split(/\s+/, 1)[0] ?? '';
+      if (action === 'hide') fleetVisible = false;
+      else if (action === 'show') fleetVisible = true;
+      else if (action !== '') {
+        report(ctx, 'Usage: /fleet [show|hide]', 'warning');
+        return;
+      }
+      // The panel is only half the answer: in json/print mode there is no
+      // widget at all, so the command always reports the Fleet in text too.
+      report(ctx, renderFleetLines(readFleet()).join('\n'));
+      paintFleet();
+    },
+  });
+
+  pi.registerCommand('fleet:reply', {
+    description:
+      'Answer an outstanding Specialist question or escalation. ' +
+      'Usage: /fleet:reply <message_id> <answer>',
+    getArgumentCompletions: (prefix) => {
+      // Completing the message id is the whole point — an operator cannot be
+      // expected to retype one off the panel.
+      const normalized = prefix.trim();
+      if (normalized.includes(' ')) return null;
+      const items = readFleet().asks
+        .filter((ask) => ask.message_id.startsWith(normalized))
+        .map((ask) => ({
+          value: ask.message_id,
+          label: ask.message_id,
+          description: `${ask.kind} from ${ask.from}`,
+        }));
+      return items.length > 0 ? items : null;
+    },
+    handler: async (args, ctx) => {
+      const trimmed = args.trim();
+      const split = trimmed.indexOf(' ');
+      if (split === -1) {
+        report(ctx, 'Usage: /fleet:reply <message_id> <answer>', 'warning');
+        return;
+      }
+      const messageId = trimmed.slice(0, split);
+      const body = trimmed.slice(split + 1).trim();
+      if (!body) {
+        report(ctx, 'Usage: /fleet:reply <message_id> <answer>', 'warning');
+        return;
+      }
+      const message = await getHost().answer(messageId, body);
+      if (!message) {
+        report(
+          ctx,
+          `No outstanding ask with message_id '${messageId}' — it may have been ` +
+          'answered already, or its activation may have been disposed.',
+          'warning',
+        );
+        return;
+      }
+      report(ctx, `Answered ${message.messageId} on activation ${message.activationId}.`);
+      paintFleet();
+    },
+  });
+
+  pi.registerCommand('fleet:stop', {
+    description: 'Stop and dispose a native activation. Usage: /fleet:stop <activation_id> [reason]',
+    getArgumentCompletions: (prefix) => {
+      const normalized = prefix.trim();
+      if (normalized.includes(' ')) return null;
+      const items = readFleet().activations
+        .filter((view) => view.activation_id.startsWith(normalized))
+        .map((view) => ({
+          value: view.activation_id,
+          label: view.activation_id,
+          description: `${view.specialist} · ${view.state}`,
+        }));
+      return items.length > 0 ? items : null;
+    },
+    handler: async (args, ctx) => {
+      const trimmed = args.trim();
+      if (!trimmed) {
+        report(ctx, 'Usage: /fleet:stop <activation_id> [reason]', 'warning');
+        return;
+      }
+      const split = trimmed.indexOf(' ');
+      const activationId = split === -1 ? trimmed : trimmed.slice(0, split);
+      const reason = split === -1 ? '' : trimmed.slice(split + 1).trim();
+      if (!getHost().inspect(activationId)) {
+        report(ctx, `Unknown activation: ${activationId}`, 'warning');
+        return;
+      }
+      await disposeActivation(activationId, reason || 'pi operator request');
+      report(ctx, `Stopped ${activationId}.`);
+      paintFleet();
+
+    },
+  });
+
   // A child must never outlive the coordinator process. Best-effort: stop and
   // dispose every live activation when the pi session shuts down.
   pi.on('session_shutdown', async () => {
+    if (fleetTimer) {
+      clearInterval(fleetTimer);
+      fleetTimer = null;
+    }
+    if (!host) return;
     if (!host) return;
     for (const snapshot of host.list()) {
       try {
