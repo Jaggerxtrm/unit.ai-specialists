@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * The native path must never reach for a subprocess. `spawn` is replaced with a throwing
@@ -106,6 +109,29 @@ const BEAD = {
 };
 
 /** Keeps the gate off the real `bd` binary in unit tests. */
+/**
+ * A throwaway repository root per host.
+ *
+ * Since unitAI-rrdnt.36 a write-capable activation ACQUIRES a real lease under
+ * `<workspace>/.specialists/leases/`. A host built on `process.cwd()` writes that lease
+ * into THIS repository, and when the vitest worker exits its holder pid is gone and the
+ * lease is left uncertain — which by design cannot be stolen, so the next writer in any
+ * suite, or a real dispatch by a developer, is refused. It happened once and had to be
+ * reconciled by hand. Same class as the observability.db incident: a test operating on live
+ * developer state, invisible until something downstream refuses.
+ */
+const hostWorkspaces: string[] = [];
+function hostWorkspace(): string {
+  const root = mkdtempSync(join(tmpdir(), 'native-host-ws-'));
+  hostWorkspaces.push(root);
+  return root;
+}
+afterEach(() => {
+  while (hostWorkspaces.length > 0) {
+    rmSync(hostWorkspaces.pop() as string, { recursive: true, force: true });
+  }
+});
+
 const NO_CONTRACT_STATE = { readContractState: () => undefined };
 
 function loaderFor(spec: Record<string, unknown>) {
@@ -149,7 +175,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
       loadSdk: async () => makeSdk(record, session),
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -175,7 +201,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     await (await host.start({
@@ -203,7 +229,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -231,7 +257,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
       loadSdk: async () => makeSdk(record, session),
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     await (await host.start({
@@ -245,7 +271,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
     ]));
   });
 
-  it('refuses a write-capable Specialist while no workspace lease exists, and leaves forensic evidence', async () => {
+  it('admits a write-capable Specialist now that it takes the workspace lease', async () => {
     const record: { createArgs?: Record<string, unknown> } = {};
     const session = fakeSession({ record });
     const sink = collectingSink();
@@ -258,17 +284,39 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
       loadSdk: async () => makeSdk(record, session),
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
-    await expect(host.start({
+    // Before unitAI-rrdnt.36 this asserted a blanket refusal, because the lease existed and
+    // nothing acquired it. Writers are now admitted by TAKING the lease, so the refusal
+    // moved from "writers are not supported" to "this workspace is held by someone else" —
+    // a statement about contention rather than about a missing phase.
+    const handle = await host.start({
       specialist: 'executor', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
-    })).rejects.toBeInstanceOf(DispatchRejectedError);
+    });
 
-    // No session may exist for a refused dispatch.
-    expect(record.createArgs).toBeUndefined();
-    // A refused dispatch is still runtime evidence.
-    expect(sink.names).toContain('activation_rejected');
+    expect(handle.access).toBe('write');
+    expect(record.createArgs).toBeDefined();
+    expect(sink.names).toContain('lease_acquired');
+    expect(sink.names).not.toContain('activation_rejected');
+
+    // Contention is now the real refusal, and it names the holder rather than a phase.
+    const second = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(spec),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: sink,
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      cwd: handle.workspace.worktreePath,
+    });
+
+    const refusal = await second.start({
+      specialist: 'executor', beadId: 'ISSUE-2', requestedByParticipantId: 'coordinator',
+    }).catch((caught: unknown) => caught as DispatchRejectedError);
+
+    expect(refusal).toBeInstanceOf(DispatchRejectedError);
+    expect((refusal as DispatchRejectedError).reason).toBe('workspace_held_by_another_writer');
+    expect(sink.names).toContain('lease_denied');
   });
 
   it('rejects an unavailable model override before creating a session', async () => {
@@ -288,7 +336,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
       loadSdk: async () => sdk,
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     await expect(host.start({
@@ -366,7 +414,7 @@ describe('NativeActivationHost — defects found by the live smoke', () => {
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
       forensics: sink,
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -392,7 +440,7 @@ describe('NativeActivationHost — defects found by the live smoke', () => {
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
       forensics: sink,
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -420,7 +468,7 @@ describe('NativeActivationHost — defects found by the live smoke', () => {
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -451,7 +499,7 @@ describe('NativeActivationHost — defects found by the live smoke', () => {
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
       forensics: sink,
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -490,7 +538,7 @@ describe('NativeActivationHost — raw session event hook', () => {
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
       forensics: sink,
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -520,7 +568,7 @@ describe('NativeActivationHost — raw session event hook', () => {
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
       forensics: { emit: () => {}, sessionEvent: (i) => { seen.push(i as never); } },
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -548,7 +596,7 @@ describe('NativeActivationHost — raw session event hook', () => {
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
       forensics: collectingSink(),
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const handle = await host.start({
@@ -578,7 +626,7 @@ describe('dispatch refusals carry their explanation', () => {
       loader: loaderFor(spec),
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const error = await host.start({
@@ -604,7 +652,7 @@ describe('dispatch refusals carry their explanation', () => {
           diagnostics: [{ kind: 'no-match', requested: 'nowhere/nothing' }],
         }),
       }) as never,
-      cwd: process.cwd(),
+      cwd: hostWorkspace(),
     });
 
     const error = await host.start({
@@ -619,5 +667,115 @@ describe('dispatch refusals carry their explanation', () => {
     expect(message).toContain('reason:');
     // The refusal must say something beyond its reason code, or the gate is unhelpful.
     expect(message).toMatch(/note:/);
+  });
+});
+
+/**
+ * PRD §52, unitAI-rrdnt.7. The guard must be a per-CALL verdict, not a tool-set change:
+ * within a turn the agent loop runs against a snapshot taken at turn start, so revoking a
+ * tool cannot cancel a call that is already planned. Every handler in a batch fires before
+ * any execution, so a block is enforceable exactly where `setActiveToolsByName` is not.
+ */
+describe('per-call mutation admission', () => {
+  it('lets the lease holder mutate and refuses a reader the same call', async () => {
+    const writerSpec = readOnlySpec();
+    (writerSpec.specialist.execution as Record<string, unknown>).permission_required = 'HIGH';
+    const sink = collectingSink();
+
+    const writerHost = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(writerSpec),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: sink,
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      cwd: hostWorkspace(),
+    });
+
+    const writer = await writerHost.start({
+      specialist: 'executor', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+
+    // The holder may mutate; a non-mutating call is never gated at all.
+    expect(writerHost.admitToolCall(writer.activationId, 'write').allow).toBe(true);
+    expect(writerHost.admitToolCall(writer.activationId, 'read').allow).toBe(true);
+
+    // A READER in the same workspace holds no lease, because it is not entitled to one.
+    // Refusing it is the capability grant being enforced, not an error state.
+    const readerHost = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: sink,
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      cwd: writer.workspace.worktreePath,
+    });
+    const reader = await readerHost.start({
+      specialist: 'reader', beadId: 'ISSUE-2', requestedByParticipantId: 'coordinator',
+    });
+
+    const verdict = readerHost.admitToolCall(reader.activationId, 'write');
+    expect(verdict.allow).toBe(false);
+    expect(verdict.reason).toContain('write');
+    expect(sink.names).toContain('tool_blocked');
+
+    // Reading is untouched: readers coexist with a writer (acceptance T).
+    expect(readerHost.admitToolCall(reader.activationId, 'read').allow).toBe(true);
+  });
+
+  it('refuses an unknown activation rather than defaulting to allow', async () => {
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      cwd: hostWorkspace(),
+    });
+
+    // Fail closed. An activation this host does not know is not one it can vouch for.
+    expect(host.admitToolCall('act:does-not-exist', 'write').allow).toBe(false);
+  });
+});
+
+/**
+ * unitAI-rrdnt.43. `tools` is a hard filter on pi 0.85.1 and it applies to `customTools`
+ * too, so the ask tools have to be NAMED in the allowlist as well as supplied. Before the
+ * fix, `customTools: [ask_coordinator]` with `tools: ['read']` produced a session whose
+ * tool set was exactly `['read']` — silently, with no error and no diagnostic. No
+ * Specialist could ever reach its coordinator.
+ *
+ * This asserts on what is REQUESTED, which is the most a double can see; the SDK-side
+ * behaviour is proven by a live probe recorded on the bead. The complementary trap is
+ * worth stating: a test that only checked `customTools` was passed would have been green
+ * for the entire life of the defect, because that argument was always correct.
+ */
+describe('ask tools reach the child', () => {
+  it('names both ask tools in the allowlist without widening it', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, fakeSession({ record })),
+      cwd: hostWorkspace(),
+    });
+
+    await host.start({
+      specialist: 'reader', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+
+    const tools = (record.createArgs?.tools ?? []) as string[];
+    expect(tools).toContain('ask_coordinator');
+    expect(tools).toContain('escalate_to_coordinator');
+
+    // Asking is not a workspace operation. A read-only Specialist gains the ability to ask
+    // and gains no mutation capability — widening the allowlist to admit the ask tools must
+    // not smuggle an edit tool in with them.
+    for (const forbidden of ['bash', 'edit', 'write', 'powershell']) {
+      expect(tools).not.toContain(forbidden);
+    }
+
+    // And they are still supplied as custom tools: naming them is necessary, not sufficient.
+    const custom = (record.createArgs?.customTools ?? []) as Array<{ name: string }>;
+    expect(custom.map(t => t.name).sort()).toEqual(['ask_coordinator', 'escalate_to_coordinator']);
   });
 });

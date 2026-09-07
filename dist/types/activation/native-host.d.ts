@@ -171,6 +171,41 @@ export declare class NativeActivationHost {
      * latest ask" convenience, because with two asks outstanding that is a coin flip.
      */
     answer(messageId: string, body: string): Promise<InteractionMessage | undefined>;
+    /**
+     * Release a writer's lease, converting an uncertain release into evidence.
+     *
+     * `release` THROWS when the holder's liveness cannot be established, and that throw is
+     * the point: it refuses to guess whether the previous writer finished. Swallowing it
+     * would silently free a workspace that may still be under mutation, which is the exact
+     * inference the uncertain state exists to prevent. So the throw becomes a
+     * `lease_uncertain` event and the workspace stays uncertain until an operator reconciles
+     * it through `specialist_status` — the shape argued by the unitAI-rrdnt.31 lane.
+     *
+     * Teardown is never failed by this. A stop that could not release is still a stop.
+     */
+    private releaseIfWriter;
+    /**
+     * Decide whether one planned tool call may run — PRD §52, the per-call block.
+     *
+     * This must be a per-call verdict and NOT `setActiveToolsByName`. Within a turn the agent
+     * loop runs against a tool snapshot taken at turn start, so revoking a tool cannot cancel
+     * a call that is already planned; every handler in a batch fires before any execution, so
+     * a block is enforceable exactly where a tool-set change is not (unitAI-rrdnt.7).
+     *
+     * A read-only activation is refused every mutating call. That is not an error — it holds
+     * no lease because it is not entitled to one, and this is the only choke point where the
+     * capability grant can actually be enforced.
+     *
+     * KNOWN HOLE, unclosed and not closable on pi 0.85.1: this guards the LLM tool path only.
+     * `AgentSession.executeBash()` and `pi.exec()` fire the extension `tool_call` handler
+     * ZERO times, re-verified on 0.85.1 (unitAI-rrdnt.6). An extension that mutates the
+     * workspace through those bypasses this gate entirely. Do not document the lease as
+     * protecting a worktree against arbitrary extension effects; it does not.
+     */
+    admitToolCall(activationId: string, toolName: string): {
+        allow: boolean;
+        reason?: string;
+    };
     /** Every outstanding ask across the Fleet, oldest first. */
     pendingAsks(): PendingAsk[];
     /** Current state of one activation, or undefined if unknown to this host. */
