@@ -137,12 +137,16 @@ describe('NativeActivationHost — Fleet registry projection', () => {
     expect(projected[0].activationId).toBe(handle.activationId);
     expect(host.inspect(handle.activationId)?.state).toBe('settled');
 
-    // The projection is a plain ActivationSnapshot — no host/session internals leak.
+    // The projection is a plain ActivationSnapshot — no host/session internals leak. The
+    // list is pinned rather than sampled, so ADDING a field fails here on purpose: a new
+    // snapshot field is a change to what every coordinator reads, and it should require a
+    // deliberate edit. `requestedModel` arrived that way (unitAI-rrdnt.35) and this caught
+    // it, which is the assertion working.
     const keys = Object.keys(projected[0]).sort();
     expect(keys).toEqual([
       'access', 'activationId', 'attemptId', 'beadId', 'configuredModel', 'lastActivityAt',
-      'modelOverride', 'participantId', 'piSessionId', 'resolvedModel', 'specialist',
-      'startedAt', 'state', 'workspace',
+      'modelOverride', 'participantId', 'piSessionId', 'requestedModel', 'resolvedModel',
+      'specialist', 'startedAt', 'state', 'workspace',
     ].sort());
   });
 
