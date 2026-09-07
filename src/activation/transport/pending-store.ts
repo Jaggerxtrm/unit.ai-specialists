@@ -289,6 +289,70 @@ export function recordReply(
   return reply;
 }
 
+/**
+ * Whether a kind can ever be confirmed as delivered on this transport.
+ *
+ * Measured on Claude Code 2.1.263: it emits no `peer_message_status` receipt to a peer
+ * sender, registered or not. `receiptFrame` appears once in `pi-claude-link`'s index.ts and
+ * only on the inbound path — it is what a non-Claude peer sends so a CLAUDE sender's own
+ * delivered-UI resolves, never something Claude sends to us.
+ *
+ * So the only confirmation available is a correlated reply, and only a message that expects
+ * an answer can receive one. `finding` and `completion` therefore have NO confirmation
+ * available on this transport and stay `sent_unconfirmed` permanently. That is the designed
+ * steady state, not a stuck record and not a bug to fix: an informational push that was
+ * accepted by the wire is exactly as much as this transport can tell you.
+ */
+export function isConfirmable(kind: string): boolean {
+  return createsPendingAsk(kind);
+}
+
+/**
+ * Mark delivered on the strength of a correlated reply.
+ *
+ * A reply is STRICTLY STRONGER evidence than a receipt: a receipt says the wire accepted
+ * the frame, whereas a reply proves a coordinator read it and answered. Acceptance AX is
+ * defined as the coordinator receiving, replying, and the child resuming — so the reply is
+ * the acceptance criterion, and the receipt was only ever a proxy for it.
+ *
+ * Three boundaries, all enforced here rather than left to the caller:
+ *
+ *   - Correlation is `inReplyTo === messageId` and nothing else. Never ordering, never
+ *     timestamp proximity, and never "this is the only outstanding ask so it must be the
+ *     one" — that heuristic is right until exactly the moment two asks are open, which is
+ *     when crossing them does the damage.
+ *   - Only a confirmable kind can be upgraded. An informational push is not retroactively
+ *     confirmed by a reply that happened to arrive near it.
+ *   - Only a push the wire actually accepted (`sent_unconfirmed`) can be upgraded. This is
+ *     the boundary that is easiest to get wrong and it was caught by a test rather than by
+ *     reasoning: if the send FAILED or no route was ever found, a reply proves the
+ *     coordinator answered by SOME route — polling, almost certainly — and proves nothing
+ *     about a push that demonstrably never left. Upgrading there would manufacture exactly
+ *     the false confidence this module exists to prevent. The same logic excludes
+ *     `refused`: a refusal is an explicit signal from the coordinator's approval gate, and
+ *     an answer arriving by another path is not evidence about THIS push.
+ */
+export function recordReplyDelivery(
+  repoRoot: string,
+  activationId: string,
+  messageId: string,
+  reply: { inReplyTo?: string; atMs?: number },
+): PendingInteraction {
+  const record = read(repoRoot, activationId, messageId);
+  if (!record) throw new Error(`no interaction record for ${activationId}/${messageId}`);
+  if (reply.inReplyTo !== messageId) {
+    throw new Error(`reply inReplyTo ${String(reply.inReplyTo)} does not match ${messageId}`);
+  }
+  if (!isConfirmable(record.kind)) return record;
+  // Only a push the wire accepted may be confirmed by a reply. See the boundary note above.
+  if (record.delivery.state !== 'sent_unconfirmed') return record;
+
+  record.delivery.state = 'delivered';
+  record.delivery.deliveredAtMs = reply.atMs ?? Date.now();
+  writeAtomic(recordPath(repoRoot, activationId, messageId), record);
+  return record;
+}
+
 /** Every record for one activation, joined with replies, oldest first. */
 export function listForActivation(repoRoot: string, activationId: string): PendingInteractionView[] {
   const dir = join(interactionsRoot(repoRoot), activationId);
