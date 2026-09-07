@@ -5,7 +5,7 @@
 // style. The host is stubbed; NativeActivationHost itself has its own suite
 // (activation-native-host.test.ts).
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 // Import from the BUNDLE, exactly as the extension does: `instanceof` must match
@@ -110,12 +110,38 @@ function makeFakeHost() {
 
 function makeFakePi() {
   const tools = [];
+  const commands = [];
+  // Pi allows MANY handlers per event and invokes all of them. Modelling one
+  // handler per event silently dropped the second registration on the same
+  // event, which is precisely the class of defect this suite exists to catch.
   const handlers = {};
+  const fire = async (event, payload, ctx) => {
+    for (const handler of handlers[event] ?? []) await handler(payload, ctx);
+  };
   return {
     registerTool: (def) => tools.push(def),
-    on: (event, handler) => { handlers[event] = handler; },
+    registerCommand: (name, options) => commands.push({ name, ...options }),
+    on: (event, handler) => { (handlers[event] ??= []).push(handler); },
     get tools() { return tools; },
+    get commands() { return commands; },
     get handlers() { return handlers; },
+    fire,
+  };
+}
+
+/** A UI-capable ExtensionContext double: records what the extension paints. */
+function makeFakeCtx({ hasUI = true, mode = 'tui', sessionId = 'session-1' } = {}) {
+  const painted = { widgets: {}, statuses: {}, notices: [] };
+  return {
+    hasUI,
+    mode,
+    sessionManager: { getSessionId: () => sessionId },
+    ui: {
+      setWidget: (key, content) => { painted.widgets[key] = content; },
+      setStatus: (key, text) => { painted.statuses[key] = text; },
+      notify: (message, level = 'info') => { painted.notices.push([message, level]); },
+    },
+    painted,
   };
 }
 
@@ -264,7 +290,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     mod.default(pi, { createHost: () => host });
     // Create the host first (a real session has it after any tool call).
     await pi.tools[1].execute('tc0', {});
-    await pi.handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+    await pi.fire('session_shutdown', { type: 'session_shutdown', reason: 'quit' });
     expect(calls.stop).toEqual([['act:aaaa', 'session shutdown']]);
   });
 
@@ -288,3 +314,155 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     expect(withoutClient.deps).toBeUndefined();
   });
 });
+
+describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  /** Boot the extension with a live host and a UI context already captured. */
+  async function boot(ctxOptions) {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host, calls } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const ctx = makeFakeCtx(ctxOptions);
+    await pi.fire('session_start', { type: 'session_start' }, ctx);
+    const command = (name) => pi.commands.find((c) => c.name === name);
+    return { pi, host, calls, ctx, command };
+  }
+
+  it('registers the three operator commands', async () => {
+    const { pi } = await boot();
+    expect(pi.commands.map((c) => c.name)).toEqual(['fleet', 'fleet:reply', 'fleet:stop']);
+  });
+
+  it('paints the Fleet and pending asks into a widget without a tool call', async () => {
+    const { pi, host, ctx } = await boot();
+    // The host exists only after a tool call, so the operator's first paint is
+    // empty — this is the state the bead reported as "nothing rendered".
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+
+    await pi.tools[1].execute('tc0', {});   // specialist_status creates the host
+    await command_tick();
+
+    const lines = ctx.painted.widgets['specialist-fleet'];
+    expect(lines).toBeDefined();
+    expect(lines[0]).toContain('1 activation(s), 1 pending ask(s)');
+    expect(lines.join('\n')).toContain('explorer');
+    expect(lines.join('\n')).toContain('act:aaaa');
+    expect(lines.join('\n')).toContain('Which option?');
+    expect(lines.join('\n')).toContain('/fleet:reply msg:1');
+    expect(ctx.painted.statuses['specialist-fleet']).toBe('specialists: 1 · 1 waiting');
+    // The projection is re-read every paint, never cached.
+    expect(host.list).toHaveBeenCalled();
+    expect(host.pendingAsks).toHaveBeenCalled();
+  });
+
+  it('clears the widget when the Fleet is empty rather than painting a bare header', async () => {
+    const { pi, host, ctx } = await boot();
+    await pi.tools[1].execute('tc0', {});
+    host.list.mockReturnValue([]);
+    host.pendingAsks.mockReturnValue([]);
+    await command_tick();
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+  });
+
+  it('/fleet hide stops painting and /fleet show resumes it', async () => {
+    const { pi, ctx, command } = await boot();
+    await pi.tools[1].execute('tc0', {});
+    await command('fleet').handler('hide', ctx);
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    await command('fleet').handler('show', ctx);
+    expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
+  });
+
+  it('/fleet reports in text too, so json and print modes are not blind', async () => {
+    const { pi, ctx, command } = await boot();
+    await pi.tools[1].execute('tc0', {});
+    await command('fleet').handler('', ctx);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('1 activation(s), 1 pending ask(s)');
+  });
+
+  it('/fleet:reply answers by message_id and reports an unknown id instead of silently passing', async () => {
+    const { host, ctx, command } = await boot();
+    // mockResolvedValueOnce replaces the implementation, so assert on the spy's
+    // arguments rather than on the recorder the default implementation feeds.
+    host.answer.mockResolvedValueOnce({ messageId: 'msg:1', activationId: 'act:aaaa' });
+    await command('fleet:reply').handler('msg:1 use the second option', ctx);
+    expect(host.answer).toHaveBeenCalledWith('msg:1', 'use the second option');
+    expect(ctx.painted.notices.at(-1)[0]).toContain('Answered msg:1');
+
+    // host.answer returns undefined for an unknown id.
+    await command('fleet:reply').handler('msg:nope anything', ctx);
+    expect(ctx.painted.notices.at(-1)).toEqual([
+      expect.stringContaining("No outstanding ask with message_id 'msg:nope'"),
+      'warning',
+    ]);
+  });
+
+  it('/fleet:reply rejects a missing body rather than answering with an empty string', async () => {
+    const { calls, ctx, command } = await boot();
+    await command('fleet:reply').handler('msg:1', ctx);
+    await command('fleet:reply').handler('msg:1    ', ctx);
+    expect(calls.answer).toEqual([]);
+    expect(ctx.painted.notices.at(-1)[1]).toBe('warning');
+  });
+
+  it('/fleet:stop disposes a known activation and refuses an unknown one', async () => {
+    const { host, calls, ctx, command } = await boot();
+    await command('fleet:stop').handler('act:aaaa operator changed their mind', ctx);
+    expect(calls.stop).toEqual([['act:aaaa', 'operator changed their mind']]);
+
+    host.inspect.mockReturnValueOnce(undefined);
+    await command('fleet:stop').handler('act:zzzz', ctx);
+    expect(calls.stop).toHaveLength(1);
+    expect(ctx.painted.notices.at(-1)).toEqual(['Unknown activation: act:zzzz', 'warning']);
+  });
+
+  it('completes message ids and activation ids from live host state', async () => {
+    const { pi, command } = await boot();
+    await pi.tools[1].execute('tc0', {});
+    expect(command('fleet:reply').getArgumentCompletions('msg').map((i) => i.value)).toEqual(['msg:1']);
+    expect(command('fleet:stop').getArgumentCompletions('act').map((i) => i.value)).toEqual(['act:aaaa']);
+    expect(command('fleet:reply').getArgumentCompletions('nomatch')).toBeNull();
+    expect(command('fleet').getArgumentCompletions('h').map((i) => i.value)).toEqual(['hide']);
+  });
+
+  it('does not install the view without UI, and never throws there', async () => {
+    const { pi, ctx, command } = await boot({ hasUI: false, mode: 'print' });
+    await pi.tools[1].execute('tc0', {});
+    await command('fleet').handler('', ctx);
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    expect(ctx.painted.notices).toEqual([]);   // report() falls back to console
+  });
+
+  it('stops painting into a context whose session was replaced', async () => {
+    const { pi, ctx } = await boot();
+    await pi.tools[1].execute('tc0', {});
+    await command_tick();
+    expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
+
+    // A switchSession keeps the same ctx object but changes the session id.
+    ctx.painted.widgets['specialist-fleet'] = 'STALE';
+    ctx.sessionManager.getSessionId = () => 'session-2';
+    await command_tick();
+    expect(ctx.painted.widgets['specialist-fleet']).toBe('STALE');
+  });
+
+  it('survives a context that throws on property access during teardown', async () => {
+    const { pi, ctx } = await boot();
+    await pi.tools[1].execute('tc0', {});
+    ctx.sessionManager.getSessionId = () => { throw new Error('session torn down'); };
+    await expect(command_tick(pi, ctx)).resolves.not.toThrow();
+  });
+});
+
+/**
+ * Advance one poll interval. This drives the REAL timer the extension installs
+ * rather than re-firing session_start, which would re-capture the context and
+ * quietly defeat every staleness assertion below.
+ */
+async function command_tick() {
+  await vi.advanceTimersByTimeAsync(1000);
+}
