@@ -468,3 +468,95 @@ describe('NativeActivationHost — defects found by the live smoke', () => {
     expect(sink.names).not.toContain('activation_completed');
   });
 });
+
+/**
+ * unitAI-rrdnt.27. The Phase 7 parity lane produces timeline rows from the RAW event
+ * stream, so the hook must offer every event — including the types the switch does not
+ * translate — and must stay optional so existing sinks are unaffected.
+ */
+describe('NativeActivationHost — raw session event hook', () => {
+  it('offers every raw event to sessionEvent, including untranslated types', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record });
+    const raw: string[] = [];
+    const sink: ActivationForensicSink = {
+      emit: () => {},
+      sessionEvent: (input) => { raw.push(String(input.event.type)); },
+    };
+
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      forensics: sink,
+      cwd: process.cwd(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+    await handle.result;
+
+    // `some_unmapped_event` has no case in the switch — the translated path drops it and
+    // the raw path must not, or Phase 7 cannot reach parity with the legacy runner.
+    session.emit({ type: 'some_unmapped_event' } as never);
+
+    expect(raw).toContain('agent_start');
+    expect(raw).toContain('agent_end');
+    expect(raw).toContain('agent_settled');
+    expect(raw).toContain('some_unmapped_event');
+  });
+
+  it('carries the activation identity needed to attribute a raw event', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record });
+    const seen: Array<Record<string, unknown>> = [];
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      forensics: { emit: () => {}, sessionEvent: (i) => { seen.push(i as never); } },
+      cwd: process.cwd(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+    await handle.result;
+
+    expect(seen[0]).toMatchObject({
+      activationId: handle.activationId,
+      participantId: 'specialist::researcher',
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      piSessionId: 'pi-sess-123',
+    });
+  });
+
+  it('works with a sink that has no sessionEvent, so existing sinks are unaffected', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record });
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      forensics: collectingSink(),
+      cwd: process.cwd(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+
+    await expect(handle.result).resolves.toMatchObject({ status: 'completed' });
+  });
+});
