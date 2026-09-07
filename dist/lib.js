@@ -21498,6 +21498,60 @@ var specialistStopSchema = objectType({
   activation_id: stringType().describe("Activation to stop and dispose."),
   reason: stringType().optional().describe("Recorded forensically with the disposal.")
 });
+// src/activation/forensic-sink.ts
+var ERROR_EVENTS = new Set([
+  "activation_rejected",
+  "activation_failed",
+  "output_validation_failed",
+  "retry_failed",
+  "tool_blocked",
+  "lease_denied"
+]);
+var WARN_EVENTS = new Set([
+  "activation_uncertain",
+  "lease_uncertain",
+  "retry_started"
+]);
+function severityFor(name) {
+  if (ERROR_EVENTS.has(name))
+    return "error";
+  if (WARN_EVENTS.has(name))
+    return "warn";
+  return "info";
+}
+function createActivationForensicSink(observability) {
+  if (!observability)
+    return { emit: () => {} };
+  return {
+    emit(event) {
+      try {
+        observability.appendForensicEvent(event.activationId, event.specialist, event.beadId, createForensicEvent({
+          event_family: "activation",
+          event_name: `activation.${event.name}`,
+          severity: severityFor(event.name),
+          resource: {
+            service_namespace: "xtrm",
+            service_name: "specialists",
+            service_component: "native-activation-host",
+            deployment_environment: deploymentEnvironment(),
+            repo: "specialists",
+            participant_kind: "specialist",
+            participant_role: event.specialist
+          },
+          correlation: {
+            participant_id: event.participantId,
+            job_id: event.activationId,
+            bead_id: event.beadId
+          },
+          body: {
+            attempt_id: event.attemptId,
+            ...event.payload ?? {}
+          }
+        }));
+      } catch {}
+    }
+  };
+}
 // src/specialist/launch-outcome.ts
 var LAUNCH_OUTCOME_SCHEMA_VERSION = "xtrm.command-outcome.v1";
 
@@ -21847,9 +21901,12 @@ export {
   toPendingAskView,
   toActivationView,
   runScriptSpecialist as runScript,
+  resolveObservabilityDbLocation,
   readVerifiedCitationWindow,
   projectLaunchOutcome,
   parseLaunchOutcome,
+  createObservabilitySqliteClientAtPath,
+  createActivationForensicSink,
   SpecialistLoader,
   NativeActivationHost,
   LaunchOutcomeError,
