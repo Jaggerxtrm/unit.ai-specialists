@@ -62,6 +62,32 @@ export interface ActivationForensicSink {
     name: string;
     payload?: Record<string, unknown>;
   }): void;
+
+  /**
+   * Receives every RAW Pi session event, untranslated.
+   *
+   * The `emit` path above carries a small hand-written vocabulary; this one carries the
+   * whole stream so the Phase 7 mapper can produce timeline rows through the same
+   * factories the legacy `sp run` path uses. Without it, a native activation and a legacy
+   * one answer the same query differently.
+   *
+   * Optional by design: every existing sink, including the null sink and each test double,
+   * keeps working untouched. The two paths do not overlap — raw events feed the timeline
+   * mappers, and the translated `emit` names remain the sole producers of their own rows.
+   */
+  sessionEvent?(input: NativeActivationSessionEventInput): void;
+}
+
+/** One raw session event, with the activation identity needed to attribute it. */
+export interface NativeActivationSessionEventInput {
+  activationId: string;
+  attemptId: string;
+  participantId: string;
+  specialist: string;
+  beadId?: string;
+  piSessionId: string;
+  workspacePath: string;
+  event: PiAgentSessionEvent;
 }
 
 /** Discards events. Used only where forensics are genuinely not wanted (unit tests). */
@@ -364,6 +390,20 @@ export class NativeActivationHost {
     emit: (name: string, payload?: Record<string, unknown>) => void,
   ): void {
     snapshot.lastActivityAt = this.now();
+
+    // Offer the RAW event before any translation. Deliberately not wrapped in try/catch:
+    // the sink swallows its own errors, and a forensic concern must never alter activation
+    // behaviour — nor be silently hidden by a catch here.
+    this.forensics.sessionEvent?.({
+      activationId: snapshot.activationId,
+      attemptId: snapshot.attemptId,
+      participantId: snapshot.participantId,
+      specialist: snapshot.specialist,
+      beadId: snapshot.beadId,
+      piSessionId: snapshot.piSessionId ?? '',
+      workspacePath: snapshot.workspace.worktreePath,
+      event,
+    });
 
     switch (event.type) {
       case 'agent_start':
