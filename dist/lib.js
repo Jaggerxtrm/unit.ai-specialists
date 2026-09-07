@@ -20404,6 +20404,241 @@ function isDeliveredStatus(status) {
   return status === "delivered" || status === "approved" || status === "released";
 }
 
+// src/activation/workspace-lease.ts
+import { createHash as createHash5 } from "node:crypto";
+import { existsSync as existsSync17, linkSync, mkdirSync as mkdirSync6, readFileSync as readFileSync11, realpathSync as realpathSync3, renameSync as renameSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join14 } from "node:path";
+
+// src/activation/types.ts
+class DispatchRejectedError extends Error {
+  reason;
+  detail;
+  constructor(reason, detail = {}) {
+    const lines = [
+      "SPECIALIST_DISPATCH_REJECTED",
+      "",
+      ...detail.activationId ? [`activation:
+  ${detail.activationId}`, ""] : [],
+      ...detail.beadId ? [`bead:
+  ${detail.beadId}`, ""] : [],
+      ...detail.specialist ? [`specialist:
+  ${detail.specialist}`, ""] : [],
+      ...detail.note ? [`note:
+  ${detail.note}`, ""] : [],
+      `reason:
+  ${reason}`,
+      ...detail.missing?.length ? ["", `missing:
+${detail.missing.map((m) => `  - ${m}`).join(`
+`)}`] : [],
+      ...detail.requestedModel ? ["", `requested model:
+  ${detail.requestedModel}`] : [],
+      ...detail.workspace ? ["", `workspace:
+  ${detail.workspace}`] : [],
+      ...detail.holder ? ["", `holder:
+  ${detail.holder}`] : [],
+      "",
+      `AgentSession:
+  not created`
+    ];
+    super(lines.join(`
+`));
+    this.reason = reason;
+    this.detail = detail;
+    this.name = "DispatchRejectedError";
+  }
+}
+
+// src/activation/workspace-lease.ts
+function procLeaseProbe() {
+  return {
+    canVerify: () => existsSync17("/proc/self/stat"),
+    startTicks(pid) {
+      try {
+        const stat2 = readFileSync11(`/proc/${pid}/stat`, "utf-8");
+        const afterComm = stat2.slice(stat2.lastIndexOf(")") + 2).trim().split(/\s+/);
+        const ticks = Number(afterComm[19]);
+        return Number.isFinite(ticks) ? ticks : undefined;
+      } catch {
+        return;
+      }
+    }
+  };
+}
+function selfHolder(probe = procLeaseProbe()) {
+  const startTicks = probe.startTicks(process.pid);
+  if (startTicks === undefined) {
+    throw new Error("cannot read this process start time; a lease cannot be acquired without the PID-reuse guard");
+  }
+  return { pid: process.pid, startTicks };
+}
+function workspaceKey(workspace) {
+  let resolved = workspace.worktreePath;
+  try {
+    resolved = realpathSync3(workspace.worktreePath);
+  } catch {}
+  return createHash5("sha256").update(resolved).digest("hex").slice(0, 16);
+}
+function leaseDir(workspace) {
+  return join14(workspace.gitCommonDir ?? workspace.repositoryRoot, ".specialists", "leases");
+}
+function leasePath(workspace) {
+  return join14(leaseDir(workspace), `${workspaceKey(workspace)}.json`);
+}
+function inspect(workspace, probe = procLeaseProbe()) {
+  const path = leasePath(workspace);
+  if (!existsSync17(path))
+    return { state: "free" };
+  let lease;
+  try {
+    lease = JSON.parse(readFileSync11(path, "utf-8"));
+    if (typeof lease?.holder?.pid !== "number")
+      throw new Error("missing holder");
+  } catch {
+    return { state: "uncertain", uncertainReason: "unreadable_record" };
+  }
+  if (!probe.canVerify()) {
+    return { state: "uncertain", lease, uncertainReason: "liveness_unverifiable" };
+  }
+  const actual = probe.startTicks(lease.holder.pid);
+  if (actual === undefined) {
+    return { state: "uncertain", lease, uncertainReason: "holder_process_gone" };
+  }
+  if (actual !== lease.holder.startTicks) {
+    return { state: "uncertain", lease, uncertainReason: "holder_start_mismatch" };
+  }
+  return { state: "held", lease };
+}
+function acquire(request, probe = procLeaseProbe()) {
+  const { workspace, activationId, attemptId } = request;
+  const path = leasePath(workspace);
+  const status = inspect(workspace, probe);
+  if (status.state === "held" && status.lease) {
+    if (status.lease.activationId === activationId) {
+      return rewrite(workspace, { ...status.lease, attemptId });
+    }
+    throw refusal("workspace_held_by_another_writer", request, status);
+  }
+  if (status.state === "uncertain") {
+    throw refusal("workspace_lease_uncertain", request, status);
+  }
+  const lease = {
+    workspaceKey: workspaceKey(workspace),
+    worktreePath: workspace.worktreePath,
+    activationId,
+    attemptId,
+    specialist: request.specialist,
+    holder: selfHolder(probe),
+    acquiredAtMs: Date.now()
+  };
+  mkdirSync6(leaseDir(workspace), { recursive: true, mode: 448 });
+  const staging = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync5(staging, `${JSON.stringify(lease, null, 2)}
+`, { mode: 384 });
+  try {
+    linkSync(staging, path);
+  } catch (err) {
+    if (err.code === "EEXIST") {
+      throw refusal("workspace_held_by_another_writer", request, inspect(workspace, probe));
+    }
+    throw err;
+  } finally {
+    try {
+      unlinkSync2(staging);
+    } catch {}
+  }
+  return lease;
+}
+function rewrite(workspace, lease) {
+  const path = leasePath(workspace);
+  const staging = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync5(staging, `${JSON.stringify(lease, null, 2)}
+`, { mode: 384 });
+  renameSync3(staging, path);
+  return lease;
+}
+function release(workspace, activationId, probe = procLeaseProbe()) {
+  const status = inspect(workspace, probe);
+  if (status.state === "free")
+    return;
+  if (status.state === "uncertain") {
+    throw new DispatchRejectedError("workspace_lease_uncertain", {
+      activationId,
+      workspace: workspace.worktreePath,
+      holder: describeHolder(status),
+      note: "refusing to release a lease whose holder liveness is unknown; recovery is PRD Phase 9"
+    });
+  }
+  if (status.lease && status.lease.activationId !== activationId) {
+    throw new DispatchRejectedError("workspace_lease_not_held_by_caller", {
+      activationId,
+      workspace: workspace.worktreePath,
+      holder: describeHolder(status)
+    });
+  }
+  try {
+    unlinkSync2(leasePath(workspace));
+  } catch (err) {
+    if (err.code !== "ENOENT")
+      throw err;
+  }
+}
+function describeHolder(status) {
+  if (!status.lease)
+    return status.uncertainReason ?? "unknown";
+  const { activationId, specialist, holder } = status.lease;
+  const who = specialist ? `${specialist} ` : "";
+  const why = status.uncertainReason ? ` (${status.uncertainReason})` : "";
+  return `${who}${activationId} pid ${holder.pid}${why}`;
+}
+function refusal(reason, request, status) {
+  return new DispatchRejectedError(reason, {
+    activationId: request.activationId,
+    specialist: request.specialist,
+    workspace: request.workspace.worktreePath,
+    holder: describeHolder(status),
+    note: status.state === "uncertain" ? "the previous holder's liveness could not be established; the lease is uncertain, not free" : "exactly one writer holds a mutable workspace at a time"
+  });
+}
+var NON_MUTATING_TOOLS = new Set([
+  "read",
+  "grep",
+  "glob",
+  "ls",
+  "list",
+  "search",
+  "view",
+  "todowrite",
+  "websearch",
+  "webfetch"
+]);
+function isMutatingTool(toolName) {
+  return !NON_MUTATING_TOOLS.has(toolName.trim().toLowerCase());
+}
+function admitToolCall(input, probe = procLeaseProbe()) {
+  if (!isMutatingTool(input.toolName))
+    return { allow: true };
+  const status = inspect(input.workspace, probe);
+  if (status.state === "held" && status.lease?.activationId === input.activationId) {
+    return { allow: true };
+  }
+  if (status.state === "held") {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} is held by ${describeHolder(status)}; ` + `${input.toolName} would mutate a workspace this activation does not hold`
+    };
+  }
+  if (status.state === "uncertain") {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} lease is uncertain (${status.uncertainReason}); ` + "mutation is refused until recovery resolves the previous holder"
+    };
+  }
+  return {
+    allow: false,
+    reason: `workspace ${input.workspace.worktreePath} is not leased by this activation; ` + `${input.toolName} may not mutate it`
+  };
+}
+
 // src/activation/ask-tool.ts
 var ASK_TOOL = "ask_coordinator";
 var ESCALATE_TOOL = "escalate_to_coordinator";
@@ -20435,7 +20670,7 @@ function createAskTools(sdk, ctx) {
         },
         required: ["question"]
       },
-      execute: async (args) => ask("question", args.question)
+      execute: async (_toolCallId, args) => ask("question", args.question)
     }),
     sdk.defineTool({
       name: ESCALATE_TOOL,
@@ -20447,14 +20682,14 @@ function createAskTools(sdk, ctx) {
         },
         required: ["blocker"]
       },
-      execute: async (args) => ask("escalation", args.blocker)
+      execute: async (_toolCallId, args) => ask("escalation", args.blocker)
     })
   ];
 }
 
 // src/activation/pi-sdk.ts
-import { existsSync as existsSync17 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync18 } from "node:fs";
+import { join as join15 } from "node:path";
 import { pathToFileURL } from "node:url";
 var PI_SDK_PACKAGE = "@earendil-works/pi-coding-agent";
 var REQUIRED_EXPORTS = [
@@ -20483,8 +20718,8 @@ function piSdkCandidates() {
   const candidates = [PI_SDK_PACKAGE];
   const globalDir = resolveGlobalNodeModulesDir2();
   if (globalDir) {
-    const entry = join14(globalDir, PI_SDK_PACKAGE, "dist", "index.js");
-    if (existsSync17(entry))
+    const entry = join15(globalDir, PI_SDK_PACKAGE, "dist", "index.js");
+    if (existsSync18(entry))
       candidates.push(pathToFileURL(entry).href);
   }
   return candidates;
@@ -20589,45 +20824,6 @@ function nextAttemptId(current) {
 }
 var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
 
-// src/activation/types.ts
-class DispatchRejectedError extends Error {
-  reason;
-  detail;
-  constructor(reason, detail = {}) {
-    const lines = [
-      "SPECIALIST_DISPATCH_REJECTED",
-      "",
-      ...detail.activationId ? [`activation:
-  ${detail.activationId}`, ""] : [],
-      ...detail.beadId ? [`bead:
-  ${detail.beadId}`, ""] : [],
-      ...detail.specialist ? [`specialist:
-  ${detail.specialist}`, ""] : [],
-      ...detail.note ? [`note:
-  ${detail.note}`, ""] : [],
-      `reason:
-  ${reason}`,
-      ...detail.missing?.length ? ["", `missing:
-${detail.missing.map((m) => `  - ${m}`).join(`
-`)}`] : [],
-      ...detail.requestedModel ? ["", `requested model:
-  ${detail.requestedModel}`] : [],
-      ...detail.workspace ? ["", `workspace:
-  ${detail.workspace}`] : [],
-      ...detail.holder ? ["", `holder:
-  ${detail.holder}`] : [],
-      "",
-      `AgentSession:
-  not created`
-    ];
-    super(lines.join(`
-`));
-    this.reason = reason;
-    this.detail = detail;
-    this.name = "DispatchRejectedError";
-  }
-}
-
 // src/activation/native-host.ts
 var WRITE_TIERS = new Set(["MEDIUM", "HIGH"]);
 var NULL_FORENSIC_SINK = { emit: () => {} };
@@ -20687,9 +20883,6 @@ class NativeActivationHost {
     const execution = specialist.specialist.execution;
     const tier = execution.permission_required ?? "READ_ONLY";
     const access = WRITE_TIERS.has(tier) ? "write" : "read";
-    if (access === "write") {
-      return reject("writer_not_supported_in_phase_1", { tier });
-    }
     const bead = this.beadsClient.readBead(request.beadId);
     if (!bead)
       return reject("bead_unreadable");
@@ -20736,6 +20929,22 @@ class NativeActivationHost {
       repositoryRoot: this.cwd,
       worktreePath: this.cwd
     };
+    if (access === "write") {
+      try {
+        acquire({ workspace, activationId, attemptId, specialist: request.specialist });
+      } catch (error) {
+        if (error instanceof DispatchRejectedError) {
+          emit("lease_denied", {
+            workspace: workspace.worktreePath,
+            reason: error.reason,
+            note: error.detail.holder
+          });
+        }
+        emit("activation_rejected", { reason: "workspace_lease_unavailable" });
+        throw error;
+      }
+      emit("lease_acquired", { workspace: workspace.worktreePath });
+    }
     const stepContract = compileStepContract({
       bead,
       specialist: specialist.specialist.metadata.name,
@@ -20806,7 +21015,7 @@ class NativeActivationHost {
       model: modelCheck.model,
       ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
       noTools: "builtin",
-      tools: [...toolContract.toolsList],
+      tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
     });
     const startedAt = this.now();
@@ -20964,6 +21173,57 @@ class NativeActivationHost {
       inReplyTo: messageId
     });
   }
+  releaseIfWriter(snapshot, reason) {
+    if (snapshot.access !== "write")
+      return;
+    try {
+      release(snapshot.workspace, snapshot.activationId);
+      this.forensics.emit({
+        activationId: snapshot.activationId,
+        attemptId: snapshot.attemptId,
+        participantId: snapshot.participantId,
+        specialist: snapshot.specialist,
+        beadId: snapshot.beadId,
+        name: "lease_released",
+        payload: { workspace: snapshot.workspace.worktreePath, reason }
+      });
+    } catch (error) {
+      this.forensics.emit({
+        activationId: snapshot.activationId,
+        attemptId: snapshot.attemptId,
+        participantId: snapshot.participantId,
+        specialist: snapshot.specialist,
+        beadId: snapshot.beadId,
+        name: "lease_uncertain",
+        payload: {
+          workspace: snapshot.workspace.worktreePath,
+          note: error instanceof Error ? error.message : String(error)
+        }
+      });
+    }
+  }
+  admitToolCall(activationId, toolName) {
+    const record = this.registry.get(activationId);
+    if (!record)
+      return { allow: false, reason: `unknown activation ${activationId}` };
+    const verdict = admitToolCall({
+      toolName,
+      workspace: record.snapshot.workspace,
+      activationId
+    });
+    if (!verdict.allow) {
+      this.forensics.emit({
+        activationId,
+        attemptId: record.snapshot.attemptId,
+        participantId: record.snapshot.participantId,
+        specialist: record.snapshot.specialist,
+        beadId: record.snapshot.beadId,
+        name: "tool_blocked",
+        payload: { tool: toolName, note: verdict.reason }
+      });
+    }
+    return verdict;
+  }
   pendingAsks() {
     return this.interactions.pendingAsks();
   }
@@ -20998,6 +21258,7 @@ class NativeActivationHost {
       record.unsubscribe();
       record.session.dispose();
       record.snapshot.state = "stopped";
+      this.releaseIfWriter(record.snapshot, reason);
       this.forensics.emit({
         activationId,
         attemptId: record.snapshot.attemptId,
@@ -21090,6 +21351,7 @@ function toActivationView(snapshot) {
     worktree_path: snapshot.workspace.worktreePath,
     ...snapshot.workspace.branch ? { branch: snapshot.workspace.branch } : {},
     ...snapshot.piSessionId ? { pi_session_id: snapshot.piSessionId } : {},
+    ...snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {},
     resolved_model: snapshot.resolvedModel,
     model_override: snapshot.modelOverride
   };
