@@ -12,6 +12,13 @@
  * context and turns a clarification into a restart, which is the failure mode this phase
  * exists to prevent and the one that looks like success.
  *
+ * Three separate defects made this file unreachable, each hidden by the last. The tools
+ * were filtered out of the session entirely (unitAI-rrdnt.43.1); then they arrived with the
+ * wrong execute signature (.43.2); then they ran correctly and returned a bare string,
+ * which pi normalises to empty content (.43.3). Every one was invisible to a unit test that
+ * called `execute` directly and asserted on its return value, because at that boundary each
+ * defect was correct.
+ *
  * The `execute` signature is `(toolCallId, args, ...)`, NOT `(args)`. Measured on pi
  * 0.85.1: the SDK invokes a custom tool's execute with five arguments and the parameters
  * object is the SECOND. Writing `(args)` binds the tool-call id string to `args`, so
@@ -50,5 +57,12 @@ export declare const ESCALATE_TOOL = "escalate_to_coordinator";
  * without gaining any mutation capability — asking is not a workspace operation, and
  * widening the allowlist to grant it would hand every reader an edit tool.
  */
+export interface AgentToolResult {
+    content: Array<{
+        type: 'text';
+        text: string;
+    }>;
+    details: Record<string, unknown>;
+}
 export declare function createAskTools(sdk: PiSdk, ctx: AskToolContext): unknown[];
 //# sourceMappingURL=ask-tool.d.ts.map

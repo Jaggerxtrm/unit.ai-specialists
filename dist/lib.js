@@ -20642,10 +20642,14 @@ function admitToolCall(input, probe = procLeaseProbe()) {
 // src/activation/ask-tool.ts
 var ASK_TOOL = "ask_coordinator";
 var ESCALATE_TOOL = "escalate_to_coordinator";
+var toolText = (text) => ({
+  content: [{ type: "text", text }],
+  details: {}
+});
 function createAskTools(sdk, ctx) {
   const ask = async (kind, body) => {
     if (!body?.trim()) {
-      return "Refused: an empty question cannot be answered. State the question.";
+      return toolText("Refused: an empty question cannot be answered. State the question.");
     }
     ctx.onAsk?.(kind, body);
     const reply = await ctx.transport.request({
@@ -20657,7 +20661,7 @@ function createAskTools(sdk, ctx) {
       body
     });
     ctx.onAnswered?.(kind);
-    return reply.body;
+    return toolText(reply.body);
   };
   return [
     sdk.defineTool({
@@ -20964,6 +20968,7 @@ class NativeActivationHost {
       tier,
       access,
       configured_model: configuredModel ?? null,
+      requested_model: requestedModel,
       resolved_model: resolvedModel,
       model_override: Boolean(request.modelOverride),
       workspace: workspace.worktreePath,
@@ -21030,6 +21035,7 @@ class NativeActivationHost {
       workspace,
       piSessionId: session.sessionId,
       configuredModel,
+      requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
       startedAt,
@@ -21303,7 +21309,11 @@ class NativeActivationHost {
       name,
       payload
     });
-    emit("activation_resumed");
+    emit("activation_resumed", {
+      requested_model: record.snapshot.requestedModel,
+      resolved_model: record.snapshot.resolvedModel,
+      model_override: record.snapshot.modelOverride
+    });
     record.unsubscribe();
     record.unsubscribe = record.session.subscribe((event) => this.onSessionEvent(record.snapshot, event, emit));
     const result = this.runToSettled(record.snapshot, record.session, prompt, emit);
