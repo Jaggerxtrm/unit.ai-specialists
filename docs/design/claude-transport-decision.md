@@ -158,12 +158,58 @@ One design consequence follows from the second condition. Register once per **ru
 process**, never per activation: a per-activation registration multiplies roster entries by
 concurrency and turns cleanup into a race against the activations themselves.
 
-Two things this ruling does not change. The adapter's degraded behaviour stays exactly as
-built and tested — `sent_unconfirmed`, claim nothing, leave the question readable through
-the polling projection — because registration can still be absent, stale, or refused, and
-the approval gate in this section is untouched by it. What changes is only the expected
-steady state: with registration in place, `no_receipt` becomes a fault to investigate
-rather than the normal outcome it was when this section was first written.
+The adapter's degraded behaviour stays exactly as built and tested — `sent_unconfirmed`,
+claim nothing, leave the question readable through the polling projection — because
+registration can still be absent, stale, or refused, and the approval gate in this section
+is untouched by it.
+
+### 5.1 The premise the approval rested on did not hold
+
+**Measured 2026-09-07, after the ruling: registration does not produce receipts.** The
+runtime was registered exactly as approved — `~/.claude/sessions/<pid>.json` with numeric
+`procStart` and `peerProtocol: 1`, a colocated `0600` socket, and a frame byte-for-byte the
+shape `pi-claude-link` sends — and a push to a live coordinator waited 180s and still
+recorded `no_receipt`. Registration made no difference to the unregistered result.
+
+The reason is in `pi-claude-link` rather than in the wire. `receiptFrame` is referenced in
+exactly one place in its `index.ts`: where it SENDS a receipt to an inbound sender. Nothing
+in that codebase receives or waits for one. A receipt is therefore what a **non-Claude peer
+emits so a Claude sender's own delivery UI resolves** — it is not something Claude Code
+emits to us. The protocol header comment stating that Claude sends delivery and hold
+receipts was never exercised by the code it sits in.
+
+This is the same failure mode as the `procStart` claim in §4: a statement generalised from a
+source that never tested it. Both were believed because they were written down.
+
+Two corrections follow.
+
+**`no_receipt` is the permanent steady state on this transport, not a fault.** An earlier
+revision of this section said registration would make it a fault to investigate. That was
+wrong and is retracted. Nothing should ever be "fixed" to make a receipt appear.
+
+**Delivery is confirmed by a correlated reply, not by a receipt.** A reply is strictly
+stronger evidence: a receipt says the wire accepted a frame, whereas a reply carrying
+`inReplyTo` proves a coordinator read the message and answered it. Acceptance AX is
+"Specialist asks, busy coordinator receives, replies, child resumes" — the reply always was
+the criterion and the receipt was only ever a proxy for it. The rule is bounded:
+
+- Only `question` and `escalation` can reach `delivered` this way, using the same predicate
+  that decides whether a message creates an outstanding ask, so there is one rule and not
+  two.
+- `finding` and `completion` have no confirmation available on this transport and remain
+  `sent_unconfirmed` permanently. That is the designed end state, not a stuck one.
+- Correlation is `inReplyTo` matching the message id and nothing else — never timestamp
+  proximity, never ordering, and never "only one ask is open so it must be that one", which
+  is wrong in exactly the case that matters.
+- A reply upgrades `sent_unconfirmed` to `delivered`. It does not resurrect `refused`: a
+  refusal is an explicit signal about this push, and an answer arriving by another route is
+  not evidence about it.
+
+**What registration is still worth.** It makes the runtime addressable, which is the inbound
+half and therefore the reply path itself. It is retained on that basis rather than the one it
+was approved on. The operator approved registration in order to buy confirmable delivery;
+receipts turned out not to be on offer, so that decision rests on a premise that did not
+hold and is his to revisit.
 
 ## 6. One protocol, two transports
 
