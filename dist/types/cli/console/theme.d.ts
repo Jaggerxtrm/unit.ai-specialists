@@ -43,9 +43,6 @@ export declare function renderTabs(repos: Array<{
 export interface MetersInput {
     active: number;
     activeTotal: number;
-    leases: number;
-    leaseCapacity: number;
-    budgetPct: number;
 }
 export declare function renderMeters(input: MetersInput, width: number): string;
 export declare function renderViewtag(views: readonly string[], currentView: string, width: number): string;

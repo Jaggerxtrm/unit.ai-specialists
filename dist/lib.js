@@ -6958,7 +6958,7 @@ import {
   realpathSync
 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { isAbsolute as isAbsolute2, join as join7, relative, resolve as resolve7 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join7, relative, resolve as resolve8 } from "node:path";
 
 // src/pi/session.ts
 import { createHash } from "node:crypto";
@@ -12384,16 +12384,16 @@ ${stderrTail}` : ""}`;
 // src/specialist/mandatory-rules.ts
 import { existsSync as existsSync8, readFileSync as readFileSync4 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
-import { resolve as resolve5 } from "node:path";
+import { resolve as resolve6 } from "node:path";
 
 // src/specialist/observability-sqlite.ts
 import { existsSync as existsSync7, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync } from "node:fs";
-import { dirname as dirname5, join as join6 } from "node:path";
+import { dirname as dirname5, join as join6, normalize, resolve as resolve5 } from "node:path";
 
 // src/specialist/observability-db.ts
 import { chmodSync, existsSync as existsSync6, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join as join5, sep as sep2 } from "node:path";
+import { join as join5, sep as sep2, resolve as resolvePath } from "node:path";
 var OBSERVABILITY_DB_FILENAME = "observability.db";
 var DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
 function resolveGitRootFrom(cwd) {
@@ -12428,13 +12428,21 @@ function resolveDbDirectory(gitRoot) {
     source: "git-root"
   };
 }
+function relocateIfForbidden(directory) {
+  const forbidden = process.env.SPECIALISTS_FORBID_DB_DIR?.trim();
+  const fallback = process.env.SPECIALISTS_FALLBACK_DB_DIR?.trim();
+  if (!forbidden || !fallback)
+    return directory;
+  return resolvePath(directory) === resolvePath(forbidden) ? fallback : directory;
+}
 function resolveObservabilityDbLocation(cwd = process.cwd()) {
   const gitRoot = resolveGitRootFrom(cwd);
   const resolved = resolveDbDirectory(gitRoot);
-  const dbPath = join5(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  const directory = relocateIfForbidden(resolved.directory);
+  const dbPath = join5(directory, OBSERVABILITY_DB_FILENAME);
   return {
     gitRoot,
-    dbDirectory: resolved.directory,
+    dbDirectory: directory,
     dbPath,
     dbWalPath: `${dbPath}-wal`,
     dbShmPath: `${dbPath}-shm`,
@@ -12675,18 +12683,19 @@ function normalizeResource(resource) {
   return normalized;
 }
 function deriveParticipantId(input) {
-  const kind = input.participant_kind ?? "specialist";
-  if (kind === "specialist" && input.chain_id)
-    return `${input.chain_id}::${input.participant_role}`;
-  if (kind === "orchestrator" && input.session_uuid)
+  if ((input.participant_kind ?? "specialist") === "specialist") {
+    const role = typeof input.participant_role === "string" ? input.participant_role.trim() : "";
+    return `specialist::${role ? role : "<unknown>"}`;
+  }
+  if (input.participant_kind === "orchestrator" && input.session_uuid)
     return `orch::${input.session_uuid}`;
-  if (kind === "pulse_emitter" && input.container_id)
+  if (input.participant_kind === "pulse_emitter" && input.container_id)
     return `${input.container_id}::emitter::${input.participant_role}`;
-  if (kind === "node_member" && input.node_id)
+  if (input.participant_kind === "node_member" && input.node_id)
     return `node::${input.node_id}::${input.participant_role}::${input.member_index ?? 0}`;
-  if (kind === "adapter" && input.adapter_id)
+  if (input.participant_kind === "adapter" && input.adapter_id)
     return input.adapter_id;
-  return;
+  return `${input.participant_kind ?? "specialist"}::<unknown>`;
 }
 function assertKnownTopLevelFields(event) {
   for (const key of Object.keys(event)) {
@@ -12792,6 +12801,9 @@ function forensicEventFromTimelineEvent(event, context) {
       job_id: context.jobId,
       bead_id: context.beadId,
       node_id: context.nodeId,
+      attempt_id: context.attemptId,
+      pi_session_id: context.piSessionId ?? context.sessionId,
+      workspace_id: context.workspaceId,
       chain_id: context.chainId,
       chain_root_job_id: context.chainRootJobId,
       chain_root_bead_id: context.chainRootBeadId,
@@ -13345,6 +13357,17 @@ function parseJsonRecord(input) {
 function stringifyJson(value) {
   return JSON.stringify(value);
 }
+function normalizeWorkspacePath(worktreePath) {
+  if (!worktreePath || worktreePath.trim().length === 0)
+    return null;
+  return normalize(resolve5(worktreePath));
+}
+function buildAttemptId(jobId, attemptNo) {
+  return `${jobId}::attempt::${attemptNo}`;
+}
+function isRetryStartEvent(event) {
+  return event.type === "retry" && event.phase === "start";
+}
 function migrateToV4(db) {
   const hasV4 = db.query("SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1").get();
   if (hasV4) {
@@ -13556,6 +13579,7 @@ function initSchema(db) {
   migrateToV12(db);
   migrateToV13(db);
   migrateToV14(db);
+  migrateToV15(db);
   verifyWalMode(db);
 }
 function migrateToV13(db) {
@@ -13612,6 +13636,81 @@ function migrateToV14(db) {
     INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
       VALUES (14, strftime('%s', 'now') * 1000);
   `);
+}
+function migrateToV15(db) {
+  const hasV15 = db.query("SELECT 1 FROM schema_version WHERE version = 15 LIMIT 1").get();
+  const jobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "participant_id", definition: "TEXT" },
+    { name: "pi_session_id", definition: "TEXT" },
+    { name: "workspace_id", definition: "TEXT" },
+    { name: "attempt_no", definition: "INTEGER DEFAULT 0" },
+    { name: "attempt_id", definition: "TEXT" }
+  ]) {
+    if (!jobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  const eventsColumns = new Set(db.query("PRAGMA table_info(specialist_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!eventsColumns.has("attempt_id")) {
+    db.run("ALTER TABLE specialist_events ADD COLUMN attempt_id TEXT");
+  }
+  const forensicColumns = new Set(db.query("PRAGMA table_info(specialist_forensic_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!forensicColumns.has("attempt_id")) {
+    db.run("ALTER TABLE specialist_forensic_events ADD COLUMN attempt_id TEXT");
+  }
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_participant ON specialist_jobs(participant_id) WHERE participant_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_pi_session ON specialist_jobs(pi_session_id) WHERE pi_session_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_workspace ON specialist_jobs(workspace_id) WHERE workspace_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_attempt ON specialist_events(job_id, attempt_id, seq) WHERE attempt_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_job_attempt ON specialist_forensic_events(job_id, attempt_id, seq) WHERE attempt_id IS NOT NULL");
+  if (hasV15)
+    return;
+  const backfill = db.transaction(() => {
+    db.run(`
+      UPDATE specialist_jobs
+      SET pi_session_id = NULLIF(JSON_EXTRACT(status_json, '$.session_id'), '')
+    `);
+    db.run(`
+      UPDATE specialist_jobs
+      SET participant_id = 'specialist::' || COALESCE(NULLIF(TRIM(specialist), ''), '<unknown>')
+    `);
+    db.run(`
+      UPDATE specialist_jobs
+      SET attempt_no = 0
+      WHERE attempt_no IS NULL
+    `);
+    const worktreeRows = db.query(`
+      SELECT job_id, worktree_column
+      FROM specialist_jobs
+      WHERE worktree_column IS NOT NULL AND worktree_column != ''
+    `).all();
+    const workspaceStmt = db.query("UPDATE specialist_jobs SET workspace_id = ? WHERE job_id = ?");
+    for (const row of worktreeRows) {
+      if (!row.job_id || !row.worktree_column)
+        continue;
+      workspaceStmt.run(normalizeWorkspacePath(row.worktree_column), row.job_id);
+    }
+    db.run(`
+      UPDATE specialist_forensic_events AS forensic
+      SET participant_id = 'specialist::' || COALESCE(
+        NULLIF(TRIM(forensic.participant_role), ''),
+        NULLIF(TRIM((
+          SELECT jobs.specialist
+          FROM specialist_jobs AS jobs
+          WHERE jobs.job_id = forensic.job_id
+          LIMIT 1
+        )), ''),
+        '<unknown>'
+      )
+      WHERE forensic.participant_kind = 'specialist'
+    `);
+    db.run(`
+      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+        VALUES (15, strftime('%s', 'now') * 1000);
+    `);
+  });
+  backfill();
 }
 function migrateToV5(db) {
   const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
@@ -13859,9 +13958,13 @@ class SqliteClient {
   }
   writeStatusRow(status, lastOutput) {
     const statusJson = JSON.stringify(status);
+    const workspaceId = normalizeWorkspacePath(status.worktree_path);
+    const piSessionId = status.session_id ?? null;
+    const participantId = deriveParticipantId({ participant_role: status.specialist });
+    const attemptId = `${status.id}::attempt::1`;
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json, participant_id, pi_session_id, workspace_id, attempt_no, attempt_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
@@ -13876,7 +13979,10 @@ class SqliteClient {
         status_json = excluded.status_json,
         updated_at_ms = excluded.updated_at_ms,
         last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
-        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json);
+        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json),
+        participant_id = excluded.participant_id,
+        pi_session_id = excluded.pi_session_id,
+        workspace_id = excluded.workspace_id;
     `, [
       status.id,
       status.specialist,
@@ -13892,7 +13998,11 @@ class SqliteClient {
       statusJson,
       Date.now(),
       lastOutput ?? null,
-      status.startup_payload_json ?? null
+      status.startup_payload_json ?? null,
+      participantId,
+      piSessionId,
+      workspaceId,
+      attemptId
     ]);
   }
   writeEpicRunRow(epic) {
@@ -13934,17 +14044,39 @@ class SqliteClient {
     const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?").get(nodeRunId);
     return row?.next_seq ?? 1;
   }
+  readJobAttempt(jobId) {
+    const row = this.db.query("SELECT attempt_no, attempt_id FROM specialist_jobs WHERE job_id = ? LIMIT 1").get(jobId);
+    if (!row)
+      return null;
+    const attemptNo = typeof row.attempt_no === "bigint" ? Number(row.attempt_no) : typeof row.attempt_no === "number" ? row.attempt_no : 0;
+    return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === "string" ? row.attempt_id : null };
+  }
   writeEventRow(jobId, specialist, beadId, event) {
     const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
+    const current = this.readJobAttempt(jobId);
+    let attemptId;
+    if (isRetryStartEvent(event)) {
+      const nextNo = (current?.attempt_no ?? 0) + 1;
+      attemptId = buildAttemptId(jobId, nextNo);
+      if (current) {
+        this.db.run("UPDATE specialist_jobs SET attempt_no = ?, attempt_id = ?, updated_at_ms = ? WHERE job_id = ?", [nextNo, attemptId, Date.now(), jobId]);
+      }
+    } else if (current && current.attempt_no > 0) {
+      attemptId = current.attempt_id ?? buildAttemptId(jobId, current.attempt_no);
+    } else if (!current) {
+      attemptId = buildAttemptId(jobId, 1);
+    } else {
+      attemptId = null;
+    }
     this.db.run(`
-      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
-    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent);
+      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json, attempt_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson, attemptId]);
+    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent, attemptId);
   }
-  writeForensicEventRow(jobId, specialist, beadId, event) {
+  writeForensicEventRow(jobId, specialist, beadId, event, attemptId) {
     const context = this.readForensicContext(jobId);
     const forensicEvent = forensicEventFromTimelineEvent(event, {
       jobId,
@@ -13961,6 +14093,9 @@ class SqliteClient {
       chainRootBeadId: context.chainRootBeadId,
       epicId: context.epicId,
       sessionId: context.sessionId,
+      attemptId: attemptId ?? context.attemptId,
+      piSessionId: context.piSessionId ?? context.sessionId,
+      workspaceId: context.workspaceId,
       conversationId: context.conversationId,
       traceId: context.traceId,
       spanId: context.spanId,
@@ -13969,16 +14104,18 @@ class SqliteClient {
       spawnOrigin: context.spawnOrigin,
       rootRuntimeOrigin: context.rootRuntimeOrigin
     });
-    this.insertForensicEventRow(jobId, event.seq, forensicEvent);
+    this.insertForensicEventRow(jobId, event.seq, forensicEvent, attemptId);
   }
   readForensicContext(jobId) {
     const row = this.db.query(`
-      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status_json
+      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id,
+             participant_id, pi_session_id, workspace_id, attempt_id, status_json
       FROM specialist_jobs
       WHERE job_id = ?
       LIMIT 1
     `).get(jobId);
     const statusJson = parseJsonRecord(typeof row?.status_json === "string" ? row.status_json : undefined);
+    const columnSession = typeof row?.pi_session_id === "string" ? row.pi_session_id : undefined;
     return {
       beadId: typeof row?.bead_id === "string" ? row.bead_id : undefined,
       nodeId: typeof row?.node_id === "string" ? row.node_id : undefined,
@@ -13990,7 +14127,11 @@ class SqliteClient {
       chainRootJobId: typeof row?.chain_root_job_id === "string" ? row.chain_root_job_id : undefined,
       chainRootBeadId: typeof row?.chain_root_bead_id === "string" ? row.chain_root_bead_id : undefined,
       epicId: typeof row?.epic_id === "string" ? row.epic_id : undefined,
-      sessionId: typeof statusJson.session_id === "string" ? statusJson.session_id : undefined,
+      sessionId: columnSession ?? (typeof statusJson.session_id === "string" ? statusJson.session_id : undefined),
+      attemptId: typeof row?.attempt_id === "string" ? row.attempt_id : undefined,
+      piSessionId: columnSession ?? (typeof statusJson.session_id === "string" ? statusJson.session_id : undefined),
+      workspaceId: typeof row?.workspace_id === "string" ? row.workspace_id : undefined,
+      participantId: typeof row?.participant_id === "string" ? row.participant_id : undefined,
       conversationId: typeof statusJson.conversation_id === "string" ? statusJson.conversation_id : undefined,
       traceId: typeof statusJson.trace_id === "string" ? statusJson.trace_id : undefined,
       spanId: typeof statusJson.span_id === "string" ? statusJson.span_id : undefined,
@@ -14000,12 +14141,13 @@ class SqliteClient {
       rootRuntimeOrigin: statusJson.root_runtime_origin
     };
   }
-  insertForensicEventRow(jobId, seq, forensicEvent) {
+  insertForensicEventRow(jobId, seq, forensicEvent, attemptId) {
+    const columnAttemptId = attemptId ?? (typeof forensicEvent.correlation.attempt_id === "string" ? forensicEvent.correlation.attempt_id : null);
     this.db.run(`
       INSERT INTO specialist_forensic_events (
         job_id, seq, t, schema_version, event_family, event_name,
-        participant_kind, participant_role, participant_id, redaction_status, event_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        participant_kind, participant_role, participant_id, redaction_status, event_json, attempt_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       jobId,
       seq,
@@ -14017,7 +14159,8 @@ class SqliteClient {
       forensicEvent.resource.participant_role ?? null,
       typeof forensicEvent.correlation.participant_id === "string" ? forensicEvent.correlation.participant_id : null,
       forensicEvent.redaction.status,
-      JSON.stringify(forensicEvent)
+      JSON.stringify(forensicEvent),
+      columnAttemptId
     ]);
   }
   findActiveJob(beadId, specialist) {
@@ -14931,7 +15074,7 @@ class SqliteClient {
       const dir = filters.order === "desc" ? "DESC" : "ASC";
       return this.db.query(`
         SELECT id, job_id, seq, t, schema_version, event_family, event_name,
-               participant_kind, participant_role, participant_id, redaction_status, event_json
+               participant_kind, participant_role, participant_id, attempt_id, redaction_status, event_json
         FROM specialist_forensic_events
         ${where}
         ORDER BY t ${dir}, seq ${dir}, id ${dir}
@@ -15723,12 +15866,12 @@ function mergeIndex(base, overlay) {
   };
 }
 function loadMandatoryRulesIndex(cwd) {
-  const sourcePath = resolve5(cwd, "config/mandatory-rules/index.json");
-  const canonicalCopyPath = resolve5(cwd, ".specialists/default/mandatory-rules/index.json");
-  const userOverlayPath = resolve5(cwd, ".specialists/user/mandatory-rules/index.json");
+  const sourcePath = resolve6(cwd, "config/mandatory-rules/index.json");
+  const canonicalCopyPath = resolve6(cwd, ".specialists/default/mandatory-rules/index.json");
+  const userOverlayPath = resolve6(cwd, ".specialists/user/mandatory-rules/index.json");
   const packageLivePath = resolveCanonicalAssetDir("mandatory-rules");
-  const overlayPath = resolve5(cwd, ".specialists/mandatory-rules/index.json");
-  const packageLiveIndexPath = packageLivePath ? resolve5(packageLivePath, "index.json") : null;
+  const overlayPath = resolve6(cwd, ".specialists/mandatory-rules/index.json");
+  const packageLiveIndexPath = packageLivePath ? resolve6(packageLivePath, "index.json") : null;
   const tierPaths = [userOverlayPath, sourcePath, canonicalCopyPath, overlayPath].filter((value) => Boolean(value));
   const tiers = [];
   for (const path of tierPaths) {
@@ -15835,11 +15978,11 @@ function readMandatoryRuleSet(cwd, id) {
   }
   const packageCanonicalDir = resolveCanonicalAssetDir("mandatory-rules");
   const candidates = [
-    resolve5(cwd, `.specialists/user/mandatory-rules/${id}.md`),
-    resolve5(cwd, `.specialists/mandatory-rules/${id}.md`),
-    resolve5(cwd, `.specialists/default/mandatory-rules/${id}.md`),
-    resolve5(cwd, `config/mandatory-rules/${id}.md`),
-    ...packageCanonicalDir ? [resolve5(packageCanonicalDir, `${id}.md`)] : []
+    resolve6(cwd, `.specialists/user/mandatory-rules/${id}.md`),
+    resolve6(cwd, `.specialists/mandatory-rules/${id}.md`),
+    resolve6(cwd, `.specialists/default/mandatory-rules/${id}.md`),
+    resolve6(cwd, `config/mandatory-rules/${id}.md`),
+    ...packageCanonicalDir ? [resolve6(packageCanonicalDir, `${id}.md`)] : []
   ];
   const filePath = candidates.find((path) => existsSync8(path));
   if (!filePath)
@@ -16044,7 +16187,7 @@ class CircuitBreaker {
 // src/specialist/runner.ts
 import { execSync, spawnSync as spawnSync2 } from "node:child_process";
 import { existsSync as existsSync9, readFileSync as readFileSync5 } from "node:fs";
-import { basename, resolve as resolve6 } from "node:path";
+import { basename, resolve as resolve7 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 function sanitizeScriptName(name) {
   const cleaned = name.replace(/[\u0000-\u001f\u007f-\u009f"\\<>]/g, "").slice(0, 128);
@@ -16146,8 +16289,8 @@ ${r.output.trim()}
 ${blocks}
 </pre_flight_context>`;
 }
-function resolvePath(p) {
-  return p.startsWith("~/") ? resolve6(homedir3(), p.slice(2)) : resolve6(p);
+function resolvePath2(p) {
+  return p.startsWith("~/") ? resolve7(homedir3(), p.slice(2)) : resolve7(p);
 }
 function commandExists(cmd) {
   const result = spawnSync2("which", [cmd], { stdio: "ignore" });
@@ -16217,7 +16360,7 @@ function validateBeforeRun(spec, permissionLevel, resolvedToolContract) {
   const errors = [];
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
-    const abs = resolvePath(p);
+    const abs = resolvePath2(p);
     if (!existsSync9(abs)) {
       errors.push(`  ✗ skills.paths: skill not found: ${p}
 ` + `    resolved to: ${abs}
@@ -16230,7 +16373,7 @@ function validateBeforeRun(spec, permissionLevel, resolvedToolContract) {
       continue;
     const isFilePath = run.startsWith("./") || run.startsWith("../") || run.startsWith("/") || run.startsWith("~/");
     if (isFilePath) {
-      const abs = resolvePath(run);
+      const abs = resolvePath2(run);
       if (!existsSync9(abs)) {
         errors.push(`  ✗ skills.scripts: script not found: ${run}`);
       } else {
@@ -16540,7 +16683,7 @@ class CompatGuardError extends Error {
 function normalizePath(path, baseDir) {
   if (isAbsolute2(path))
     return path;
-  return resolve7(baseDir ?? process.cwd(), path);
+  return resolve8(baseDir ?? process.cwd(), path);
 }
 function isPathWithinRoot(candidate, root) {
   const rel = relative(root, candidate);
@@ -17499,7 +17642,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       });
     }
   }
-  return await new Promise((resolve8, reject) => {
+  return await new Promise((resolve9, reject) => {
     const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-skills"];
     if (extensionSelection.offline !== false)
       args.push("--offline");
@@ -17594,7 +17737,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
     pi.on("error", reject);
     pi.on("close", (code) => {
       clearTimeout(timer);
-      resolve8({
+      resolve9({
         model,
         text: assistantText,
         stderr,
@@ -19049,7 +19192,7 @@ function projectLaunchOutcome(outcome) {
 }
 // src/specialist/citation-evidence.ts
 import { realpath, readFile as readFile2 } from "node:fs/promises";
-import { isAbsolute as isAbsolute4, relative as relative3, resolve as resolve8 } from "node:path";
+import { isAbsolute as isAbsolute4, relative as relative3, resolve as resolve9 } from "node:path";
 function positiveInteger(value, fallback, name) {
   const resolved = value ?? fallback;
   if (!Number.isInteger(resolved) || resolved < 1) {
@@ -19068,9 +19211,9 @@ async function safeCitationPath(path, trustedRoot = process.cwd()) {
     throw new TypeError("path must remain within trusted root");
   }
   const canonicalRoot = await realpath(trustedRoot);
-  const canonicalPath = await realpath(resolve8(canonicalRoot, path));
+  const canonicalPath = await realpath(resolve9(canonicalRoot, path));
   const pathFromRoot = relative3(canonicalRoot, canonicalPath);
-  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve8("/").slice(0, 1)}`) || isAbsolute4(pathFromRoot)) {
+  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve9("/").slice(0, 1)}`) || isAbsolute4(pathFromRoot)) {
     throw new TypeError("path must remain within trusted root");
   }
   return canonicalPath;
