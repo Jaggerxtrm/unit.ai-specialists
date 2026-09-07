@@ -208,7 +208,11 @@ describe.skipIf(!runLive)('MCP activation surface — live', () => {
         `activation failed during the live probe: ${JSON.stringify(found)}`,
       ).not.toBe('failed');
       console.log('[live] observed activation:', JSON.stringify(found));
-      console.log(`[live] peak descendants of server pid ${serverPid}:`,
+      // Constant format string, values as arguments: a template literal in the first
+      // position trips semgrep's format-string rule (sg.run/7Y5R). Nothing here is
+      // attacker-controlled, but the rule is cheap to satisfy and arguing with it in a
+      // baseline would cost more than complying.
+      console.log('[live] peak descendants of server pid:', serverPid,
         peak.map(r => `${r.comm}(${r.pid})`).join(', ') || 'none');
 
       const stopped = textOf(await client.callTool({
