@@ -1,4 +1,4 @@
-FROM docker.io/oven/bun:1.3.14 AS builder
+FROM docker.io/oven/bun:1.4.2 AS builder
 WORKDIR /app
 
 COPY package.json bun.lock bunfig.toml tsconfig.json vitest.config.ts ./
@@ -11,7 +11,7 @@ COPY .gitignore ./.gitignore
 RUN bun install --frozen-lockfile
 RUN bun run build
 
-FROM docker.io/oven/bun:1.3.14-slim AS runtime
+FROM docker.io/oven/bun:1.4.2-slim AS runtime
 ARG PI_VERSION=latest
 WORKDIR /app
 
