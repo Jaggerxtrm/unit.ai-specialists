@@ -191,6 +191,40 @@ describe('specialist_dispatch — the MCP dispatch path is the same admission pa
     expect(out).not.toHaveProperty('output');
   });
 
+  it('carries an override through to the view as REQUESTED, distinct from what resolved', async () => {
+    // The wiring test, not a projection test. A view field that the host never populates
+    // is the failure mode this epic has produced five times: green, and reachable by
+    // nothing. The stub resolver deliberately returns `testprov/test-model` whatever it is
+    // asked for, so requested and resolved differ here and a defect that reported one in
+    // place of the other cannot hide.
+    const { host } = hostWith();
+    const tool = createSpecialistDispatchTool(() => host);
+
+    const out = await tool.execute({
+      specialist: 'researcher',
+      bead_id: 'ISSUE-1',
+      model_override: 'testprov/asked-for-model',
+    }) as Record<string, unknown>;
+
+    expect(out.status).toBe('dispatched');
+    expect(out.requested_model).toBe('testprov/asked-for-model');
+    expect(out.resolved_model).toBe('testprov/test-model');
+    expect(out.model_override).toBe(true);
+  });
+
+  it('records the requested model even when no override was given and it equals the resolved one', async () => {
+    // The equal case is the one an implementation is most tempted to omit, and omitting it
+    // makes "which activations ran on something other than what was asked for"
+    // unanswerable — the absence of a field cannot be distinguished from a match.
+    const { host } = hostWith();
+    const tool = createSpecialistDispatchTool(() => host);
+
+    const out = await tool.execute({ specialist: 'researcher', bead_id: 'ISSUE-1' }) as Record<string, unknown>;
+
+    expect(out.model_override).toBe(false);
+    expect(out.requested_model).toBe('testprov/test-model');
+  });
+
   it('REFUSES a draft-contract bead exactly as the CLI path does', async () => {
     const { host, sessionsCreated, events } = hostWith({ readContractState: () => 'draft' });
     const tool = createSpecialistDispatchTool(() => host);

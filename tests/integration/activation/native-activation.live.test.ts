@@ -16,14 +16,17 @@
  *   SPECIALISTS_LIVE_SMOKE_MODEL_ALT=<a different provider/model> \
  *     bun --bun vitest run tests/integration/activation/native-activation.live.test.ts
  *
- * MODEL_ALT is required only by the override case, and only has to RESOLVE — it is never
- * asked to serve a turn. Acceptance A needs two distinct real models because `prompt.system` is a BLOCKED override field (schema.ts) and
+ * MODEL_ALT must be SOLVENT, not merely resolvable: the Phase 11 acceptance C case (bead
+ * unitAI-rrdnt.35) asks it to serve a real turn, because "the override resolved" and "the
+ * child ran on the override" are different claims and only the second one is acceptance C.
+ * Acceptance A below still only requires it to resolve. Acceptance A needs two distinct real models because `prompt.system` is a BLOCKED override field (schema.ts) and
  * `execution.model` is the observable field a repo layer is actually permitted to change.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -175,6 +178,114 @@ function watchForPiDescendants(rootPid: number): { stop: () => string[] } {
       return seen;
     },
   };
+}
+
+/**
+ * Read one activation's forensic rows back out of the real store.
+ *
+ * Shelled out through `bun -e` rather than opened in-process, deliberately: the claim
+ * being tested is that an operator can answer "what did this activation run on?" from
+ * `observability.db` with nothing but the file, and an in-process handle would prove a
+ * weaker thing.
+ */
+function queryEvents(
+  dbPath: string,
+  cwd: string,
+  activationId: string,
+): Array<{ event_name: string; event_json: string }> {
+  const sql =
+    "SELECT event_name, event_json FROM specialist_forensic_events " +
+    "WHERE job_id = ? AND event_family = 'activation' ORDER BY seq ASC";
+  const query = run('bun', [
+    '-e',
+    [
+      "import { Database } from 'bun:sqlite';",
+      `const db = new Database(${JSON.stringify(dbPath)});`,
+      `console.log(JSON.stringify(db.query(${JSON.stringify(sql)}).all(${JSON.stringify(activationId)})));`,
+    ].join(' '),
+  ], cwd);
+  expect(query.status, query.stderr).toBe(0);
+  return JSON.parse(query.stdout.trim());
+}
+
+/** The `body` of the single `activation_admitted` row for an activation. */
+function admittedEventBody(dbPath: string, cwd: string, activationId: string): Record<string, unknown> {
+  const admitted = queryEvents(dbPath, cwd, activationId)
+    .filter(row => row.event_name === 'activation.activation_admitted');
+  expect(admitted, 'no activation_admitted row was written').toHaveLength(1);
+  return JSON.parse(admitted[0].event_json).body as Record<string, unknown>;
+}
+
+/** The `body` of the LAST `activation_resumed` row for an activation. */
+function resumedEventBody(dbPath: string, cwd: string, activationId: string): Record<string, unknown> {
+  const resumed = queryEvents(dbPath, cwd, activationId)
+    .filter(row => row.event_name === 'activation.activation_resumed');
+  expect(resumed.length, 'no activation_resumed row was written').toBeGreaterThan(0);
+  return JSON.parse(resumed[resumed.length - 1].event_json).body as Record<string, unknown>;
+}
+
+/**
+ * The most recent rejection in the store, with the count of sessions its activation
+ * reached.
+ *
+ * `startedEvents` is the load-bearing half: a refusal that happened AFTER an AgentSession
+ * was created is a different and much worse defect than no refusal at all, and only the
+ * absence of `activation_started` under the same job_id tells the two apart.
+ */
+function latestRejection(dbPath: string, cwd: string): {
+  reason?: string;
+  requestedModel?: string;
+  startedEvents: number;
+} {
+  const sql =
+    "SELECT job_id, event_json FROM specialist_forensic_events " +
+    "WHERE event_name = 'activation.activation_rejected' ORDER BY id DESC LIMIT 1";
+  const query = run('bun', [
+    '-e',
+    [
+      "import { Database } from 'bun:sqlite';",
+      `const db = new Database(${JSON.stringify(dbPath)});`,
+      `const row = db.query(${JSON.stringify(sql)}).get();`,
+      'if (!row) { console.log("null"); } else {',
+      "const started = db.query(\"SELECT COUNT(*) AS n FROM specialist_forensic_events WHERE job_id = ? AND event_name = 'activation.activation_started'\").get(row.job_id);",
+      'console.log(JSON.stringify({ event_json: row.event_json, started: started.n })); }',
+    ].join(' '),
+  ], cwd);
+  expect(query.status, query.stderr).toBe(0);
+  const parsed = JSON.parse(query.stdout.trim());
+  expect(parsed, 'no activation_rejected row was written').not.toBeNull();
+  const body = JSON.parse(parsed.event_json).body as Record<string, unknown>;
+  return {
+    reason: body.reason as string | undefined,
+    requestedModel: body.requestedModel as string | undefined,
+    startedEvents: parsed.started as number,
+  };
+}
+
+/**
+ * A content hash of every Specialist config layer the loader can read.
+ *
+ * Acceptance F is "config is not mutated", and the only honest way to assert that is on
+ * bytes. A re-read that returns the same model would also pass if an activation had
+ * rewritten the file to the value it happened to want.
+ */
+function configFingerprint(root: string): Record<string, string> {
+  const fingerprint: Record<string, string> = {};
+  const layers = [join(root, 'config', 'specialists'), join(root, '.specialists', 'specialists')];
+  for (const layer of layers) {
+    let entries: string[];
+    try {
+      entries = readdirSync(layer).sort();
+    } catch {
+      continue; // A layer that does not exist is not a mutation.
+    }
+    for (const entry of entries) {
+      const full = join(layer, entry);
+      if (!statSync(full).isFile()) continue;
+      fingerprint[full] = createHash('sha256').update(readFileSync(full)).digest('hex');
+    }
+  }
+  return fingerprint;
 }
 
 describe('live smoke: native Specialist activation', () => {
@@ -397,6 +508,178 @@ describe('live smoke: native Specialist activation', () => {
       await host.stop(handle.activationId, 'live AX smoke complete');
     },
     240_000,
+  );
+
+  /**
+   * PRD acceptance C, D, E, F and the bead's VALIDATION 1-4 — bead unitAI-rrdnt.35.
+   *
+   * The override path is asserted against what the RUNTIME reports, never against the
+   * arguments handed to it. Every silent-drop defect this epic has produced was invisible
+   * to the second kind of assertion, because the arguments were always correct.
+   *
+   * ALT is asked to serve a real turn here, unlike in acceptance A above: "the override
+   * was resolved" and "the child ran on the override" are different claims, and only the
+   * second one is acceptance C. A run that dies on provider billing looks exactly like a
+   * runtime defect, so every failure message below carries the provider's own error text.
+   */
+  it.skipIf(!runLive || !altModel)(
+    'acceptance C/E and VALIDATION 1: an explicit override runs the child on the requested model and is recorded requested-vs-resolved',
+    async () => {
+      const before = configFingerprint(tempRepo);
+
+      const handle = await host.start({
+        specialist: SPECIALIST,
+        beadId,
+        modelOverride: altModel,
+        requestedByParticipantId: 'coordinator:live-smoke',
+      });
+
+      // Acceptance C's second half: Specialist policy is unchanged by an override. A
+      // reader stays a reader; the override buys a model, not a capability.
+      expect(handle.access).toBe('read');
+      expect(handle.resolvedModel).toContain(altModel.split('/').pop());
+      expect(handle.resolvedModel).not.toContain(baseModel.split('/').pop());
+
+      const admitted = host.snapshot(handle.activationId);
+      expect(admitted?.modelOverride).toBe(true);
+      expect(admitted?.requestedModel).toBe(altModel);
+      // The configured model is retained alongside, which is what makes "ran on something
+      // other than what the Specialist configures" answerable at all.
+      expect(admitted?.configuredModel).toContain(baseModel.split('/').pop());
+
+      const result = await handle.result;
+      expect(
+        result.status,
+        `override activation failed — provider error: ${result.validation.errors?.join('; ')}`,
+      ).toBe('completed');
+      expect(String(result.output).trim().length).toBeGreaterThan(0);
+      expect(result.modelOverride).toBe(true);
+      expect(result.requestedModel).toBe(altModel);
+      // Acceptance D's contract seen from the success side: nothing was substituted.
+      expect(result.fallbackUsed).toBe(false);
+
+      // Acceptance E / VALIDATION 1 — the record, not the object. Read back out of the
+      // real observability.db, because a snapshot in memory is not forensics.
+      const body = admittedEventBody(dbPath, tempRepo, handle.activationId);
+      expect(body.requested_model).toBe(altModel);
+      expect(body.resolved_model).toBe(admitted?.resolvedModel);
+      expect(body.configured_model).toContain(baseModel.split('/').pop());
+      expect(body.model_override).toBe(true);
+
+      // VALIDATION 4 / acceptance F, first half: config is byte-identical across an
+      // activation that overrode it.
+      expect(configFingerprint(tempRepo)).toEqual(before);
+
+      await host.stop(handle.activationId, 'live smoke complete');
+    },
+    240_000,
+  );
+
+  it.skipIf(!runLive)(
+    'acceptance D and VALIDATION 2: an unavailable override is refused by name, before any session exists',
+    async () => {
+      const bogus = 'nowhere-at-all/no-such-model-9e1a';
+
+      // The refusal must name what was asked for. A refusal that says only "model
+      // unavailable" sends the operator to look for the wrong model.
+      await expect(host.start({
+        specialist: SPECIALIST,
+        beadId,
+        modelOverride: bogus,
+        requestedByParticipantId: 'coordinator:live-smoke',
+      })).rejects.toThrow(bogus);
+
+      // And it must be a refusal, not a substitution: no activation reached a session.
+      // Asserting on the absence of `activation_started` is the only evidence that
+      // distinguishes "refused before creation" from "created and then failed".
+      const rejected = latestRejection(dbPath, tempRepo);
+      expect(rejected.reason).toBe('model_unavailable');
+      expect(rejected.requestedModel).toBe(bogus);
+      expect(rejected.startedEvents, 'a session was created for a refused model').toBe(0);
+    },
+    120_000,
+  );
+
+  it.skipIf(!runLive || !altModel)(
+    'acceptance F and VALIDATION 4: the next activation with no override returns to the configured model',
+    async () => {
+      const before = configFingerprint(tempRepo);
+
+      const handle = await host.start({
+        specialist: SPECIALIST,
+        beadId,
+        requestedByParticipantId: 'coordinator:live-smoke',
+      });
+
+      // The preceding override changed nothing durable, so this run is back on base.
+      expect(handle.resolvedModel).toContain(baseModel.split('/').pop());
+      expect(handle.resolvedModel).not.toContain(altModel.split('/').pop());
+
+      const snapshot = host.snapshot(handle.activationId);
+      expect(snapshot?.modelOverride).toBe(false);
+      // VALIDATION 1's "including when they are equal" case: requested is still recorded.
+      expect(snapshot?.requestedModel).toContain(baseModel.split('/').pop());
+
+      const body = admittedEventBody(dbPath, tempRepo, handle.activationId);
+      expect(body.requested_model).toBe(snapshot?.requestedModel);
+      expect(body.model_override).toBe(false);
+
+      expect(configFingerprint(tempRepo)).toEqual(before);
+
+      await host.stop(handle.activationId, 'live smoke complete');
+      await handle.result.catch(() => undefined);
+    },
+    240_000,
+  );
+
+  it.skipIf(!runLive || !altModel)(
+    'VALIDATION 3: an override survives a resume and the new attempt carries it',
+    async () => {
+      // NOTE: `NativeActivationHost.resume()` is reachable from no coordinator surface at
+      // the time of writing — no MCP tool and no CLI calls it (bead unitAI-rrdnt.35 notes).
+      // This case therefore proves the host API, not an operator path, and says so rather
+      // than letting a green test imply reachability it does not have.
+      const handle = await host.start({
+        specialist: SPECIALIST,
+        beadId,
+        modelOverride: altModel,
+        requestedByParticipantId: 'coordinator:live-smoke',
+      });
+
+      const first = await handle.result;
+      expect(
+        first.status,
+        `override activation failed — provider error: ${first.validation.errors?.join('; ')}`,
+      ).toBe('completed');
+      expect(handle.attemptId).toMatch(/:1$/);
+
+      const resumed = await host.resume(handle.activationId, 'Reply with one more short sentence, then stop.');
+
+      // A resume advances the attempt under the SAME activation, and the override rides
+      // with it — it was never written anywhere it could be lost.
+      expect(resumed.activationId).toBe(handle.activationId);
+      expect(resumed.attemptId).toMatch(/:2$/);
+      expect(resumed.attemptId).not.toBe(handle.attemptId);
+      expect(resumed.resolvedModel).toContain(altModel.split('/').pop());
+
+      const second = await resumed.result;
+      expect(
+        second.status,
+        `resumed attempt failed — provider error: ${second.validation.errors?.join('; ')}`,
+      ).toBe('completed');
+      expect(second.attemptId).toBe(resumed.attemptId);
+      expect(second.modelOverride).toBe(true);
+      expect(second.requestedModel).toBe(altModel);
+
+      // Attributed to the NEW attempt in the record, not only in memory.
+      const resumedRow = resumedEventBody(dbPath, tempRepo, handle.activationId);
+      expect(resumedRow.attempt_id).toBe(resumed.attemptId);
+      expect(resumedRow.requested_model).toBe(altModel);
+      expect(resumedRow.model_override).toBe(true);
+
+      await host.stop(handle.activationId, 'live smoke complete');
+    },
+    360_000,
   );
 
 });
