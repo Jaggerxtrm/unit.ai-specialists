@@ -2,9 +2,9 @@
 title: Native Activation Runtime
 scope: native-activation
 category: guide
-version: 0.1.0
+version: 0.2.0
 updated: 2026-09-07
-synced_at: 5bdff6b5
+synced_at: bea7957a
 description: What the native Specialist activation runtime does today, what it refuses, and which of its guarantees are not yet in force.
 source_of_truth_for:
   - "src/activation/native-host.ts"
@@ -231,9 +231,41 @@ writers in one worktree is data loss rather than a race to tolerate. `release` *
 an uncertain lease; that must surface rather than being swallowed in a `finally`. Releasing
 an already-free workspace is a no-op, so a duplicated teardown path is safe.
 
-Resolving an uncertain lease is Phase 9 (`unitAI-rrdnt.31`) and is deliberately not part of
-this module. The
-module's job is to produce the state honestly, not to resolve it.
+Resolving an uncertain lease is deliberately not this module's job — it produces the state
+honestly and refuses to guess. The way out is `src/activation/workspace-reconcile.ts`
+(`unitAI-rrdnt.31`, closed), described next.
+
+### Getting out of uncertain
+
+Refusing to resolve `uncertain` is the correct safety property and, alone, a liveness bug: a
+writer killed mid-mutation leaves a workspace that is neither silently free nor ever usable
+again. Reconciliation is the only way out, and it is shaped so that the way out is a
+**recorded decision rather than an inference**.
+
+It is not `reconcile(workspace)` — "look at the world and free it if that seems safe" is the
+blind free under another name. Absence of a process is not evidence a mutation completed,
+and not evidence it did not. Instead the caller proposes an outcome, and the module
+validates and records it: it re-inspects the live lease at decision time, refuses any outcome
+the current `uncertainReason` does not permit, and appends the attempt — accepted **or**
+refused — to a durable log beside the lease.
+
+A proposal carries the outcome, `decidedBy` (never defaulted — "the runtime decided" with no
+author is how an inference gets laundered into a decision), and a non-empty `basis` of the
+durable evidence consulted. An empty basis is insufficient for every outcome, including
+`manual_attention_required`: a refusal still has to say what was looked at.
+
+Proposable outcomes are `safe_free`, `superseded` (requires naming the successor activation)
+and `manual_attention_required`. `recovered_holder` is computed, never requested — it is what
+re-inspection returns when the workspace turns out to be held after all. A refusal is a
+result rather than an error to discard: it leaves the workspace uncertain and readable,
+because a workspace nobody can resolve is exactly what an operator needs to see.
+
+The four uncertain reasons license different outcomes, which is why they were kept distinct
+rather than collapsed. `unreadable_record` refuses `safe_free` outright — with no holder
+identity, nothing can be attributed as safely finished, though an operator who has inspected
+the worktree may still name a successor, which asserts ownership instead of completion.
+`liveness_unverifiable` means no evidence available to this runtime can show the holder
+stopped.
 
 ### The known bypass
 
@@ -376,22 +408,37 @@ emitted, so a failure filter returns nothing whether or not failures happened. T
 
 ## Known holes
 
-Every entry is unclosed as of `5bdff6b5`. Where a bead exists it is named; where one does
+Every entry is unclosed as of `bea7957a`. Where a bead exists it is named; where one does
 not, that is stated rather than implied.
 
 | Hole | Consequence | Bead |
 |---|---|---|
 | No operator surface on `master`. `NativeActivationHost` has no production consumer there; the only live path is the gated smoke test. The four MCP tools exist unmerged on `xt/phase13-mcp`. | The runtime cannot be invoked by an operator until .33 merges. | `unitAI-rrdnt.33` (Phase 13) |
 | The 7-section contract gate applies only to native admission. `use_specialist` takes a `bead_id` with no readiness check, and a free-form `prompt` with no Bead at all. | A Bead refused by `specialist_dispatch` still runs through `use_specialist`. Pre-existing and by design; surprising if the gate is read as a property of Beads. | None; stated so the boundary is not mistaken |
-| A refusal's explanation is dropped by the renderer: `reject()` passes `detail:` where `DispatchRejectedError` reads `note:`, at four sites in `native-host.ts`. | A draft-marked Bead refuses with no missing sections and no mention of "draft". One-word fix, four call sites. | Proposed to the coordinator lane; no bead yet |
 | The writer lease is implemented but not wired. No activation acquires, releases, or admits tool calls against it. | Temporal exclusion does not exist yet. Currently harmless only because writers are refused at admission. | `unitAI-rrdnt.36` (Phase 10) |
 | Writers are refused at admission (`writer_not_supported_in_phase_1`). | Only `READ_ONLY` and `LOW` Specialists activate natively. | `unitAI-rrdnt.36` (Phase 10) |
 | Lease bypasses H3 (`pi.exec`) and H4 (direct `node:fs` / `child_process` in extension code) cannot be closed on Pi 0.85.1. | A trusted extension can mutate a leased workspace unobserved. Not a delegated-agent threat. | No bead; requires a Pi interposition layer that does not exist |
-| Uncertain-lease recovery is unimplemented. `release` throws and acquisition is refused; nothing resolves the state. | An uncertain lease requires a human. | `unitAI-rrdnt.31` (Phase 9, in progress) |
+| Reconciling an uncertain workspace requires a named decider and durable basis; nothing resolves one automatically. | By design, not a gap — but an uncertain workspace stays unusable until a person decides. | `unitAI-rrdnt.31`, closed |
 | `attempt_id` and `pi_session_id` are not indexed columns. | Attempt-level lineage is present but not efficiently queryable. | Tracked separately per `src/activation/forensic-sink.ts` |
 | Six forensic event names are classified by the sink but never emitted. | Their absence is not a health signal. | `unitAI-rrdnt.38` |
 
-One hole named in the Phase 0 reconciliation is **closed**, and is recorded here because
+Two items previously listed here are **closed** and are recorded rather than deleted, so
+nobody reinstates them from an older document:
+
+**The refusal renderer dropped its explanation.** `reject()` was called with
+`{ detail: <explanation> }` at four sites while `DispatchRejectedError`'s only free-text
+field is `note`, so a Bead marked `contract=draft` refused with `reason:
+bead_contract_incomplete`, no missing sections and no mention of "draft" — for a Bead whose
+seven sections were all correct. Fixed by `fdfc7c61` (`unitAI-rrdnt.40`), with two
+regression tests that assert on the **rendered** message rather than on the object passed
+in. That distinction is the whole point: a test over the object would have passed for as
+long as the defect existed, because the object was always correct and it was the rendering
+that discarded it. The underlying reason nothing went red across four call sites is that
+`reject()` takes `Record<string, unknown>`, so any key the error does not render compiles
+cleanly and vanishes. That type was deliberately not tightened — it has its own blast radius
+and its own bead.
+
+One hole named in the Phase 0 reconciliation is also closed, and is recorded here because
 that document still describes it as open: `docs/design/native-activation-reconciliation.md`
 §5.5 reports the console rendering `worktree_owner_job_id` under the label `lease` with a
 hardcoded `leases: 1, leaseCapacity: 4`. Verified against `5bdff6b5`: no such rendering
@@ -472,17 +519,11 @@ A `DispatchRejectedError` does not propagate as an MCP error. It comes back as:
 caller as an opaque string and lost `missing`, which is the part an operator acts on. A
 genuine fault still throws.
 
-**Known defect — a refusal can arrive with its explanation missing.** `native-host.ts`
-passes `{ detail: <explanation> }` into `reject()` at four sites (lines 186, 210, 232, 249),
-but `DispatchRejectedError`'s detail object has no `detail` field; its only free-text field
-is `note`. The rendered block therefore drops the explanation silently. Verified at
-`5bdff6b5`. Concretely: dispatch a Bead marked `contract=draft` and the operator-visible
-refusal reads `reason: bead_contract_incomplete` with no missing sections and no mention of
-the word "draft" — for a Bead whose seven sections are all present and correct. That is the
-least actionable form the gate can take. The explanation survives only in `detail.detail`,
-which no renderer reads; `reject()`'s parameter is `Record<string, unknown>`, so the compiler
-never objected. The fix is one word at four call sites. `native-host.ts` is owned by the
-coordinator lane, so it is proposed rather than applied.
+`note` carries the human-readable explanation — the missing-section reason, the model-gate
+reason, the loader error. It was silently dropped by the renderer until `fdfc7c61`
+(`unitAI-rrdnt.40`); see [Known holes](#known-holes) for what that looked like and why
+nothing went red. If you are reading a refusal from a build older than that commit, expect
+`reason` alone with no explanation.
 
 ### Answering a question
 
