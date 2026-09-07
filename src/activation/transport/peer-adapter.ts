@@ -25,6 +25,7 @@ import {
   read,
   recordAttempt,
   recordReceipt,
+  recordReplyDelivery,
   type InteractionPayload,
   type PendingInteraction,
 } from './pending-store.js';
@@ -259,8 +260,45 @@ export class PeerAdapter {
   ): Promise<{ push: PushResult; reply?: InteractionPayload }> {
     const push = await this.push(request);
     const reply = await awaitReply(this.options.repoRoot, request.activationId, request.messageId, wait);
-    return { push, reply: reply?.body };
+    if (!reply) return { push };
+
+    // The answer is the confirmation. Claude Code emits no receipt to a peer sender, so a
+    // correlated reply is the only delivery evidence this transport can produce — and it is
+    // a stronger one, because it proves a coordinator read the question rather than that a
+    // socket accepted the bytes. The correlation check lives in the store, so a reply that
+    // does not name this message cannot upgrade it.
+    const inReplyTo = replyCorrelation(reply.body) ?? request.messageId;
+    const record = recordReplyDelivery(this.options.repoRoot, request.activationId, request.messageId, {
+      inReplyTo,
+      atMs: reply.repliedAtMs,
+    });
+    return { push: { ...push, record, outcome: outcomeAfterReply(push.outcome, record) }, reply: reply.body };
   }
+}
+
+/**
+ * Read `inReplyTo` from an opaque reply payload.
+ *
+ * Structural rather than typed, for the same reason the rest of this lane treats the
+ * message as opaque: the vocabulary belongs to `src/activation/interaction.ts`. A payload
+ * with no `inReplyTo` falls back to the message being awaited, because the store located it
+ * by id and the correlation is then already established by the filename.
+ */
+function replyCorrelation(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null) return undefined;
+  const value = (body as { inReplyTo?: unknown }).inReplyTo;
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Re-derive the push outcome once a reply has confirmed it.
+ *
+ * Only `delivered` is promoted, and only from a state that was not an explicit refusal. A
+ * push that the approval gate declined stays `refused` even though the answer arrived,
+ * because the refusal is the one authoritative thing the transport reported about it.
+ */
+function outcomeAfterReply(current: PushOutcome, record: PendingInteraction): PushOutcome {
+  return record.delivery.state === 'delivered' && current !== 'refused' ? 'delivered' : current;
 }
 
 /**
