@@ -6,11 +6,19 @@
  * Chain scheduler can call `start()` with a synthetic request because nothing here depends
  * on TUI state.
  *
- * WHAT THIS IS NOT, in Phase 1:
- *   - no writer support. Only read-only Specialists are admitted; the workspace writer
- *     lease does not exist yet, and admitting a writer before it does would allow two
- *     concurrent mutators in one worktree.
- *   - no interaction protocol, no Fleet, no model picker.
+ * WHAT THIS DOES NOT DO YET, and why:
+ *   - No writer support. Only read-only Specialists are admitted (see the `access` check
+ *     below). `src/activation/workspace-lease.ts` now EXISTS and is mutation-tested, but it
+ *     is imported by nothing in `src/` — this host does not acquire it. That is currently
+ *     harmless precisely because writers are refused here: nothing is fenced because
+ *     nothing writes. Enabling writers and wiring the lease is one change, not two, and it
+ *     is `unitAI-rrdnt.36`. Flipping the admission check without the acquire call would
+ *     ship write-capable Specialists guarded by a lease that is present, tested, closed on
+ *     the board, and never called.
+ *   - No model picker.
+ *
+ * The interaction protocol and the Fleet DO exist: see `./interaction.ts`, `./ask-tool.ts`
+ * and `./registry.ts`.
  *
  * Session lifetime deliberately exceeds turn lifetime: reaching `agent_settled` makes a
  * Specialist *waiting and resumable*, never disposed. Disposal is an explicit act.
@@ -27,6 +35,8 @@ import { BeadsClient } from '../specialist/beads.js';
 import { evaluateBeadReadiness, type BeadGateOptions } from './bead-gate.js';
 import { compileStepContract, type StepContract } from './step-contract.js';
 import { InteractionTransport, type InteractionMessage, type PendingAsk } from './interaction.js';
+import { createPeerDelivery } from './peer-bridge.js';
+import { PeerAdapter, type TransportForensicEvent } from './transport/peer-adapter.js';
 import { createAskTools, ASK_TOOL, ESCALATE_TOOL } from './ask-tool.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
@@ -76,6 +86,17 @@ export interface ActivationForensicSink {
    * mappers, and the translated `emit` names remain the sole producers of their own rows.
    */
   sessionEvent?(input: NativeActivationSessionEventInput): void;
+
+  /**
+   * Receives peer-transport route and delivery events.
+   *
+   * The transport lane writes no forensics itself — `observability.db` is the single
+   * forensic authority and no lane owns a file belonging to the sink, which is why
+   * `PeerAdapter` takes an injected `emit` rather than importing one. Ownership follows the
+   * authority; the fact that three lanes then merged without touching each other's files is
+   * a consequence of that boundary, not a merge tactic to copy where no boundary exists.
+   */
+  peerTransportEvent?(event: TransportForensicEvent): void;
 }
 
 /** One raw session event, with the activation identity needed to attribute it. */
@@ -104,6 +125,26 @@ export interface NativeActivationHostDeps {
   /** Defaults to `process.cwd()`. */
   cwd?: string;
   now?: () => number;
+  /**
+   * Push asks to a live Claude coordinator over the peer channel.
+   *
+   * Omit it and the host is polling-only, which is the degraded path and is correct: the
+   * question is still readable through `specialist_status` and nothing is lost. Supplying
+   * it does not make delivery guaranteed — see docs/design/claude-transport-decision.md §5.
+   */
+  peer?: PeerDelivery;
+}
+
+/** Configuration for pushing interactions to a Claude coordinator. */
+export interface PeerDelivery {
+  /** The coordinator's Claude session id. The only stable address on this channel. */
+  coordinatorSessionId: string;
+  /** Repository root under which `.specialists/interactions/` lives. Defaults to `cwd`. */
+  repoRoot?: string;
+  /** Built for tests; defaults to a real `PeerAdapter` against the live roster. */
+  adapter?: PeerAdapter;
+  replyTimeoutMs?: number;
+  pollIntervalMs?: number;
 }
 
 /**
@@ -132,11 +173,19 @@ export class NativeActivationHost {
    * One transport for the whole host. Messages carry their own activationId, so a single
    * instance serves every child and the parent enumerates asks across the Fleet in one
    * place rather than walking activations.
+   *
+   * Delivery is wired only when a coordinator address is configured. Without one the
+   * transport is in-process and every ask reads as `pending` through `specialist_status`,
+   * which is the degraded path and is fully functional — the peer channel is an
+   * optimisation on top of durable state, never a prerequisite for it (PRD §30).
    */
-  private readonly interactions = new InteractionTransport();
+  private readonly interactions: InteractionTransport;
 
   constructor(deps: NativeActivationHostDeps = {}) {
     this.cwd = deps.cwd ?? process.cwd();
+    this.interactions = new InteractionTransport(
+      deps.peer ? { deliver: this.wirePeerDelivery(deps.peer) } : {},
+    );
     this.loader = deps.loader ?? new SpecialistLoader({ projectDir: this.cwd });
     this.beadsClient = deps.beadsClient ?? new BeadsClient();
     this.forensics = deps.forensics ?? NULL_FORENSIC_SINK;
@@ -551,6 +600,29 @@ export class NativeActivationHost {
   /** Current state of one activation, or undefined if unknown to this host. */
   inspect(activationId: string): ActivationSnapshot | undefined {
     return this.registry.projection(activationId);
+  }
+
+  /**
+   * Build the delivery hook for a configured coordinator.
+   *
+   * Called from the constructor, so it must not read any field the constructor has not yet
+   * assigned — `repoRoot` is taken from the config or from `deps.cwd` directly rather than
+   * from `this.cwd`, which is set on the line above but would be a trap to depend on if the
+   * order ever changed.
+   */
+  private wirePeerDelivery(peer: PeerDelivery) {
+    const repoRoot = peer.repoRoot ?? this.cwd;
+    return createPeerDelivery({
+      transport: () => this.interactions,
+      adapter: peer.adapter ?? new PeerAdapter({
+        repoRoot,
+        emit: event => this.forensics.peerTransportEvent?.(event),
+      }),
+      repoRoot,
+      coordinatorSessionId: peer.coordinatorSessionId,
+      ...(peer.replyTimeoutMs !== undefined ? { replyTimeoutMs: peer.replyTimeoutMs } : {}),
+      ...(peer.pollIntervalMs !== undefined ? { pollIntervalMs: peer.pollIntervalMs } : {}),
+    });
   }
 
   /** The Fleet projection: every activation this process knows about, transport-neutral. */
