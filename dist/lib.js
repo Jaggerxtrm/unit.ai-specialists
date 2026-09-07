@@ -13136,6 +13136,51 @@ function redactionStatusForTimelineEvent(event) {
 // src/specialist/observability-sqlite.ts
 var _BunDatabase = null;
 var _probed = false;
+function nodeSqliteAdapter() {
+  let DatabaseSync;
+  try {
+    DatabaseSync = __require("node:sqlite").DatabaseSync;
+  } catch {
+    return null;
+  }
+  if (!DatabaseSync)
+    return null;
+  return class NodeSqliteDatabase {
+    inner;
+    constructor(path) {
+      this.inner = new DatabaseSync(path);
+    }
+    run(sql, ...params) {
+      if (params.length === 0) {
+        this.inner.exec(sql);
+        return;
+      }
+      return this.inner.prepare(sql).run(...params);
+    }
+    query(sql) {
+      return this.inner.prepare(sql);
+    }
+    transaction(fn) {
+      const self = this;
+      return function wrapped(...args) {
+        self.inner.exec("BEGIN");
+        try {
+          const out = fn.apply(this, args);
+          self.inner.exec("COMMIT");
+          return out;
+        } catch (error) {
+          try {
+            self.inner.exec("ROLLBACK");
+          } catch {}
+          throw error;
+        }
+      };
+    }
+    close() {
+      this.inner.close();
+    }
+  };
+}
 function loadBunDatabase() {
   if (_probed)
     return _BunDatabase;
@@ -13143,7 +13188,7 @@ function loadBunDatabase() {
   try {
     _BunDatabase = __require("bun:sqlite").Database;
   } catch {
-    _BunDatabase = null;
+    _BunDatabase = nodeSqliteAdapter();
   }
   return _BunDatabase;
 }
@@ -20639,13 +20684,62 @@ function admitToolCall(input, probe = procLeaseProbe()) {
   };
 }
 
+// src/activation/guarded-tools.ts
+var FACTORY_NAMES = {
+  edit: "createEditTool",
+  write: "createWriteTool",
+  bash: "createBashTool",
+  powershell: "createPowerShellTool"
+};
+function createGuardedTools(sdk, input) {
+  const sdkAny = sdk;
+  const tools = [];
+  const guarded = [];
+  const unguardable = [];
+  for (const name of input.toolNames) {
+    const key = name.trim().toLowerCase();
+    const factoryName = FACTORY_NAMES[key];
+    if (!factoryName)
+      continue;
+    const factory = sdkAny[factoryName];
+    if (!factory) {
+      unguardable.push(name);
+      continue;
+    }
+    const original = factory(input.cwd);
+    const originalExecute = original.execute.bind(original);
+    tools.push({
+      ...original,
+      execute: async (...args) => {
+        const verdict = input.admit(name);
+        if (verdict.allow)
+          return originalExecute(...args);
+        const refusal2 = {
+          content: [{
+            type: "text",
+            text: `Refused: ${verdict.reason ?? `${name} is not admitted against this workspace`}`
+          }],
+          details: { blocked: true, tool: name }
+        };
+        return refusal2;
+      }
+    });
+    guarded.push(name);
+  }
+  return { tools, guarded, unguardable };
+}
+
 // src/activation/ask-tool.ts
 var ASK_TOOL = "ask_coordinator";
 var ESCALATE_TOOL = "escalate_to_coordinator";
+var toolText = (text) => ({
+  content: [{ type: "text", text }],
+  details: {}
+});
 function createAskTools(sdk, ctx) {
   const ask = async (kind, body) => {
     if (!body?.trim()) {
-      return "Refused: an empty question cannot be answered. State the question.";
+      return toolText("Refused: an empty question cannot be answered. State the question.");
     }
     ctx.onAsk?.(kind, body);
     const reply = await ctx.transport.request({
@@ -20657,7 +20751,7 @@ function createAskTools(sdk, ctx) {
       body
     });
     ctx.onAnswered?.(kind);
-    return reply.body;
+    return toolText(reply.body);
   };
   return [
     sdk.defineTool({
@@ -21010,8 +21104,22 @@ class NativeActivationHost {
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
+    const guardedTools = createGuardedTools(sdk, {
+      toolNames: toolContract.toolsList,
+      cwd: workspace.worktreePath,
+      admit: (toolName) => admitToolCall({ toolName, workspace, activationId })
+    });
+    if (guardedTools.unguardable.length > 0) {
+      emit("lease_denied", {
+        workspace: workspace.worktreePath,
+        note: `cannot guard mutating tools: ${guardedTools.unguardable.join(", ")}`
+      });
+      return reject("unguardable_mutating_tools", {
+        note: `these tools mutate and cannot be fenced by the workspace lease on this runtime: ${guardedTools.unguardable.join(", ")}`
+      });
+    }
     const { session } = await sdk.createAgentSession({
-      customTools: askTools,
+      customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       model: modelCheck.model,
       ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
@@ -21113,6 +21221,7 @@ class NativeActivationHost {
           validation: { valid: false, errors: [detail] },
           piSessionId: session.sessionId,
           configuredModel: snapshot.configuredModel,
+          requestedModel: snapshot.requestedModel,
           resolvedModel: snapshot.resolvedModel,
           modelOverride: snapshot.modelOverride,
           fallbackUsed: false,
@@ -21135,6 +21244,7 @@ class NativeActivationHost {
         validation,
         piSessionId: session.sessionId,
         configuredModel: snapshot.configuredModel,
+        requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
         fallbackUsed: false,
@@ -21154,6 +21264,7 @@ class NativeActivationHost {
         validation: { valid: false, errors: [message] },
         piSessionId: session.sessionId,
         configuredModel: snapshot.configuredModel,
+        requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
         fallbackUsed: false,
@@ -21390,6 +21501,60 @@ var specialistStopSchema = objectType({
   activation_id: stringType().describe("Activation to stop and dispose."),
   reason: stringType().optional().describe("Recorded forensically with the disposal.")
 });
+// src/activation/forensic-sink.ts
+var ERROR_EVENTS = new Set([
+  "activation_rejected",
+  "activation_failed",
+  "output_validation_failed",
+  "retry_failed",
+  "tool_blocked",
+  "lease_denied"
+]);
+var WARN_EVENTS = new Set([
+  "activation_uncertain",
+  "lease_uncertain",
+  "retry_started"
+]);
+function severityFor(name) {
+  if (ERROR_EVENTS.has(name))
+    return "error";
+  if (WARN_EVENTS.has(name))
+    return "warn";
+  return "info";
+}
+function createActivationForensicSink(observability) {
+  if (!observability)
+    return { emit: () => {} };
+  return {
+    emit(event) {
+      try {
+        observability.appendForensicEvent(event.activationId, event.specialist, event.beadId, createForensicEvent({
+          event_family: "activation",
+          event_name: `activation.${event.name}`,
+          severity: severityFor(event.name),
+          resource: {
+            service_namespace: "xtrm",
+            service_name: "specialists",
+            service_component: "native-activation-host",
+            deployment_environment: deploymentEnvironment(),
+            repo: "specialists",
+            participant_kind: "specialist",
+            participant_role: event.specialist
+          },
+          correlation: {
+            participant_id: event.participantId,
+            job_id: event.activationId,
+            bead_id: event.beadId
+          },
+          body: {
+            attempt_id: event.attemptId,
+            ...event.payload ?? {}
+          }
+        }));
+      } catch {}
+    }
+  };
+}
 // src/specialist/launch-outcome.ts
 var LAUNCH_OUTCOME_SCHEMA_VERSION = "xtrm.command-outcome.v1";
 
@@ -21739,9 +21904,12 @@ export {
   toPendingAskView,
   toActivationView,
   runScriptSpecialist as runScript,
+  resolveObservabilityDbLocation,
   readVerifiedCitationWindow,
   projectLaunchOutcome,
   parseLaunchOutcome,
+  createObservabilitySqliteClientAtPath,
+  createActivationForensicSink,
   SpecialistLoader,
   NativeActivationHost,
   LaunchOutcomeError,

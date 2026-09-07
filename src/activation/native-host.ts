@@ -38,6 +38,7 @@ import { InteractionTransport, type InteractionMessage, type PendingAsk } from '
 import { createPeerDelivery } from './peer-bridge.js';
 import { PeerAdapter, type TransportForensicEvent } from './transport/peer-adapter.js';
 import { acquire as acquireLease, admitToolCall, release as releaseLease } from './workspace-lease.js';
+import { createGuardedTools } from './guarded-tools.js';
 import { createAskTools, ASK_TOOL, ESCALATE_TOOL } from './ask-tool.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
@@ -410,8 +411,31 @@ export class NativeActivationHost {
       },
     });
 
+    // PRD §52: the mutating builtins are RECONSTRUCTED and wrapped here, so the only
+    // mutating tool the child can reach is one that consults the lease on every call. A
+    // guard each frontend has to remember to call is optional enforcement; this one cannot
+    // be skipped, because the frontend is not involved (unitAI-rrdnt.36.2).
+    const guardedTools = createGuardedTools(sdk, {
+      toolNames: toolContract.toolsList,
+      cwd: workspace.worktreePath,
+      admit: toolName => admitToolCall({ toolName, workspace, activationId }),
+    });
+
+    if (guardedTools.unguardable.length > 0) {
+      // A mutating tool we cannot reconstruct cannot be fenced. Passing it through would
+      // make the lease decorative for exactly the calls it exists to stop, so the dispatch
+      // is refused and the names are named.
+      emit('lease_denied', {
+        workspace: workspace.worktreePath,
+        note: `cannot guard mutating tools: ${guardedTools.unguardable.join(', ')}`,
+      });
+      return reject('unguardable_mutating_tools', {
+        note: `these tools mutate and cannot be fenced by the workspace lease on this runtime: ${guardedTools.unguardable.join(', ')}`,
+      });
+    }
+
     const { session } = await sdk.createAgentSession({
-      customTools: askTools,
+      customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       // The pi SDK takes a Model object here. Passing the provider-qualified string
       // instead is accepted silently and then fails mid-turn with an unresolved provider.
@@ -561,6 +585,7 @@ export class NativeActivationHost {
           validation: { valid: false, errors: [detail] },
           piSessionId: session.sessionId,
           configuredModel: snapshot.configuredModel,
+      requestedModel: snapshot.requestedModel,
           resolvedModel: snapshot.resolvedModel,
           modelOverride: snapshot.modelOverride,
           fallbackUsed: false,
@@ -589,6 +614,7 @@ export class NativeActivationHost {
         validation,
         piSessionId: session.sessionId,
         configuredModel: snapshot.configuredModel,
+      requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
         fallbackUsed: false,
@@ -609,6 +635,7 @@ export class NativeActivationHost {
         validation: { valid: false, errors: [message] },
         piSessionId: session.sessionId,
         configuredModel: snapshot.configuredModel,
+      requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
         fallbackUsed: false,

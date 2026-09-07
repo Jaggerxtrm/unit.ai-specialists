@@ -11396,6 +11396,51 @@ var init_job_root = () => {};
 // src/specialist/observability-sqlite.ts
 import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync } from "fs";
 import { dirname as dirname2, join as join3, normalize, resolve as resolve2 } from "path";
+function nodeSqliteAdapter() {
+  let DatabaseSync;
+  try {
+    DatabaseSync = __require("node:sqlite").DatabaseSync;
+  } catch {
+    return null;
+  }
+  if (!DatabaseSync)
+    return null;
+  return class NodeSqliteDatabase {
+    inner;
+    constructor(path) {
+      this.inner = new DatabaseSync(path);
+    }
+    run(sql, ...params) {
+      if (params.length === 0) {
+        this.inner.exec(sql);
+        return;
+      }
+      return this.inner.prepare(sql).run(...params);
+    }
+    query(sql) {
+      return this.inner.prepare(sql);
+    }
+    transaction(fn) {
+      const self = this;
+      return function wrapped(...args) {
+        self.inner.exec("BEGIN");
+        try {
+          const out = fn.apply(this, args);
+          self.inner.exec("COMMIT");
+          return out;
+        } catch (error2) {
+          try {
+            self.inner.exec("ROLLBACK");
+          } catch {}
+          throw error2;
+        }
+      };
+    }
+    close() {
+      this.inner.close();
+    }
+  };
+}
 function loadBunDatabase() {
   if (_probed)
     return _BunDatabase;
@@ -11403,7 +11448,7 @@ function loadBunDatabase() {
   try {
     _BunDatabase = __require("bun:sqlite").Database;
   } catch {
-    _BunDatabase = null;
+    _BunDatabase = nodeSqliteAdapter();
   }
   return _BunDatabase;
 }
@@ -77042,13 +77087,62 @@ function isDeliveredStatus(status) {
   return status === "delivered" || status === "approved" || status === "released";
 }
 
+// src/activation/guarded-tools.ts
+var FACTORY_NAMES = {
+  edit: "createEditTool",
+  write: "createWriteTool",
+  bash: "createBashTool",
+  powershell: "createPowerShellTool"
+};
+function createGuardedTools(sdk, input) {
+  const sdkAny = sdk;
+  const tools = [];
+  const guarded = [];
+  const unguardable = [];
+  for (const name of input.toolNames) {
+    const key = name.trim().toLowerCase();
+    const factoryName = FACTORY_NAMES[key];
+    if (!factoryName)
+      continue;
+    const factory = sdkAny[factoryName];
+    if (!factory) {
+      unguardable.push(name);
+      continue;
+    }
+    const original = factory(input.cwd);
+    const originalExecute = original.execute.bind(original);
+    tools.push({
+      ...original,
+      execute: async (...args) => {
+        const verdict = input.admit(name);
+        if (verdict.allow)
+          return originalExecute(...args);
+        const refusal2 = {
+          content: [{
+            type: "text",
+            text: `Refused: ${verdict.reason ?? `${name} is not admitted against this workspace`}`
+          }],
+          details: { blocked: true, tool: name }
+        };
+        return refusal2;
+      }
+    });
+    guarded.push(name);
+  }
+  return { tools, guarded, unguardable };
+}
+
 // src/activation/ask-tool.ts
 var ASK_TOOL = "ask_coordinator";
 var ESCALATE_TOOL = "escalate_to_coordinator";
+var toolText = (text) => ({
+  content: [{ type: "text", text }],
+  details: {}
+});
 function createAskTools(sdk, ctx) {
   const ask = async (kind, body) => {
     if (!body?.trim()) {
-      return "Refused: an empty question cannot be answered. State the question.";
+      return toolText("Refused: an empty question cannot be answered. State the question.");
     }
     ctx.onAsk?.(kind, body);
     const reply = await ctx.transport.request({
@@ -77060,7 +77154,7 @@ function createAskTools(sdk, ctx) {
       body
     });
     ctx.onAnswered?.(kind);
-    return reply.body;
+    return toolText(reply.body);
   };
   return [
     sdk.defineTool({
@@ -77414,8 +77508,22 @@ class NativeActivationHost {
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
+    const guardedTools = createGuardedTools(sdk, {
+      toolNames: toolContract.toolsList,
+      cwd: workspace.worktreePath,
+      admit: (toolName) => admitToolCall({ toolName, workspace, activationId })
+    });
+    if (guardedTools.unguardable.length > 0) {
+      emit("lease_denied", {
+        workspace: workspace.worktreePath,
+        note: `cannot guard mutating tools: ${guardedTools.unguardable.join(", ")}`
+      });
+      return reject("unguardable_mutating_tools", {
+        note: `these tools mutate and cannot be fenced by the workspace lease on this runtime: ${guardedTools.unguardable.join(", ")}`
+      });
+    }
     const { session } = await sdk.createAgentSession({
-      customTools: askTools,
+      customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       model: modelCheck.model,
       ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
@@ -77517,6 +77625,7 @@ class NativeActivationHost {
           validation: { valid: false, errors: [detail] },
           piSessionId: session.sessionId,
           configuredModel: snapshot.configuredModel,
+          requestedModel: snapshot.requestedModel,
           resolvedModel: snapshot.resolvedModel,
           modelOverride: snapshot.modelOverride,
           fallbackUsed: false,
@@ -77539,6 +77648,7 @@ class NativeActivationHost {
         validation,
         piSessionId: session.sessionId,
         configuredModel: snapshot.configuredModel,
+        requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
         fallbackUsed: false,
@@ -77558,6 +77668,7 @@ class NativeActivationHost {
         validation: { valid: false, errors: [message] },
         piSessionId: session.sessionId,
         configuredModel: snapshot.configuredModel,
+        requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
         fallbackUsed: false,
