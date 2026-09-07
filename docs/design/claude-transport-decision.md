@@ -138,10 +138,32 @@ senders holding a `~/.claude/sessions/<pid>.json` registration, which `pi-claude
 writes via `registerPeer()` and the probe deliberately did not.
 
 The consequence is a decision, not an implementation detail: **acceptance AX requires the
-runtime to register itself as a peer**, and that writes to the user's environment. It is
-the operator's call and is deliberately left open here. Until it is made, the correct
-behaviour is the one the adapter already has — record `sent_unconfirmed`, claim nothing,
-and leave the question readable through the polling projection.
+runtime to register itself as a peer**, and that writes to the user's environment. That is
+the operator's call, and it has now been made.
+
+**Ruling, 2026-09-07: approved.** The operator's words were "yes it can, i do approve."
+The activation runtime may write `~/.claude/sessions/<pid>.json` and bind a colocated
+socket so receipts return and a push can honestly be marked delivered. Tracked as
+`unitAI-rrdnt.25`.
+
+Approval was given on two conditions, and both are binding rather than advisory, because
+the approval was granted on the understanding that registration does not degrade the
+roster it joins:
+
+1. **Deregistration on exit**, including abnormal exit as far as it can be made to hold.
+2. **Orphan cleanup.** Measured baseline before this work: 128 socket files for 20 live
+   registrations. Registration must not add to that ratio.
+
+One design consequence follows from the second condition. Register once per **runtime
+process**, never per activation: a per-activation registration multiplies roster entries by
+concurrency and turns cleanup into a race against the activations themselves.
+
+Two things this ruling does not change. The adapter's degraded behaviour stays exactly as
+built and tested — `sent_unconfirmed`, claim nothing, leave the question readable through
+the polling projection — because registration can still be absent, stale, or refused, and
+the approval gate in this section is untouched by it. What changes is only the expected
+steady state: with registration in place, `no_receipt` becomes a fault to investigate
+rather than the normal outcome it was when this section was first written.
 
 ## 6. One protocol, two transports
 
