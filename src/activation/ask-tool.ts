@@ -12,6 +12,13 @@
  * context and turns a clarification into a restart, which is the failure mode this phase
  * exists to prevent and the one that looks like success.
  *
+ * Three separate defects made this file unreachable, each hidden by the last. The tools
+ * were filtered out of the session entirely (unitAI-rrdnt.43.1); then they arrived with the
+ * wrong execute signature (.43.2); then they ran correctly and returned a bare string,
+ * which pi normalises to empty content (.43.3). Every one was invisible to a unit test that
+ * called `execute` directly and asserted on its return value, because at that boundary each
+ * defect was correct.
+ *
  * The `execute` signature is `(toolCallId, args, ...)`, NOT `(args)`. Measured on pi
  * 0.85.1: the SDK invokes a custom tool's execute with five arguments and the parameters
  * object is the SECOND. Writing `(args)` binds the tool-call id string to `args`, so
@@ -54,10 +61,30 @@ export const ESCALATE_TOOL = 'escalate_to_coordinator';
  * without gaining any mutation capability — asking is not a workspace operation, and
  * widening the allowlist to grant it would hand every reader an edit tool.
  */
+export interface AgentToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  details: Record<string, unknown>;
+}
+
+/**
+ * Wrap text as the SDK's tool-result shape.
+ *
+ * A custom tool must return `AgentToolResult`, not a string. pi normalises
+ * `result.content ?? []`, so a bare string yields an EMPTY content list and the child sees
+ * "(no tool output)" — measured live: the transport delivered the answer, the waiter
+ * resolved, the child resumed, and the text was dropped on the way out of the tool. The
+ * child then reported that its coordinator-facing tools return nothing, which reads as a
+ * broken coordinator rather than a broken return type.
+ */
+const toolText = (text: string): AgentToolResult => ({
+  content: [{ type: 'text', text }],
+  details: {},
+});
+
 export function createAskTools(sdk: PiSdk, ctx: AskToolContext): unknown[] {
-  const ask = async (kind: 'question' | 'escalation', body: string): Promise<string> => {
+  const ask = async (kind: 'question' | 'escalation', body: string): Promise<AgentToolResult> => {
     if (!body?.trim()) {
-      return 'Refused: an empty question cannot be answered. State the question.';
+      return toolText('Refused: an empty question cannot be answered. State the question.');
     }
 
     ctx.onAsk?.(kind, body);
@@ -72,7 +99,7 @@ export function createAskTools(sdk: PiSdk, ctx: AskToolContext): unknown[] {
     });
 
     ctx.onAnswered?.(kind);
-    return reply.body;
+    return toolText(reply.body);
   };
 
   return [

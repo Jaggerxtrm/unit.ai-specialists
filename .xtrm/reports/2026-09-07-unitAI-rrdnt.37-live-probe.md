@@ -67,3 +67,36 @@ never as completed.
   (`createAgentSession`'s `tools` array is a hard filter that also drops `customTools`,
   so ask_coordinator never reached a child). Probe bead unitAI-gvyb8 is prepared (a task
   whose required fact is held by the coordinator); run after .43 lands on master.
+
+## Clarification loop — live runs (follow-up)
+
+Probe 1 (post .43.1/.43.2): child asked (state needs_reply), specialist_reply correlated
+by message_id (answered x4, in_reply_to set), child resumed in-session after each reply
+(needs_reply -> escalated -> running -> settled), but the ask tools rendered empty output.
+Root cause: ask-tool custom tools returned a bare string; pi normalises `result.content ??
+[]` so the text was dropped. Diagnosed live from the child's own report ("(no tool output)").
+Fixed on master as .43.3 (18538e6e): ask() and the refusal now return
+`{ content: [{ type: 'text', text }], details: {} }`; verified present in dist/lib.js.
+Probe 2 (post .43.3) re-runs the same bead unitAI-gvyb8; expected child words + pending
+ask disappearing + the child using the answered path in its result.
+
+## unitAI-rrdnt.37.1 — forensic wiring + the node/bun:sqlite boundary (measured)
+
+Wired (af2feb9c): lib seam adds createActivationForensicSink,
+createObservabilitySqliteClientAtPath, resolveObservabilityDbLocation; the
+extension builds its host through createCoordinatorHost(), resolving the
+git-root canonical location, opening the client there (creating the canonical
+file when absent, as sp run does), null-safe to the host's no-op sink.
+
+MEASURED boundary: pi runs node (`#!/usr/bin/env node`); observability-sqlite
+loads bun:sqlite only. /tmp/sp-measure-forensics.mjs against the built lib:
+- bun: client OPEN at <cwd>/.specialists/db/observability.db (created).
+- node: client NULL (MODULE_NOT_FOUND for bun:sqlite).
+So in-process pi (node) sessions cannot currently write rows regardless of
+wiring; a node:sqlite fallback in observability-sqlite is host-side work
+(outside .37 scope). Live status probe under pi (node) after wiring: loads,
+serves the Fleet, no crash (null-sink fallback verified).
+
+Operator VALIDATION 1 interactive leg closed by dawid-0b (act:36a8720f-f30,
+zai/glm-5.3-flash, validation valid, model_override honoured; bead-gate refusal
+with note + missing SCRUTINY handled correctly by the coordinator).

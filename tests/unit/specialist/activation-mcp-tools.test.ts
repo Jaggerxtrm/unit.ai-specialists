@@ -144,7 +144,16 @@ function hostWith(fixture: HostFixture = {}) {
       diagnostics: [],
     }),
     defineTool: (d) => d,
-  };
+    // The mutating builtins pi exports. The host RECONSTRUCTS these and wraps their
+    // execute with the lease check (unitAI-rrdnt.36.2), and refuses a dispatch when it
+    // cannot — so a double that omits them models a runtime where nothing is fenceable,
+    // and every writer dispatch is correctly refused. Modelling the real surface is the
+    // point: the refusal is the guard working, not a test artefact.
+    createEditTool: () => ({ name: 'edit', execute: async () => 'edited' }),
+    createWriteTool: () => ({ name: 'write', execute: async () => 'written' }),
+    createBashTool: () => ({ name: 'bash', execute: async () => 'ran' }),
+    createPowerShellTool: () => ({ name: 'powershell', execute: async () => 'ran' }),
+  } as unknown as PiSdk;
   const events: string[] = [];
   const host = new NativeActivationHost({
     beadGate: fixture.readContractState ? { readContractState: fixture.readContractState } : NO_STATE,

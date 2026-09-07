@@ -267,4 +267,24 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     await pi.handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
     expect(calls.stop).toEqual([['act:aaaa', 'session shutdown']]);
   });
+
+  it('createCoordinatorHost wires the canonical forensic sink and is null-safe (unitAI-rrdnt.37.1)', async () => {
+    const mod = await loadExtension();
+
+    // Non-null client -> host receives the forensic sink.
+    const client = { appendForensicEvent: () => {} };
+    const withClient = mod.createCoordinatorHost({
+      createClient: () => client,
+      Host: class { constructor(deps) { this.deps = deps; } },
+    });
+    expect(withClient.deps.forensics).toBeDefined();
+
+    // Null client (the node-pi runtime case: bun:sqlite unavailable) -> host is
+    // built without a sink; construction must not throw.
+    const withoutClient = mod.createCoordinatorHost({
+      createClient: () => null,
+      Host: class { constructor(deps) { this.deps = deps; } },
+    });
+    expect(withoutClient.deps).toBeUndefined();
+  });
 });

@@ -62,6 +62,16 @@ export type {
 export { toActivationView, toPendingAskView } from './tools/specialist/activation.tool.js';
 export type { ActivationView, PendingAskView } from './tools/specialist/activation.tool.js';
 
+// Canonical forensic store (unitAI-rrdnt.37.1): the SAME observability.db the
+// legacy runner and the MCP frontend write. No parallel store (PRD §73/AP).
+export {
+  createActivationForensicSink,
+} from './activation/forensic-sink.js';
+export {
+  createObservabilitySqliteClientAtPath,
+} from './specialist/observability-sqlite.js';
+export { resolveObservabilityDbLocation } from './specialist/observability-db.js';
+
 // K4 (unitAI-e67up.4): Core K2 launcher-outcome consumer contract surface.
 export {
   LAUNCH_OUTCOME_SCHEMA_VERSION,
