@@ -76229,6 +76229,7 @@ function toActivationView(snapshot) {
     worktree_path: snapshot.workspace.worktreePath,
     ...snapshot.workspace.branch ? { branch: snapshot.workspace.branch } : {},
     ...snapshot.piSessionId ? { pi_session_id: snapshot.piSessionId } : {},
+    ...snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {},
     resolved_model: snapshot.resolvedModel,
     model_override: snapshot.modelOverride
   };

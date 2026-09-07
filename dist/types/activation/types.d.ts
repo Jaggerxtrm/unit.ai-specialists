@@ -81,7 +81,19 @@ export interface ActivationSnapshot {
     workspace: WorkspaceIdentity;
     piSessionId?: PiSessionId;
     configuredModel?: string;
+    /**
+     * The model this activation ASKED for: the override when one was given, the configured
+     * model otherwise.
+     *
+     * Recorded separately from `resolvedModel` and kept even when the two are equal.
+     * `configuredModel` plus the `modelOverride` boolean cannot reconstruct it, because the
+     * override string itself is nowhere else on the snapshot; and the query this exists to
+     * answer — "which activations ran on something other than what was asked for" — is
+     * unanswerable if the equal case is omitted from the record.
+     */
+    requestedModel?: string;
     resolvedModel: string;
+    /** True iff an explicit `modelOverride` was supplied. `requestedModel` carries which. */
     modelOverride: boolean;
     startedAt: number;
     lastActivityAt: number;
@@ -108,8 +120,28 @@ export interface ActivationResult {
     };
     piSessionId?: PiSessionId;
     configuredModel?: string;
+    /**
+     * The model this activation ASKED for: the override when one was given, the configured
+     * model otherwise.
+     *
+     * Recorded separately from `resolvedModel` and kept even when the two are equal.
+     * `configuredModel` plus the `modelOverride` boolean cannot reconstruct it, because the
+     * override string itself is nowhere else on the snapshot; and the query this exists to
+     * answer — "which activations ran on something other than what was asked for" — is
+     * unanswerable if the equal case is omitted from the record.
+     */
+    requestedModel?: string;
     resolvedModel: string;
+    /** True iff an explicit `modelOverride` was supplied. `requestedModel` carries which. */
     modelOverride: boolean;
+    /**
+     * Always false on the native runtime, and that is the contract, not an omission.
+     *
+     * A model that cannot be honoured is refused before the AgentSession exists
+     * (`model-gate.ts`), never substituted — a Specialist that quietly ran on a fallback
+     * produces results nobody can attribute. The field stays because a reader must be able
+     * to ask the question and get an answer rather than find no field at all.
+     */
     fallbackUsed: boolean;
     completedAt: number;
 }

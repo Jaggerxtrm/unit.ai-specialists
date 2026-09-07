@@ -49,6 +49,8 @@ export interface ActivationView {
   worktree_path: string;
   branch?: string;
   pi_session_id?: string;
+  /** What was asked for — the override when one was given, the configured model otherwise. */
+  requested_model?: string;
   resolved_model: string;
   model_override: boolean;
 }
@@ -65,6 +67,7 @@ export function toActivationView(snapshot: ActivationSnapshot): ActivationView {
     worktree_path: snapshot.workspace.worktreePath,
     ...(snapshot.workspace.branch ? { branch: snapshot.workspace.branch } : {}),
     ...(snapshot.piSessionId ? { pi_session_id: snapshot.piSessionId } : {}),
+    ...(snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {}),
     resolved_model: snapshot.resolvedModel,
     model_override: snapshot.modelOverride,
   };
