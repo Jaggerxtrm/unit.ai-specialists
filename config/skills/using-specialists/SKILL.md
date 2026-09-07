@@ -8,7 +8,7 @@ description: >
   advanced Specialists surface such as node/script execution, KPI analysis, or specialist
   definition authoring. Read live `specialists list --full` and `sp help` before relying
   on remembered roles or flags.
-version: 4.2
+version: 4.3
 ---
 
 # Using Specialists
@@ -135,29 +135,35 @@ failing context window.
 General inter-agent messaging and wake/reply semantics belong to `/multiplexing`, not
 this skill.
 
-## Native activation is not yet dispatchable
+## Native activation — the second runtime
 
 Everything above describes the supervised `sp` job lifecycle. A second runtime — native
 activation — hosts a Specialist on an in-process Pi `AgentSession` rather than spawning
-`pi` as a subprocess, which lets a child ask a clarifying question and resume instead of
-restarting.
+`pi` as a subprocess. It is dispatchable now, through four MCP tools:
+`specialist_dispatch`, `specialist_status`, `specialist_reply`,
+`specialist_stop_activation`. `use_specialist` remains the legacy path, unchanged, beside
+them.
 
-**Do not dispatch through it. There is nothing to dispatch through.** It has no CLI
-command and no MCP tool; its only live path is a credential-gated integration test. The
-operator surface is being built under `unitAI-rrdnt.33`.
+The two surfaces differ in ways that change how you write and dispatch a bead:
 
-Two of its properties change how you write a bead even before it is invocable, because
-they are stricter than the `sp` path:
+- **The bead is the whole prompt.** `specialist_dispatch` has no task or prompt field, and
+  refuses a bead that is not a complete 7-section contract with a declared `SCRUTINY`
+  level, before any model turn is spent. Check `bd state <id> contract` first — a bead
+  marked `draft` is refused outright. `use_specialist` applies no such check, so a bead
+  refused by one still runs through the other.
+- **A write-capable Specialist gets no worktree of its own.** It shares the coordinator's,
+  and takes a workspace writer lease at admission instead. Contention is refused naming the
+  holder; an uncertain lease is never stolen.
+- **A child can ask and resume** rather than restarting, through `ask_coordinator` /
+  `escalate_to_coordinator`, answered by `specialist_reply` correlating on `message_id`.
+  Treat this as unproven end to end: those tools reached no Specialist at all before
+  `866d4a35`, and whether a live model calls them is `unitAI-rrdnt.43`, still open.
 
-- Admission refuses a bead that is not a complete 7-section contract with a declared
-  `SCRUTINY` level, before any model turn is spent. Check `bd state <id> contract` — a
-  bead marked `draft` is refused outright.
-- A write-capable Specialist gets **no** worktree of its own; it shares the
-  coordinator's. Writers are refused entirely today (`unitAI-rrdnt.36` enables them),
-  and the exclusion that will make them safe is a writer lease that is implemented but
-  not yet wired to anything.
+Before dispatching a writer, read the lease section of `docs/native-activation.md`. The
+per-call mutation guard has no caller yet, so exclusion is enforced at admission and not
+during a turn.
 
-Full reference, including which guarantees are specified but not in force:
+Full reference, including which guarantees are in force and which are not:
 `docs/native-activation.md`.
 
 ## Advanced surfaces are references, not separate skills
