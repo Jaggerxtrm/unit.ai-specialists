@@ -37,6 +37,7 @@ import { compileStepContract, type StepContract } from './step-contract.js';
 import { InteractionTransport, type InteractionMessage, type PendingAsk } from './interaction.js';
 import { createPeerDelivery } from './peer-bridge.js';
 import { PeerAdapter, type TransportForensicEvent } from './transport/peer-adapter.js';
+import { acquire as acquireLease, admitToolCall, release as releaseLease } from './workspace-lease.js';
 import { createAskTools, ASK_TOOL, ESCALATE_TOOL } from './ask-tool.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
@@ -244,9 +245,6 @@ export class NativeActivationHost {
     // exist yet, so a write-capable child would race the coordinator with nothing to stop
     // it. This refusal is removed in Phase 10, not before.
     const access: WorkspaceAccess = WRITE_TIERS.has(tier) ? 'write' : 'read';
-    if (access === 'write') {
-      return reject('writer_not_supported_in_phase_1', { tier });
-    }
 
     const bead = this.beadsClient.readBead(request.beadId);
     if (!bead) return reject('bead_unreadable');
@@ -305,6 +303,32 @@ export class NativeActivationHost {
       repositoryRoot: this.cwd,
       worktreePath: this.cwd,
     };
+
+    // PRD Phase 10 / §52. A writer takes the lease BEFORE a session exists, so contention
+    // is refused without spending a model turn, and so a refused writer never reaches the
+    // point where it could mutate anything. A reader takes nothing: it is not entitled to
+    // the lease, and `admitToolCall` refuses it every mutating call for that reason.
+    //
+    // `acquire` throws DispatchRejectedError on contention and on an uncertain lease, and
+    // both are correct refusals rather than errors — an uncertain workspace is never
+    // stolen, because a holder whose liveness is unknown may still be mutating it and only
+    // reconciliation decides what happened (`workspace-reconcile.ts`).
+    if (access === 'write') {
+      try {
+        acquireLease({ workspace, activationId, attemptId, specialist: request.specialist });
+      } catch (error) {
+        if (error instanceof DispatchRejectedError) {
+          emit('lease_denied', {
+            workspace: workspace.worktreePath,
+            reason: error.reason,
+            note: error.detail.holder,
+          });
+        }
+        emit('activation_rejected', { reason: 'workspace_lease_unavailable' });
+        throw error;
+      }
+      emit('lease_acquired', { workspace: workspace.worktreePath });
+    }
 
     // PRD §15: bound this activation to its role. Derived and in-memory — compiling a
     // StepContract creates no issue, chain, or graph (Phase 4, invariant 4).
@@ -592,6 +616,89 @@ export class NativeActivationHost {
     });
   }
 
+  /**
+   * Release a writer's lease, converting an uncertain release into evidence.
+   *
+   * `release` THROWS when the holder's liveness cannot be established, and that throw is
+   * the point: it refuses to guess whether the previous writer finished. Swallowing it
+   * would silently free a workspace that may still be under mutation, which is the exact
+   * inference the uncertain state exists to prevent. So the throw becomes a
+   * `lease_uncertain` event and the workspace stays uncertain until an operator reconciles
+   * it through `specialist_status` — the shape argued by the unitAI-rrdnt.31 lane.
+   *
+   * Teardown is never failed by this. A stop that could not release is still a stop.
+   */
+  private releaseIfWriter(snapshot: ActivationSnapshot, reason: string): void {
+    if (snapshot.access !== 'write') return;
+    try {
+      releaseLease(snapshot.workspace, snapshot.activationId);
+      this.forensics.emit({
+        activationId: snapshot.activationId,
+        attemptId: snapshot.attemptId,
+        participantId: snapshot.participantId,
+        specialist: snapshot.specialist,
+        beadId: snapshot.beadId,
+        name: 'lease_released',
+        payload: { workspace: snapshot.workspace.worktreePath, reason },
+      });
+    } catch (error) {
+      this.forensics.emit({
+        activationId: snapshot.activationId,
+        attemptId: snapshot.attemptId,
+        participantId: snapshot.participantId,
+        specialist: snapshot.specialist,
+        beadId: snapshot.beadId,
+        name: 'lease_uncertain',
+        payload: {
+          workspace: snapshot.workspace.worktreePath,
+          note: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  /**
+   * Decide whether one planned tool call may run — PRD §52, the per-call block.
+   *
+   * This must be a per-call verdict and NOT `setActiveToolsByName`. Within a turn the agent
+   * loop runs against a tool snapshot taken at turn start, so revoking a tool cannot cancel
+   * a call that is already planned; every handler in a batch fires before any execution, so
+   * a block is enforceable exactly where a tool-set change is not (unitAI-rrdnt.7).
+   *
+   * A read-only activation is refused every mutating call. That is not an error — it holds
+   * no lease because it is not entitled to one, and this is the only choke point where the
+   * capability grant can actually be enforced.
+   *
+   * KNOWN HOLE, unclosed and not closable on pi 0.85.1: this guards the LLM tool path only.
+   * `AgentSession.executeBash()` and `pi.exec()` fire the extension `tool_call` handler
+   * ZERO times, re-verified on 0.85.1 (unitAI-rrdnt.6). An extension that mutates the
+   * workspace through those bypasses this gate entirely. Do not document the lease as
+   * protecting a worktree against arbitrary extension effects; it does not.
+   */
+  admitToolCall(activationId: string, toolName: string): { allow: boolean; reason?: string } {
+    const record = this.registry.get(activationId);
+    if (!record) return { allow: false, reason: `unknown activation ${activationId}` };
+
+    const verdict = admitToolCall({
+      toolName,
+      workspace: record.snapshot.workspace,
+      activationId,
+    });
+
+    if (!verdict.allow) {
+      this.forensics.emit({
+        activationId,
+        attemptId: record.snapshot.attemptId,
+        participantId: record.snapshot.participantId,
+        specialist: record.snapshot.specialist,
+        beadId: record.snapshot.beadId,
+        name: 'tool_blocked',
+        payload: { tool: toolName, note: verdict.reason },
+      });
+    }
+    return verdict;
+  }
+
   /** Every outstanding ask across the Fleet, oldest first. */
   pendingAsks(): PendingAsk[] {
     return this.interactions.pendingAsks();
@@ -646,6 +753,7 @@ export class NativeActivationHost {
       record.unsubscribe();
       record.session.dispose();
       record.snapshot.state = 'stopped';
+      this.releaseIfWriter(record.snapshot, reason);
       this.forensics.emit({
         activationId,
         attemptId: record.snapshot.attemptId,

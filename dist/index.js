@@ -75965,6 +75965,13 @@ function procLeaseProbe() {
     }
   };
 }
+function selfHolder(probe = procLeaseProbe()) {
+  const startTicks = probe.startTicks(process.pid);
+  if (startTicks === undefined) {
+    throw new Error("cannot read this process start time; a lease cannot be acquired without the PID-reuse guard");
+  }
+  return { pid: process.pid, startTicks };
+}
 function workspaceKey(workspace) {
   let resolved = workspace.worktreePath;
   try {
@@ -76002,6 +76009,97 @@ function inspect(workspace, probe = procLeaseProbe()) {
   }
   return { state: "held", lease };
 }
+function acquire(request, probe = procLeaseProbe()) {
+  const { workspace, activationId, attemptId } = request;
+  const path = leasePath(workspace);
+  const status = inspect(workspace, probe);
+  if (status.state === "held" && status.lease) {
+    if (status.lease.activationId === activationId) {
+      return rewrite(workspace, { ...status.lease, attemptId });
+    }
+    throw refusal("workspace_held_by_another_writer", request, status);
+  }
+  if (status.state === "uncertain") {
+    throw refusal("workspace_lease_uncertain", request, status);
+  }
+  const lease = {
+    workspaceKey: workspaceKey(workspace),
+    worktreePath: workspace.worktreePath,
+    activationId,
+    attemptId,
+    specialist: request.specialist,
+    holder: selfHolder(probe),
+    acquiredAtMs: Date.now()
+  };
+  mkdirSync10(leaseDir(workspace), { recursive: true, mode: 448 });
+  const staging = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync9(staging, `${JSON.stringify(lease, null, 2)}
+`, { mode: 384 });
+  try {
+    linkSync(staging, path);
+  } catch (err) {
+    if (err.code === "EEXIST") {
+      throw refusal("workspace_held_by_another_writer", request, inspect(workspace, probe));
+    }
+    throw err;
+  } finally {
+    try {
+      unlinkSync2(staging);
+    } catch {}
+  }
+  return lease;
+}
+function rewrite(workspace, lease) {
+  const path = leasePath(workspace);
+  const staging = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync9(staging, `${JSON.stringify(lease, null, 2)}
+`, { mode: 384 });
+  renameSync5(staging, path);
+  return lease;
+}
+function release(workspace, activationId, probe = procLeaseProbe()) {
+  const status = inspect(workspace, probe);
+  if (status.state === "free")
+    return;
+  if (status.state === "uncertain") {
+    throw new DispatchRejectedError("workspace_lease_uncertain", {
+      activationId,
+      workspace: workspace.worktreePath,
+      holder: describeHolder(status),
+      note: "refusing to release a lease whose holder liveness is unknown; recovery is PRD Phase 9"
+    });
+  }
+  if (status.lease && status.lease.activationId !== activationId) {
+    throw new DispatchRejectedError("workspace_lease_not_held_by_caller", {
+      activationId,
+      workspace: workspace.worktreePath,
+      holder: describeHolder(status)
+    });
+  }
+  try {
+    unlinkSync2(leasePath(workspace));
+  } catch (err) {
+    if (err.code !== "ENOENT")
+      throw err;
+  }
+}
+function describeHolder(status) {
+  if (!status.lease)
+    return status.uncertainReason ?? "unknown";
+  const { activationId, specialist, holder } = status.lease;
+  const who = specialist ? `${specialist} ` : "";
+  const why = status.uncertainReason ? ` (${status.uncertainReason})` : "";
+  return `${who}${activationId} pid ${holder.pid}${why}`;
+}
+function refusal(reason, request, status) {
+  return new DispatchRejectedError(reason, {
+    activationId: request.activationId,
+    specialist: request.specialist,
+    workspace: request.workspace.worktreePath,
+    holder: describeHolder(status),
+    note: status.state === "uncertain" ? "the previous holder's liveness could not be established; the lease is uncertain, not free" : "exactly one writer holds a mutable workspace at a time"
+  });
+}
 var NON_MUTATING_TOOLS = new Set([
   "read",
   "grep",
@@ -76014,6 +76112,33 @@ var NON_MUTATING_TOOLS = new Set([
   "websearch",
   "webfetch"
 ]);
+function isMutatingTool(toolName) {
+  return !NON_MUTATING_TOOLS.has(toolName.trim().toLowerCase());
+}
+function admitToolCall(input, probe = procLeaseProbe()) {
+  if (!isMutatingTool(input.toolName))
+    return { allow: true };
+  const status = inspect(input.workspace, probe);
+  if (status.state === "held" && status.lease?.activationId === input.activationId) {
+    return { allow: true };
+  }
+  if (status.state === "held") {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} is held by ${describeHolder(status)}; ` + `${input.toolName} would mutate a workspace this activation does not hold`
+    };
+  }
+  if (status.state === "uncertain") {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} lease is uncertain (${status.uncertainReason}); ` + "mutation is refused until recovery resolves the previous holder"
+    };
+  }
+  return {
+    allow: false,
+    reason: `workspace ${input.workspace.worktreePath} is not leased by this activation; ` + `${input.toolName} may not mutate it`
+  };
+}
 
 // src/activation/workspace-reconcile.ts
 var PERMITTED = {
@@ -77161,9 +77286,6 @@ class NativeActivationHost {
     const execution = specialist.specialist.execution;
     const tier = execution.permission_required ?? "READ_ONLY";
     const access = WRITE_TIERS.has(tier) ? "write" : "read";
-    if (access === "write") {
-      return reject("writer_not_supported_in_phase_1", { tier });
-    }
     const bead = this.beadsClient.readBead(request.beadId);
     if (!bead)
       return reject("bead_unreadable");
@@ -77210,6 +77332,22 @@ class NativeActivationHost {
       repositoryRoot: this.cwd,
       worktreePath: this.cwd
     };
+    if (access === "write") {
+      try {
+        acquire({ workspace, activationId, attemptId, specialist: request.specialist });
+      } catch (error2) {
+        if (error2 instanceof DispatchRejectedError) {
+          emit("lease_denied", {
+            workspace: workspace.worktreePath,
+            reason: error2.reason,
+            note: error2.detail.holder
+          });
+        }
+        emit("activation_rejected", { reason: "workspace_lease_unavailable" });
+        throw error2;
+      }
+      emit("lease_acquired", { workspace: workspace.worktreePath });
+    }
     const stepContract = compileStepContract({
       bead,
       specialist: specialist.specialist.metadata.name,
@@ -77438,6 +77576,57 @@ class NativeActivationHost {
       inReplyTo: messageId
     });
   }
+  releaseIfWriter(snapshot, reason) {
+    if (snapshot.access !== "write")
+      return;
+    try {
+      release(snapshot.workspace, snapshot.activationId);
+      this.forensics.emit({
+        activationId: snapshot.activationId,
+        attemptId: snapshot.attemptId,
+        participantId: snapshot.participantId,
+        specialist: snapshot.specialist,
+        beadId: snapshot.beadId,
+        name: "lease_released",
+        payload: { workspace: snapshot.workspace.worktreePath, reason }
+      });
+    } catch (error2) {
+      this.forensics.emit({
+        activationId: snapshot.activationId,
+        attemptId: snapshot.attemptId,
+        participantId: snapshot.participantId,
+        specialist: snapshot.specialist,
+        beadId: snapshot.beadId,
+        name: "lease_uncertain",
+        payload: {
+          workspace: snapshot.workspace.worktreePath,
+          note: error2 instanceof Error ? error2.message : String(error2)
+        }
+      });
+    }
+  }
+  admitToolCall(activationId, toolName) {
+    const record3 = this.registry.get(activationId);
+    if (!record3)
+      return { allow: false, reason: `unknown activation ${activationId}` };
+    const verdict = admitToolCall({
+      toolName,
+      workspace: record3.snapshot.workspace,
+      activationId
+    });
+    if (!verdict.allow) {
+      this.forensics.emit({
+        activationId,
+        attemptId: record3.snapshot.attemptId,
+        participantId: record3.snapshot.participantId,
+        specialist: record3.snapshot.specialist,
+        beadId: record3.snapshot.beadId,
+        name: "tool_blocked",
+        payload: { tool: toolName, note: verdict.reason }
+      });
+    }
+    return verdict;
+  }
   pendingAsks() {
     return this.interactions.pendingAsks();
   }
@@ -77472,6 +77661,7 @@ class NativeActivationHost {
       record3.unsubscribe();
       record3.session.dispose();
       record3.snapshot.state = "stopped";
+      this.releaseIfWriter(record3.snapshot, reason);
       this.forensics.emit({
         activationId,
         attemptId: record3.snapshot.attemptId,

@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * The MCP path must never reach for a subprocess — that is the entire point of Phase 13,
@@ -105,8 +108,33 @@ function fakeSession(): PiAgentSessionLike {
   return session as unknown as PiAgentSessionLike;
 }
 
+/**
+ * A throwaway workspace per host.
+ *
+ * Since unitAI-rrdnt.36 a write-capable activation ACQUIRES a real lease under
+ * `<workspace>/.specialists/leases/`. A host built on `process.cwd()` therefore writes a
+ * lease into the repository itself, and when the vitest worker exits the holder pid is gone
+ * and the lease is left UNCERTAIN — which by design cannot be stolen, so the next writer in
+ * any suite or any real dispatch is refused. That happened once, in this file, and had to
+ * be reconciled by hand. Same class as the observability.db incident: a test operating on
+ * the developer's live state.
+ */
+function tempWorkspace() {
+  const root = mkdtempSync(join(tmpdir(), 'mcp-tools-ws-'));
+  workspaces.push(root);
+  return { repositoryRoot: root, worktreePath: root };
+}
+
+const workspaces: string[] = [];
+afterEach(() => {
+  while (workspaces.length > 0) {
+    rmSync(workspaces.pop() as string, { recursive: true, force: true });
+  }
+});
+
 function hostWith(fixture: HostFixture = {}) {
   const sessionsCreated = { count: 0 };
+  const workspace = tempWorkspace();
   const session = fakeSession();
   const sdk: PiSdk = {
     createAgentSession: async () => { sessionsCreated.count += 1; return { session }; },
@@ -136,9 +164,9 @@ function hostWith(fixture: HostFixture = {}) {
     beadsClient: { readBead: () => fixture.bead ?? contract() } as never,
     loadSdk: async () => sdk,
     forensics: { emit: (e) => { events.push(e.name); } },
-    cwd: process.cwd(),
+    cwd: workspace.worktreePath,
   });
-  return { host, events, sessionsCreated };
+  return { host, events, sessionsCreated, workspace };
 }
 
 describe('specialist_dispatch — the MCP dispatch path is the same admission path', () => {
@@ -219,15 +247,21 @@ describe('specialist_dispatch — the MCP dispatch path is the same admission pa
    * Phase 10 flips the single admission decision, there is no second dispatch path that
    * also needs teaching. When .36 lands, this expectation inverts into a lease assertion.
    */
-  it('passes the writer refusal through rather than filtering writers itself', async () => {
+  it('admits a writer, so the surface never filtered writers itself', async () => {
+    // This assertion was written inverted, as a tripwire: while writers were refused
+    // outright it asserted the refusal PASSED THROUGH, so the MCP surface could be shown
+    // not to be filtering writers on its own. unitAI-rrdnt.36 wired the lease and inverted
+    // admission, and this going red was the tripwire firing as designed rather than a
+    // regression. What it now proves is the same property from the other side: the MCP
+    // path admits exactly what the host admits, because it re-implements no gate.
     const { host, sessionsCreated } = hostWith({ permission: 'HIGH' });
     const tool = createSpecialistDispatchTool(() => host);
 
     const out = await tool.execute({ specialist: 'researcher', bead_id: 'ISSUE-1' }) as Record<string, unknown>;
 
-    expect(out.status).toBe('rejected');
-    expect(String(out.reason)).toContain('writer_not_supported_in_phase_1');
-    expect(sessionsCreated.count).toBe(0);
+    expect(out.status, String(out.reason)).not.toBe('rejected');
+    expect(out.access).toBe('write');
+    expect(sessionsCreated.count).toBe(1);
   });
 });
 
