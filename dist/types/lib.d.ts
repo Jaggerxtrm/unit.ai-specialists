@@ -2,6 +2,9 @@ export { runScriptSpecialist as runScript, } from './specialist/script-runner.js
 export type { ScriptGenerateRequest, ScriptGenerateResult, ScriptGenerateSuccess, ScriptGenerateFailure, ScriptSpecialistErrorType, ScriptRunnerOptions, } from './specialist/script-runner.js';
 export { SpecialistLoader } from './specialist/loader.js';
 export type { Specialist } from './specialist/schema.js';
+export { resolveModelChain } from './specialist/model-chain.js';
+export { resolveRuntimeToolContract } from './pi/session.js';
+export { validateBeforeRun } from './specialist/runner.js';
 export { NativeActivationHost } from './activation/native-host.js';
 export type { NativeActivationHostDeps, ActivationForensicSink, ActivationAttachment } from './activation/native-host.js';
 export { DispatchRejectedError } from './activation/types.js';
@@ -12,6 +15,8 @@ export type { ActivationView, PendingAskView } from './tools/specialist/activati
 export { createActivationForensicSink, } from './activation/forensic-sink.js';
 export { createObservabilitySqliteClientAtPath, } from './specialist/observability-sqlite.js';
 export { resolveObservabilityDbLocation } from './specialist/observability-db.js';
+export { evaluateBeadReadiness, extractSections } from './activation/bead-gate.js';
+export type { BeadRecord } from './specialist/beads.js';
 export { LAUNCH_OUTCOME_SCHEMA_VERSION, LaunchOutcomeError, parseLaunchOutcome, validateLaunchOutcome, projectLaunchOutcome, } from './specialist/launch-outcome.js';
 export { readVerifiedCitationWindow, verifyExactLineCitation, } from './specialist/citation-evidence.js';
 export type { CitationLine, VerifiedCitationWindow, VerifiedCitationWindowOptions, RawPiReadEvidence, ExactLineClaim, ExactLineCitationResult, } from './specialist/citation-evidence.js';

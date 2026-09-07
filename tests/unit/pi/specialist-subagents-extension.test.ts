@@ -134,11 +134,15 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
       'specialist_status',
       'specialist_reply',
       'specialist_stop_activation',
+      'specialist_list',
     ]);
     // No free-form task text for tracked work (PRD §10/§14).
     const dispatch = pi.tools[0];
     expect(dispatch.parameters.properties).not.toHaveProperty('task');
     expect(dispatch.parameters.properties).toHaveProperty('bead_id');
+    // .48: inline contract path is a first-class parameter.
+    expect(dispatch.parameters.properties).toHaveProperty('contract');
+    expect(dispatch.parameters.properties).toHaveProperty('title');
     // No second permission logic: schemas carry arguments only, never tool grants.
     expect(pi.tools.every((t) => typeof t.execute === 'function')).toBe(true);
   });
@@ -194,6 +198,99 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     expect(out.status).toBe('rejected');
     expect(out.reason).toContain('SPECIALIST_DISPATCH_REJECTED');
     expect(out.detail.missing).toEqual(['VALIDATION', 'OUTPUT']);
+  });
+
+  const INLINE_CONTRACT =
+    'PROBLEM\nProve the inline-dispatch path.\n\nSUCCESS\nA read-only activation settles.\n\n' +
+    'SCOPE\nRead-only.\n\nNON_GOALS\nNo writes.\n\nCONSTRAINTS\nRead-only.\n\n' +
+    'VALIDATION\nOutput confirms.\n\nOUTPUT\nA short report.\n\nSCRUTINY LOW';
+
+  it('inline contract: gate runs BEFORE creating the bead, refusal leaves the board unchanged (.48)', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    const createBead = vi.fn(() => 'bd-new');
+    mod.default(pi, { createHost: () => host, createBead });
+    const out = resultText(await pi.tools[0].execute('tc1', {
+      specialist: 'explorer',
+      contract: 'PROBLEM\nMissing everything else.',
+    }));
+    expect(out.status).toBe('rejected');
+    expect(out.missing).toContain('SUCCESS');
+    expect(out.missing).not.toContain('PROBLEM');
+    expect(createBead).not.toHaveBeenCalled();
+    expect(host.start).not.toHaveBeenCalled();
+
+    // All seven sections present but no SCRUTINY: refused with SCRUTINY missing.
+    const noScrutiny = resultText(await pi.tools[0].execute('tc2', {
+      specialist: 'explorer',
+      contract: 'PROBLEM\np\n\nSUCCESS\ns\n\nSCOPE\nsc\n\nNON_GOALS\nng\n\nCONSTRAINTS\nc\n\nVALIDATION\nv\n\nOUTPUT\no',
+    }));
+    expect(noScrutiny.status).toBe('rejected');
+    expect(noScrutiny.missing).toEqual(['SCRUTINY']);
+    expect(createBead).not.toHaveBeenCalled();
+  });
+
+  it('inline contract: valid contract creates the bead then dispatches against it (.48)', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host, calls } = makeFakeHost();
+    const createBead = vi.fn(() => 'bd-inline-1');
+    mod.default(pi, { createHost: () => host, createBead });
+    const out = resultText(await pi.tools[0].execute('tc1', {
+      specialist: 'explorer',
+      contract: INLINE_CONTRACT,
+    }));
+    expect(createBead).toHaveBeenCalledTimes(1);
+    expect(calls.start[0]).toMatchObject({ beadId: 'bd-inline-1', specialist: 'explorer' });
+    expect(out.status).toBe('dispatched');
+  });
+
+  it('inline contract: bead_id plus contract is a refusal, not a precedence rule (.48)', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    const createBead = vi.fn();
+    mod.default(pi, { createHost: () => host, createBead });
+    const out = resultText(await pi.tools[0].execute('tc1', {
+      specialist: 'explorer',
+      bead_id: 'bd-1',
+      contract: INLINE_CONTRACT,
+    }));
+    expect(out.status).toBe('rejected');
+    expect(out.reason).toContain('both bead_id and contract were provided');
+    expect(createBead).not.toHaveBeenCalled();
+    expect(host.start).not.toHaveBeenCalled();
+  });
+
+  it('inline contract: neither bead_id nor contract is a refusal (.48)', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const out = resultText(await pi.tools[0].execute('tc1', { specialist: 'explorer' }));
+    expect(out.status).toBe('rejected');
+    expect(out.reason).toContain('neither bead_id nor contract');
+    expect(host.start).not.toHaveBeenCalled();
+  });
+
+  it('specialist_list projects the resolved registry with dispatchability markers (.49)', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const listTool = pi.tools[4];
+    const out = resultText(await listTool.execute('tc1', {}));
+    expect(out.note).toContain('sp help');
+    expect(Array.isArray(out.specialists)).toBe(true);
+    expect(out.specialists.length).toBeGreaterThan(0);
+    for (const row of out.specialists) {
+      expect(typeof row.name).toBe('string');
+      expect(['read', 'write']).toContain(row.access);
+      expect(typeof row.dispatchable).toBe('boolean');
+    }
+    const explorer = out.specialists.find((r) => r.name === 'explorer');
+    expect(explorer).toBeDefined();
   });
 
   it('status projects the Fleet with the shared ActivationView and attaches a settled result', async () => {
