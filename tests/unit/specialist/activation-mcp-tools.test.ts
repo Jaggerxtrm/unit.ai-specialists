@@ -174,17 +174,20 @@ describe('specialist_dispatch — the MCP dispatch path is the same admission pa
     // The gate refuses BEFORE a session exists. This is the property, not the message.
     expect(String(out.reason)).toContain('AgentSession:\n  not created');
 
-    // The draft-specific explanation survives in `detail` but NOT in the rendered block.
-    // `native-host.ts` passes `{ detail: readiness.reason }` into a detail object whose
-    // only free-text field is `note`, so the renderer drops it; `reject`'s parameter is
-    // Record<string, unknown>, which is why the compiler does not object. The rendered
-    // refusal therefore reads "bead_contract_incomplete" with no missing sections — for a
-    // bead whose sections are all present — which is the least actionable form the gate
-    // could take. Asserted as it BEHAVES, not as it should behave. Fix proposed to the
-    // native-host.ts owner (one-word change, `detail:` -> `note:`, five call sites);
-    // when it lands, the `note` expectation below replaces the negative one.
-    expect((out.detail as Record<string, unknown>).detail).toContain('draft');
-    expect(String(out.reason)).not.toContain('draft');
+    // The draft-specific explanation must reach the OPERATOR, not just the object.
+    //
+    // This assertion was originally the inverse. `native-host.ts` passed
+    // `{ detail: readiness.reason }` into a detail object whose only free-text field is
+    // `note`, so the renderer discarded it and a draft bead was refused with
+    // "bead_contract_incomplete", no missing sections and no mention of draft — for a bead
+    // whose seven sections are all present. unitAI-rrdnt.40 fixed that at four call sites
+    // (`detail:` -> `note:`), so the expectation inverts with it.
+    //
+    // Asserting on the RENDERED message rather than on `detail` is the point: a test over
+    // the object handed to `reject()` passed for the entire life of the defect, because
+    // the object was always correct and only the rendering dropped it.
+    expect(String(out.reason)).toContain('draft');
+    expect((out.detail as Record<string, unknown>).note).toContain('draft');
     expect(sessionsCreated.count).toBe(0);
     expect(events).toContain('activation_rejected');
     expect(events).not.toContain('activation_admitted');
