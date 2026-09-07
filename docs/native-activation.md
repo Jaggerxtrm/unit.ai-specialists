@@ -2,9 +2,9 @@
 title: Native Activation Runtime
 scope: native-activation
 category: guide
-version: 0.4.0
+version: 0.4.1
 updated: 2026-09-07
-synced_at: 1592b87f
+synced_at: aa30782a
 description: What the native Specialist activation runtime does today, what it refuses, and which of its guarantees are not yet in force.
 source_of_truth_for:
   - "src/activation/native-host.ts"
@@ -369,8 +369,12 @@ rather than failing or silently proceeding.
 > **Whether a live model calls the tool is `unitAI-rrdnt.43` and is still open.**
 >
 > Third, even when a child does ask, **the coordinator is not woken** — a blocked child is
-> discovered by polling `specialist_status` (`unitAI-rrdnt.45`, in progress). So the
-> interaction model is not usable as designed today, whatever the protocol below says.
+> discovered by polling `specialist_status` (`unitAI-rrdnt.45`, in progress). The wake
+> primitive itself is live-proven: an idle interactive TUI took a turn from an out-of-band
+> async callback with no operator input. The half that is missing is the one that fires it
+> from an escalation, and the lane is explicitly refusing to let the first stand in for the
+> second. So the interaction model is not usable as designed today, whatever the protocol
+> below says.
 >
 > Everything below describes the protocol as built. Treat the end-to-end path as unproven.
 
@@ -459,13 +463,13 @@ wired in `67be44b1`.
 
 ## Known holes
 
-Every entry is unclosed as of `1592b87f`. Where a bead exists it is named; where one does
+Every entry is unclosed as of `aa30782a`. Where a bead exists it is named; where one does
 not, that is stated rather than implied.
 
 | Hole | Consequence | Bead |
 |---|---|---|
 | The Pi extension registers no UI — no slash commands, no Fleet view, nothing rendered. Found by an operator using it. | The coordinator surface exists as tools only; there is nothing to look at. | `unitAI-rrdnt.46` |
-| An escalation does not wake the coordinator. | A blocked child is discovered by polling `specialist_status`, not by being told. The interaction model is not usable as designed. | `unitAI-rrdnt.45` |
+| An escalation does not wake the coordinator. The wake *primitive* is live-proven — an idle interactive TUI took a turn from an out-of-band async callback with no operator input — but the escalation-to-callback half is unbuilt. | A blocked child is discovered by polling `specialist_status`, not by being told. The interaction model is not usable as designed. A proven primitive is not a proven path. | `unitAI-rrdnt.45` |
 | `tsconfig.json` includes only `src/**/*`, so no test file is ever typechecked. | `bunx tsc --noEmit` is green while a test calls a method that does not exist. Do not read a green tsc as covering the suite. | `unitAI-rrdnt.50` |
 | A live model has never been observed calling `ask_coordinator`. The tools reached no Specialist at all until `866d4a35`. | The clarification path is built and unit-tested but unproven end to end. | `unitAI-rrdnt.43` |
 | The 7-section contract gate applies only to native admission. `use_specialist` takes a `bead_id` with no readiness check, and a free-form `prompt` with no Bead at all. | A Bead refused by `specialist_dispatch` still runs through `use_specialist`. Pre-existing and by design; surprising if the gate is read as a property of Beads. | None; stated so the boundary is not mistaken |
