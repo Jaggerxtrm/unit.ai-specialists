@@ -121,6 +121,14 @@ The gate proves each section exists and is non-empty. It does not judge whether 
 sections are any good; no parser makes that judgement, and pretending otherwise would trade
 a useful gate for a bureaucratic one.
 
+**The gate belongs to the native admission path, not to Beads.** The legacy `use_specialist`
+tool also accepts a `bead_id`, reads it with `buildBeadContext`, and applies no readiness
+check at all — it also accepts a free-form `prompt` with no Bead. So a Bead that
+`specialist_dispatch` refuses can still be run through `use_specialist`. That is
+pre-existing and by design: the gate lives where admission lives. It is stated here because
+a reader who learns "a draft Bead is refused" from this document would otherwise be
+surprised.
+
 **3. An explicitly requested model must exist and be authenticated.** Both halves are
 required and neither is sufficient alone. A known provider with an unknown model id
 resolves to a *fabricated* model with no error, so only the `no-match` diagnostic catches
@@ -374,6 +382,7 @@ not, that is stated rather than implied.
 | Hole | Consequence | Bead |
 |---|---|---|
 | No operator surface on `master`. `NativeActivationHost` has no production consumer there; the only live path is the gated smoke test. The four MCP tools exist unmerged on `xt/phase13-mcp`. | The runtime cannot be invoked by an operator until .33 merges. | `unitAI-rrdnt.33` (Phase 13) |
+| The 7-section contract gate applies only to native admission. `use_specialist` takes a `bead_id` with no readiness check, and a free-form `prompt` with no Bead at all. | A Bead refused by `specialist_dispatch` still runs through `use_specialist`. Pre-existing and by design; surprising if the gate is read as a property of Beads. | None; stated so the boundary is not mistaken |
 | A refusal's explanation is dropped by the renderer: `reject()` passes `detail:` where `DispatchRejectedError` reads `note:`, at four sites in `native-host.ts`. | A draft-marked Bead refuses with no missing sections and no mention of "draft". One-word fix, four call sites. | Proposed to the coordinator lane; no bead yet |
 | The writer lease is implemented but not wired. No activation acquires, releases, or admits tool calls against it. | Temporal exclusion does not exist yet. Currently harmless only because writers are refused at admission. | `unitAI-rrdnt.36` (Phase 10) |
 | Writers are refused at admission (`writer_not_supported_in_phase_1`). | Only `READ_ONLY` and `LOW` Specialists activate natively. | `unitAI-rrdnt.36` (Phase 10) |
