@@ -76720,7 +76720,7 @@ class InteractionTransport {
   }
   async attemptDelivery(message) {
     if (!this.deliver)
-      return true;
+      return false;
     try {
       return await this.deliver(message) === true;
     } catch {
