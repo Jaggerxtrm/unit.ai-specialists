@@ -180,7 +180,9 @@ export const specialistDispatchSchema = z.object({
   bead_id: z.string().describe(
     "The Bead that is this activation's task contract — a COMPLETE 7-section contract " +
     '(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY ' +
-    'level. A draft or incomplete Bead is refused before any model turn. No free-form task ' +
+    'level. Write each section as a heading: either the section name on its own line with ' +
+    'its body beneath, or `PROBLEM: the body` on one line. Both forms are accepted. ' +
+    'A draft or incomplete Bead is refused before any model turn. No free-form task ' +
     'text is accepted: a task that needs more definition belongs in the Bead (see the ' +
     'planning skill).',
   ),

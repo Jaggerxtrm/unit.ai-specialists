@@ -421,9 +421,11 @@ export default function specialistSubagentsExtension(pi, options = {}) {
             'An INLINE task contract, used instead of bead_id: the SAME readiness gate ' +
             'runs first, then a Bead is created from it and dispatched. The contract ' +
             'must contain all seven sections — PROBLEM, SUCCESS, SCOPE, NON_GOALS, ' +
-            'CONSTRAINTS, VALIDATION, OUTPUT — plus a SCRUTINY level. Use the planning ' +
-            'skill (/planning) to write one; a contract missing any section is refused ' +
-            'and nothing is created.',
+            'CONSTRAINTS, VALIDATION, OUTPUT — plus a SCRUTINY level. Write each section ' +
+            'as a heading: either the section name on its own line with its body beneath, ' +
+            'or `PROBLEM: the body` on one line. Both forms are accepted. ' +
+            'Use the planning skill (/planning) to write one; a contract missing any ' +
+            'section is refused and nothing is created.',
         }),
       ),
       title: Type.Optional(

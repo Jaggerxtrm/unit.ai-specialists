@@ -19738,9 +19738,19 @@ function readContractState(beadId) {
 }
 var ALL_HEADINGS = new Set([...REQUIRED_SECTIONS, "SCRUTINY"]);
 function headingOf(line) {
-  const bare = line.trim().replace(/^#+\s*/, "").replace(/\*/g, "").replace(/:$/, "").trim();
-  const normalized = bare.toUpperCase().replace(/[\s-]+/g, "_");
-  return ALL_HEADINGS.has(normalized) ? normalized : undefined;
+  const bare = line.trim().replace(/^#+\s*/, "").replace(/\*/g, "").trim();
+  const canonical = (text) => text.toUpperCase().replace(/[\s-]+/g, "_");
+  const whole = canonical(bare.replace(/:$/, "").trim());
+  if (ALL_HEADINGS.has(whole))
+    return { name: whole };
+  const split = bare.match(/^([A-Za-z][A-Za-z _-]*?)\s*:\s*(.*)$/);
+  if (!split)
+    return;
+  const name = canonical(split[1].trim());
+  if (!ALL_HEADINGS.has(name))
+    return;
+  const inlineBody = split[2].trim();
+  return inlineBody ? { name, inlineBody } : { name };
 }
 function extractSections(description) {
   const sections = new Map;
@@ -19756,8 +19766,8 @@ function extractSections(description) {
     const heading = headingOf(line);
     if (heading) {
       flush();
-      current = heading;
-      body = [];
+      current = heading.name;
+      body = heading.inlineBody ? [heading.inlineBody] : [];
       continue;
     }
     if (current)
@@ -21515,7 +21525,7 @@ function toActivationResultView(result) {
 }
 var specialistDispatchSchema = objectType({
   specialist: stringType().describe("Specialist name, e.g. codebase-explorer"),
-  bead_id: stringType().describe("The Bead that is this activation's task contract — a COMPLETE 7-section contract " + "(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY " + "level. A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill)."),
+  bead_id: stringType().describe("The Bead that is this activation's task contract — a COMPLETE 7-section contract " + "(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY " + "level. Write each section as a heading: either the section name on its own line with " + "its body beneath, or `PROBLEM: the body` on one line. Both forms are accepted. " + "A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill)."),
   model_override: stringType().optional().describe("Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced."),
   requested_by: stringType().optional().describe("ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant."),
   coordinator_session_id: stringType().optional().describe("MCP session id, for lineage.")
