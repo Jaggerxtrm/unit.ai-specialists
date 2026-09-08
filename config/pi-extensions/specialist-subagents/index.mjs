@@ -589,7 +589,9 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'specialist_reply. A draft or incomplete contract is refused here, before a model ' +
       'turn is spent guessing at scope it does not carry — fix the Bead (planning ' +
       'skill, /planning), not the dispatch. Write-capable Specialists (MEDIUM/HIGH ' +
-      'tiers) activate only when they can acquire the workspace lease.',
+      'tiers) activate only when they can acquire the workspace lease. Each dispatch ' +
+      'creates a persistent activation YOU own: stop it with ' +
+      'specialist_stop_activation when you are done with it.',
     promptSnippet: 'Dispatch an XTRM Specialist (specialist_dispatch: specialist, bead_id)',
     parameters: Type.Object({
       specialist: Type.String({ description: 'Specialist name, e.g. codebase-explorer' }),
@@ -746,8 +748,10 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'The Fleet: every native activation this process hosts, with its state, and ' +
       'every outstanding question or escalation it is waiting on (answer those with ' +
       'specialist_reply). Settled activations carry their validated ActivationResult. ' +
-      'No CLI background jobs are shown — this surface only hosts in-process ' +
-      'activations.',
+      'Activations stay listed until stopped: a settled entry is either waiting for ' +
+      'a follow-up or waiting to be stopped. Stop with specialist_stop_activation ' +
+      'every activation you will not resume. No CLI background jobs are shown — ' +
+      'this surface only hosts in-process activations.',
     promptSnippet: 'Show the Specialist Fleet (specialist_status)',
     parameters: Type.Object({}),
     async execute() {
@@ -906,7 +910,9 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'Stop and dispose a native activation. This is the only ordinary path to ' +
       'disposal — a settled Specialist is waiting and resumable, not finished. ' +
       'There is no child process to signal; disposal is a method call on the ' +
-      'in-process AgentSession.',
+      'in-process AgentSession. You MUST stop every activation you are unlikely ' +
+      'to use again: a settled or waiting activation keeps its session and Fleet ' +
+      'entry until YOU stop it — nothing expires it for you.',
     promptSnippet: 'Stop a Specialist (specialist_stop_activation: activation_id)',
     parameters: Type.Object({
       activation_id: Type.String({ description: 'Activation to stop and dispose.' }),

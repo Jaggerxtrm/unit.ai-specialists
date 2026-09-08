@@ -1240,3 +1240,37 @@ describe('build identity on every outcome surface (unitAI-rrdnt.55)', () => {
     expect(out.build).toContain('rebuilt after');
   });
 });
+
+describe('duty to stop unneeded activations (unitAI-llvfi)', () => {
+  // A settled activation keeps its session and Fleet entry until explicitly
+  // stopped — nothing expires it. The descriptions must say so normatively.
+  // Proven by the smoke-test activation that sat in the Fleet until ordered out.
+
+  it('specialist_stop_activation states the duty normatively', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const desc = toolNamed(pi, 'specialist_stop_activation').description;
+    expect(desc).toContain('You MUST stop every activation you are unlikely');
+    expect(desc).toContain('until YOU stop it');
+    expect(desc).toContain('nothing expires it for you');
+  });
+
+  it('specialist_status says entries persist until stopped', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const desc = toolNamed(pi, 'specialist_status').description;
+    expect(desc).toContain('stay listed until stopped');
+    expect(desc).toContain('every activation you will not resume');
+  });
+
+  it('specialist_dispatch states ownership of the activation', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const desc = toolNamed(pi, 'specialist_dispatch').description;
+    expect(desc).toContain('creates a persistent activation YOU own');
+    expect(desc).toContain('specialist_stop_activation when you are done');
+  });
+});
