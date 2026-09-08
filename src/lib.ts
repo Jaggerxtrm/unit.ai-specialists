@@ -41,7 +41,7 @@ export { validateBeforeRun } from './specialist/runner.js';
 export { NativeActivationHost } from './activation/native-host.js';
 export type { NativeActivationHostDeps, ActivationForensicSink, ActivationAttachment } from './activation/native-host.js';
 
-export { DispatchRejectedError } from './activation/types.js';
+export { DispatchRejectedError, THINKING_LEVELS } from './activation/types.js';
 export type {
   ActivationId,
   ActivationRequest,

@@ -257,6 +257,18 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     });
   });
 
+  it('thinking_override passes through on bead_id dispatch, omitted by default', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host, calls } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const dispatch = toolNamed(pi, 'specialist_dispatch');
+    await dispatch.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1', thinking_override: 'high' });
+    expect(calls.start[0]).toMatchObject({ thinkingOverride: 'high' });
+    await dispatch.execute('tc2', { specialist: 'explorer', bead_id: 'bd-1' });
+    expect(calls.start[1]).not.toHaveProperty('thinkingOverride');
+  });
+
   it('epic_context_depth passes through on bead_id dispatch, omitted by default', async () => {
     const mod = await loadExtension();
     const pi = makeFakePi();
