@@ -40,7 +40,7 @@ import { renderTaskPrompt } from '../specialist/task-prompt.js';
 import { validateBeforeRun } from '../specialist/runner.js';
 import { resolveRuntimeToolContract } from '../pi/session.js';
 import { resolveModelChain } from '../specialist/model-chain.js';
-import { BeadsClient } from '../specialist/beads.js';
+import { BeadsClient, collectEpicAncestors } from '../specialist/beads.js';
 import { evaluateBeadReadiness, type BeadGateOptions } from './bead-gate.js';
 import { compileStepContract, type StepContract } from './step-contract.js';
 import { InteractionTransport, type InteractionMessage, type PendingAsk } from './interaction.js';
@@ -420,11 +420,18 @@ export class NativeActivationHost {
       custom_tools: `${ASK_TOOL},${ESCALATE_TOOL}`,
     });
 
+    const epicAncestors = collectEpicAncestors(
+      (id) => this.beadsClient.readBead(id),
+      bead,
+      request.epicContextDepth,
+    );
+
     const rendered = renderTaskPrompt({
       specialist: specialist.specialist,
       cwd: this.cwd,
       beadId: request.beadId,
       bead,
+      epicAncestors,
     });
 
     const systemPrompt = buildSystemPrompt({

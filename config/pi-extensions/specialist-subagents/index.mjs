@@ -811,6 +811,16 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       coordinator_session_id: Type.Optional(
         Type.String({ description: 'Pi session id, for lineage.' }),
       ),
+      epic_context_depth: Type.Optional(
+        Type.Integer({
+          description:
+            'Walk bead.parent UP this many hops (1 = immediate parent epic, 2 = epic + ' +
+            'grand-epic) and render each ancestor contract into the turn-1 prompt as an ' +
+            "'## Epic lineage' section. Omit for single-bead dispatch with no lineage.",
+          minimum: 1,
+          maximum: 2,
+        }),
+      ),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const h = getHost();
@@ -822,6 +832,12 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         if (beadId && contract) {
           return resultOf(inlineRejectionResult(
             'both bead_id and contract were provided — provide exactly one; silently preferring one would dispatch against a contract the coordinator did not mean',
+          ));
+        }
+        const epicContextDepth = params.epic_context_depth;
+        if (epicContextDepth !== undefined && epicContextDepth !== 1 && epicContextDepth !== 2) {
+          return resultOf(inlineRejectionResult(
+            'epic_context_depth must be 1 or 2 — 1 walks to the immediate parent epic, 2 also includes the grand-epic',
           ));
         }
         let effectiveBeadId = beadId;
@@ -853,6 +869,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         const handle = await h.start({
           specialist: params.specialist,
           beadId: effectiveBeadId,
+          // Inline-contract dispatch creates a fresh bead with no parent: no lineage.
+          ...(epicContextDepth !== undefined && !autoCreatedBeadId ? { epicContextDepth } : {}),
           ...(params.model_override ? { modelOverride: params.model_override } : {}),
           requestedByParticipantId: params.requested_by ?? DEFAULT_REQUESTED_BY,
           ...(params.coordinator_session_id ? { coordinatorSessionId: params.coordinator_session_id } : {}),

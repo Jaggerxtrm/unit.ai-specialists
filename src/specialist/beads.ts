@@ -25,7 +25,7 @@ export interface BeadRecord {
   dependencies?: BeadDependency[];
 }
 
-export function buildBeadContext(bead: BeadRecord, completedBlockers: BeadRecord[] = []): string {
+export function buildBeadContext(bead: BeadRecord, completedBlockers: BeadRecord[] = [], epicAncestors: BeadRecord[] = []): string {
   // The exact bead id heads the context so an interactive launcher's turn-1
   // role=user message can obey claim/bead-id-verbatim discipline without
   // rediscovering the id (unitAI-edfjs). Templates may also interpolate
@@ -45,6 +45,19 @@ export function buildBeadContext(bead: BeadRecord, completedBlockers: BeadRecord
     lines.push('', '## Notes', bead.notes.trim());
   }
 
+  if (epicAncestors.length > 0) {
+    lines.push('', '## Epic lineage');
+    for (const ancestor of epicAncestors) {
+      lines.push('', `### ${ancestor.title} (${ancestor.id})`);
+      if (ancestor.description?.trim()) {
+        lines.push(ancestor.description.trim());
+      }
+      if (ancestor.notes?.trim()) {
+        lines.push('', ancestor.notes.trim());
+      }
+    }
+  }
+
   if (completedBlockers.length > 0) {
     lines.push('', '## Context from completed dependencies:');
     for (const blocker of completedBlockers) {
@@ -59,6 +72,33 @@ export function buildBeadContext(bead: BeadRecord, completedBlockers: BeadRecord
   }
 
   return lines.join('\n').trim();
+}
+
+/**
+ * Walk bead.parent upward, collecting up to `depth` ancestors (parent first).
+ * Stops silently at a null/absent parent or an unreadable bead. Depth outside
+ * 1|2 collects nothing; the tool layer refuses such values.
+ */
+export function collectEpicAncestors(
+  readBead: (id: string) => BeadRecord | null,
+  bead: Pick<BeadRecord, 'parent'>,
+  depth: number | undefined,
+): BeadRecord[] {
+  if (depth !== 1 && depth !== 2) return [];
+  const ancestors: BeadRecord[] = [];
+  let parentId = bead.parent?.trim();
+  for (let i = 0; i < depth && parentId; i++) {
+    let parent: BeadRecord | null = null;
+    try {
+      parent = readBead(parentId);
+    } catch {
+      break;
+    }
+    if (!parent) break;
+    ancestors.push(parent);
+    parentId = parent.parent?.trim();
+  }
+  return ancestors;
 }
 
 export class BeadsClient {
