@@ -268,7 +268,7 @@ export interface ObservabilitySqliteClient {
     upsertEpicChainMembership(chain: EpicChainRecord): void;
     upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void;
     upsertStatusWithEvents(status: SupervisorStatus, events: readonly TimelineEvent[], identity?: ObservabilityIdentityProjection): void;
-    upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
+    upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string, identity?: ObservabilityIdentityProjection): void;
     appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent, identity?: ObservabilityIdentityProjection): void;
     appendForensicEvent(jobId: string, specialist: string, beadId: string | undefined, forensicEvent: ForensicEvent): void;
     recordBranchIntegration(event: BranchIntegrationEvent): void;
