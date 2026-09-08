@@ -2,9 +2,9 @@
 title: Native Activation Runtime
 scope: native-activation
 category: guide
-version: 0.4.1
+version: 0.5.0
 updated: 2026-09-07
-synced_at: aa30782a
+synced_at: 3b2a2611
 description: What the native Specialist activation runtime does today, what it refuses, and which of its guarantees are not yet in force.
 source_of_truth_for:
   - "src/activation/native-host.ts"
@@ -376,7 +376,22 @@ rather than failing or silently proceeding.
 > second. So the interaction model is not usable as designed today, whatever the protocol
 > below says.
 >
-> Everything below describes the protocol as built. Treat the end-to-end path as unproven.
+> Fourth, and still live at `3b2a2611`: `InteractionTransport.attemptDelivery` returns
+> `true` when no `deliver` hook is wired, so the polling-only configuration marks every ask
+> `delivered` the moment it is asked. That is the configuration the shipping Pi coordinator
+> runs. `delivery` in `pending_asks[]` is therefore not trustworthy today.
+>
+> **That fourth one is a documentation failure as much as a code one, and it is the reason
+> this section is written the way it is.** Three places describe the delivery path —
+> `interaction.ts`'s own contract, `native-host.ts`'s constructor comment, and the entire
+> premise of `peer-bridge.ts`. All three agree with each other. None of them agreed with the
+> code. Prose that is internally consistent is not evidence about a running system, and
+> three documents repeating one another are one claim, not three. Meanwhile every existing
+> delivery test supplied a `deliver` hook, so the single configuration that actually ships
+> was the one never exercised.
+>
+> Everything below describes the protocol as built. Treat the end-to-end path as unproven,
+> and prefer reading the code over trusting this section where the two could differ.
 
 A running Specialist reaches its coordinator through two tools it sees in its contract:
 `ask_coordinator` and `escalate_to_coordinator`. Both expect an answer and both leave the
@@ -463,12 +478,12 @@ wired in `67be44b1`.
 
 ## Known holes
 
-Every entry is unclosed as of `aa30782a`. Where a bead exists it is named; where one does
+Every entry is unclosed as of `3b2a2611`. Where a bead exists it is named; where one does
 not, that is stated rather than implied.
 
 | Hole | Consequence | Bead |
 |---|---|---|
-| The Pi extension registers no UI — no slash commands, no Fleet view, nothing rendered. Found by an operator using it. | The coordinator surface exists as tools only; there is nothing to look at. | `unitAI-rrdnt.46` |
+| `InteractionTransport.attemptDelivery` returns `true` when no `deliver` hook is wired. The polling-only configuration — which is exactly what the shipping Pi coordinator uses — marks every ask `delivered` the instant it is asked, with nobody having seen it. | `delivery: 'delivered'` in `pending_asks[]` cannot be trusted. Do not build on it until the fix lands. | Fix in progress in the wakeup lane; see `unitAI-rrdnt.45` |
 | An escalation does not wake the coordinator. The wake *primitive* is live-proven — an idle interactive TUI took a turn from an out-of-band async callback with no operator input — but the escalation-to-callback half is unbuilt. | A blocked child is discovered by polling `specialist_status`, not by being told. The interaction model is not usable as designed. A proven primitive is not a proven path. | `unitAI-rrdnt.45` |
 | `tsconfig.json` includes only `src/**/*`, so no test file is ever typechecked. | `bunx tsc --noEmit` is green while a test calls a method that does not exist. Do not read a green tsc as covering the suite. | `unitAI-rrdnt.50` |
 | A live model has never been observed calling `ask_coordinator`. The tools reached no Specialist at all until `866d4a35`. | The clarification path is built and unit-tested but unproven end to end. | `unitAI-rrdnt.43` |
@@ -478,7 +493,7 @@ not, that is stated rather than implied.
 | `attempt_id` and `pi_session_id` are not indexed columns. | Attempt-level lineage is present but not efficiently queryable. | Tracked separately per `src/activation/forensic-sink.ts` |
 | Three forensic event names are classified by the sink with no producer: `output_validation_failed`, `retry_failed`, `activation_uncertain`. | Their absence is not a health signal; each is the negative half of a pair whose positive half is emitted. | `unitAI-rrdnt.38` |
 
-Four items previously listed here are **closed** and are recorded rather than deleted, so
+Six items previously listed here are **closed** and are recorded rather than deleted, so
 nobody reinstates them from an older document.
 
 **There was no operator surface.** `NativeActivationHost` had no production consumer and the
@@ -491,6 +506,11 @@ wrote. Three lanes found it independently on the same day. Closed by `67be44b1`,
 enabled writers and acquired the lease in one change — flipping admission without the
 acquire call would have shipped write-capable Specialists guarded by a lease that was
 present, tested, closed on the board, and never called.
+
+**The Pi extension registered no UI.** It existed as tools only — no slash commands, no
+Fleet view, nothing rendered — and an operator found it by using it rather than a test
+finding it. Closed by `unitAI-rrdnt.46`: `/fleet`, `/fleet:reply` and `/fleet:stop`, an
+`aboveEditor` widget, and argument completion driven off live host state.
 
 **The per-call mutation guard had no caller.** `admitToolCall` was host surface nothing
 invoked, and the host registered no blocking `tool_call` handler, so exclusion held at
@@ -556,11 +576,17 @@ surfaces, not one migrating into the other.
 
 There is **no task or prompt field**. The Bead is the prompt.
 
-> Dated 2026-09-08: `unitAI-rrdnt.48` will let `specialist_dispatch` accept an inline
-> contract as well as a `bead_id`, on the ruling that bead-then-dispatch creates too much
-> friction. The parameters below describe the current shape and will change when it lands. There is also **no workspace
-hint**: the activation runs in the server's working directory, and a writer would not get a
-new worktree anyway.
+> **The two frontends now differ here.** `unitAI-rrdnt.48` landed in the **Pi extension
+> only**: its `specialist_dispatch` takes *either* `bead_id` *or* an inline `contract`,
+> exactly one, never both — supplying both is refused rather than resolved by preference,
+> because silently preferring one would dispatch against a contract the coordinator did not
+> mean. An inline contract runs the **same** readiness gate first, then a Bead is created
+> from it and dispatched, so the gate is not weakened; only the order is. The MCP
+> `specialist_dispatch` still requires `bead_id` and accepts no inline contract. Verified at
+> `3b2a2611`.
+
+There is **no workspace hint** on either frontend: the activation runs in the server's
+working directory, and a writer would not get a new worktree anyway.
 
 Pass `model_override` for any Specialist whose `execution.model` is null — `explorer` is
 one. Without it the dispatch is refused with `no_model_configured`, which is a poor first
@@ -638,8 +664,9 @@ rather than absent when there is nothing:
 - `pending_asks[]` — `message_id`, `kind` (`question` or `escalation`), `activation_id`,
   `attempt_id`, `from`, `to`, `body`, `delivery`, `asked_at`.
 
-`delivery` is `pending`, `delivered` or `refused`, where `delivered` means a receipt was
-seen and not merely that no error was thrown.
+`delivery` is `pending`, `delivered` or `refused`. `delivered` is *meant* to mean a receipt
+was seen rather than merely that no error was thrown — **and today it does not**, in the
+configuration the Pi coordinator ships. See [Known holes](#known-holes) before reading it.
 
 Until the asynchronous push channel exists (Phase 14), a coordinator learns about a question
 by **reading**. A reader that cannot see the ask leaves the Specialist stuck forever, which
@@ -668,7 +695,12 @@ host (`unitAI-rrdnt.36.2`). See [Known holes](#known-holes).
 
 ### The Pi delta, and why it is the risky part
 
-One projection is Pi-specific, and it is the answer to acceptance AU for a Pi coordinator: a
+Three things are Pi-only as of `3b2a2611`, and the list is growing rather than shrinking:
+inline-contract dispatch (above), a `specialist_list` tool, and the result projection below.
+The shared *projections* still have not drifted, because they are imported; the divergence is
+in which tools each frontend registers and what it adds on top.
+
+The first of those is the answer to acceptance AU for a Pi coordinator: a
 **settled** activation carries a `result` object, projected by `toResultView`, alongside the
 shared view in `specialist_status`. It carries `status`, `output`, the `validation` record,
 `configured_model`, `resolved_model`, `model_override`, `fallback_used` and `completed_at`.
