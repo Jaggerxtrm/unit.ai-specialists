@@ -35,7 +35,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Check unresolved LLM-bot threads and bot verdict
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           BOT_RE: ${{ vars.PR_REVIEW_GATE_BOT_RE || 'codex|coderabbit|claude' }}
         with:
