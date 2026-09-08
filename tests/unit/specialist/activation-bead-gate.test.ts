@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateBeadReadiness, REQUIRED_SECTIONS } from '../../../src/activation/bead-gate.js';
+import { evaluateBeadReadiness, extractSections, REQUIRED_SECTIONS } from '../../../src/activation/bead-gate.js';
 import { NativeActivationHost } from '../../../src/activation/native-host.js';
 import { DispatchRejectedError } from '../../../src/activation/types.js';
 import type { PiSdk, PiAgentSessionLike } from '../../../src/activation/pi-sdk.js';
@@ -166,5 +166,64 @@ describe('NativeActivationHost — bead gate admission', () => {
     }).catch(() => undefined);
 
     expect(events).toContain('activation_admitted');
+  });
+
+  // ── Same-line section headers (unitAI-rrdnt.54) ─────────────────────────────
+  //
+  // `PROBLEM: text` used to normalise to `PROBLEM:_TEXT`, match no heading, and leave
+  // extractSections returning an EMPTY map — so the gate refused a complete contract and
+  // reported every section missing. The reason pointed away from the cause, which is the
+  // expensive part: a caller reading "missing: PROBLEM" about a description containing
+  // PROBLEM has nowhere to go.
+
+  const INLINE_CONTRACT = [
+    'PROBLEM: the thing is broken',
+    'SUCCESS: it works',
+    'SCRUTINY: LOW',
+    'SCOPE: one file',
+    'NON_GOALS: nothing else',
+    'CONSTRAINTS: read only',
+    'VALIDATION: tests pass',
+    'OUTPUT: a sentence',
+  ].join('\n');
+
+  it('parses same-line "SECTION: body" headers and keeps the body', () => {
+    const sections = extractSections(INLINE_CONTRACT);
+
+    for (const name of REQUIRED_SECTIONS) {
+      expect(sections.has(name), `${name} not parsed from the inline form`).toBe(true);
+      // Capturing the text after the colon is the whole point. Dropping it would turn
+      // "missing" into "declared but empty", which this parser deliberately distinguishes.
+      expect(sections.get(name), `${name} parsed but its body was discarded`).not.toBe('');
+    }
+    expect(sections.get('PROBLEM')).toBe('the thing is broken');
+    expect(sections.get('OUTPUT')).toBe('a sentence');
+  });
+
+  it('admits a contract written entirely in the same-line form', () => {
+    const bead = { id: 'ISSUE-1', title: 'A task', status: 'open', description: INLINE_CONTRACT };
+    expect(evaluateBeadReadiness(bead, NO_STATE)).toEqual({ ok: true });
+  });
+
+  it('still treats a section name inside prose as prose, not a heading', () => {
+    // A heading has to head something. Widening the parser must not let any line that
+    // happens to contain a section name and a colon silently end the previous section.
+    const sections = extractSections([
+      'PROBLEM',
+      'we must decide whether to log OUTPUT: below or above the fold',
+      'SUCCESS',
+      'decided',
+    ].join('\n'));
+
+    expect([...sections.keys()]).toEqual(['PROBLEM', 'SUCCESS']);
+    expect(sections.get('PROBLEM')).toContain('OUTPUT: below');
+  });
+
+  it('leaves the bare-heading form byte-identical', () => {
+    const bare = 'PROBLEM\nthe thing is broken\n\nSUCCESS\nit works\n';
+    expect([...extractSections(bare).entries()]).toEqual([
+      ['PROBLEM', 'the thing is broken'],
+      ['SUCCESS', 'it works'],
+    ]);
   });
 });

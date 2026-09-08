@@ -9,7 +9,8 @@ import { detectJobOutputMode } from '../../cli/status.js';
 import { projectOutstandingAsks, type PendingInteractionProjection } from '../../activation/transport/polling.js';
 import { leaseScopeFor, projectUncertainWorkspaces, type UncertainWorkspaceProjection } from '../../activation/workspace-reconcile.js';
 import type { NativeActivationHost } from '../../activation/native-host.js';
-import { toActivationView, toPendingAskView, type ActivationView, type PendingAskView } from './activation.tool.js';
+import { toActivationView, toActivationResultView, toPendingAskView, type ActivationResultView, type ActivationView, type PendingAskView } from './activation.tool.js';
+import type { RuntimeEventPusher } from '../../activation/async-events.js';
 
 const BACKENDS = ['gemini', 'qwen', 'anthropic', 'openai'];
 
@@ -25,6 +26,7 @@ export function createSpecialistStatusTool(
   loader: SpecialistLoader,
   circuitBreaker: CircuitBreaker,
   getHost?: () => NativeActivationHost | undefined,
+  getPusher?: () => RuntimeEventPusher | undefined,
 ) {
   return {
     name: 'specialist_status' as const,
@@ -93,10 +95,19 @@ export function createSpecialistStatusTool(
       const activations: ActivationView[] = host ? host.list().map(toActivationView) : [];
       const pending_asks: PendingAskView[] = host ? host.pendingAsks().map(toPendingAskView) : [];
 
+      // The read half of Phase 14. A completion notification is pushed toward a live
+      // coordinator, but the push can be unroutable, held or refused and never reports
+      // `delivered` on this channel at all — so the validated result must be readable
+      // without one. This projects the SAME ActivationResult the push serialises, which is
+      // what makes a pushed coordinator and a polling coordinator agree by construction.
+      const activation_results: ActivationResultView[] =
+        getPusher?.()?.allResults().map(toActivationResultView) ?? [];
+
       return {
         loaded_count: list.length,
         activations,
         pending_asks,
+        activation_results,
         pending_interactions,
         uncertain_workspaces,
         backends_health: Object.fromEntries(BACKENDS.map(b => [b, circuitBreaker.getState(b)])),

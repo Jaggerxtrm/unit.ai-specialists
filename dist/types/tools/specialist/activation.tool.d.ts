@@ -2,6 +2,8 @@ import * as z from 'zod';
 import type { NativeActivationHost } from '../../activation/native-host.js';
 import type { ActivationSnapshot } from '../../activation/types.js';
 import type { PendingAsk } from '../../activation/interaction.js';
+import type { RuntimeEventPusher } from '../../activation/async-events.js';
+import type { ActivationResult } from '../../activation/types.js';
 /**
  * Transport-neutral projection of one activation.
  *
@@ -40,6 +42,40 @@ export interface PendingAskView {
     asked_at: number;
 }
 export declare function toPendingAskView(ask: PendingAsk): PendingAskView;
+/**
+ * A validated result, projected for a coordinator that reads instead of being pushed.
+ *
+ * This is the ONE projection of `ActivationResult`, and it carries its own identity so it
+ * can stand alone in a list. The Pi extension attaches its result to an `ActivationView`
+ * that already names the activation, so the identity fields are redundant there — but
+ * redundant is not divergent, and two functions that describe the same settled activation
+ * with different field sets is exactly how a Pi coordinator and a Claude coordinator end
+ * up disagreeing about one object (`config/pi-extensions/specialist-subagents/index.mjs`,
+ * unitAI-rrdnt.45). Exported from `lib.js` so the extension imports it rather than
+ * restating it, the way it already does for `toActivationView`.
+ */
+export interface ActivationResultView {
+    activation_id: string;
+    participant_id: string;
+    attempt_id: string;
+    bead_id: string;
+    status: string;
+    /** Explicitly `null` rather than absent: a missing key reads as "not projected yet". */
+    output: unknown;
+    validation: {
+        valid: boolean;
+        schema?: string;
+        errors?: string[];
+    };
+    pi_session_id?: string;
+    configured_model?: string;
+    requested_model?: string;
+    resolved_model: string;
+    model_override: boolean;
+    fallback_used: boolean;
+    completed_at: number;
+}
+export declare function toActivationResultView(result: ActivationResult): ActivationResultView;
 export declare const specialistDispatchSchema: z.ZodObject<{
     specialist: z.ZodString;
     bead_id: z.ZodString;
@@ -67,7 +103,7 @@ export declare const specialistDispatchSchema: z.ZodObject<{
  * and resumable, and a tool that blocked until completion would make every clarification
  * a deadlock — the coordinator cannot answer a question it is blocked waiting on.
  */
-export declare function createSpecialistDispatchTool(getHost: () => NativeActivationHost): {
+export declare function createSpecialistDispatchTool(getHost: () => NativeActivationHost, getPusher?: () => RuntimeEventPusher | undefined): {
     name: "specialist_dispatch";
     description: string;
     inputSchema: z.ZodObject<{

@@ -32,7 +32,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -114,10 +114,10 @@ function askingSpecialistSpec(model: string) {
   spec.specialist.metadata.description = 'Live smoke asker for native activation. Not for dispatch.';
   spec.specialist.prompt.system = [
     'You are a smoke-test probe.',
-    'You must report the coordinator\'s chosen deployment colour.',
+    'You must report the coordinator\'s deployment token for this run.',
     'You do NOT know it and you cannot derive it. Run no commands.',
     'Call the ask_coordinator tool with the question, wait for the answer,',
-    'then reply with exactly the colour you were given and stop.',
+    'then reply with exactly the token you were given and stop.',
   ].join(' ');
   return spec;
 }
@@ -298,6 +298,16 @@ describe('live smoke: native Specialist activation', () => {
   let tempRepo = '';
   let dbPath = '';
   let beadId = '';
+  let askBeadId = '';
+  /**
+   * The value acceptance AX withholds from the child.
+   *
+   * Generated per run and never written to disk, so the ONLY way the child can produce it
+   * is to call the ask tool and be told. A fixed value — a colour, a word — lets a model
+   * guess its way to a green test, which converts a live acceptance back into a fixture
+   * assertion. That shape has already produced false assurance in this epic more than once.
+   */
+  const askSecret = `tok-${randomUUID().slice(0, 8)}`;
   let host: NativeActivationHost;
 
   beforeAll(async () => {
@@ -349,15 +359,50 @@ describe('live smoke: native Specialist activation', () => {
     expect(create.status).toBe(0);
     beadId = create.stdout.match(/unitAI-[a-z0-9.]+/)?.[0] ?? '';
     expect(beadId).toMatch(/^unitAI-/);
+
+    // Acceptance AX needs its OWN contract. Run against the reader probe above, the case
+    // could never pass: that bead's SCOPE says reply once and stop, its NON_GOALS say no
+    // further work — and the bead is the prompt in this runtime, so it outranks the
+    // asking specialist's system prompt telling the child it must ask. The child obeyed
+    // the bead, answered in one sentence, and never called the tool (unitAI-rrdnt.52).
+    // This contract makes asking the only way to satisfy it, and deliberately carries no
+    // hint of the value itself, because the child reads this text.
+    const askContract = [
+      'PROBLEM', 'The clarification path has no observed live run.', '',
+      'SUCCESS', 'The coordinator\'s deployment token appears in the reply.', '',
+      'SCOPE',
+      'Report the coordinator\'s deployment token for this run. You do not know it, you '
+        + 'cannot derive it, and it exists nowhere in this repository or on disk. Obtain it '
+        + 'by calling the ask_coordinator tool, then reply with exactly that token.', '',
+      'NON_GOALS', 'No file edits. No shell commands. Do not search for the token.', '',
+      'CONSTRAINTS',
+      'Read-only. You MUST call ask_coordinator; guessing or inventing a token fails this '
+        + 'contract. Reply with the token you were given and nothing else.', '',
+      'VALIDATION', 'The reply contains the exact token the coordinator supplied.', '',
+      'OUTPUT', 'The token.', '',
+      'SCRUTINY', 'LOW — throwaway smoke probe.',
+    ].join('\n');
+
+    const createAsk = run('bd', [
+      'create', '--title=native activation live smoke ask probe', '--type=task',
+      `--description=${askContract}`,
+    ], repoRoot);
+    expect(createAsk.status).toBe(0);
+    askBeadId = createAsk.stdout.match(/unitAI-[a-z0-9.]+/)?.[0] ?? '';
+    expect(askBeadId).toMatch(/^unitAI-/);
   }, 120_000);
 
   afterAll(async () => {
-    if (beadId) {
-      run('bd', ['kv', 'set', `memory-acked:${beadId}`, 'nothing novel:throwaway live-smoke probe bead'], repoRoot);
-      run('bd', ['close', beadId, '--reason=native activation live smoke complete'], repoRoot);
+    for (const id of [beadId, askBeadId].filter(Boolean)) {
+      run('bd', ['kv', 'set', `memory-acked:${id}`, 'nothing novel:throwaway live-smoke probe bead'], repoRoot);
+      run('bd', ['close', id, '--reason=native activation live smoke complete'], repoRoot);
     }
     if (tempRepo) await rm(tempRepo, { recursive: true, force: true });
-  });
+    // Explicit timeout: the default hook budget is 10s and this now closes TWO probe
+    // beads, each of which round-trips through bd's Dolt sync. beforeAll always carried
+    // one; afterAll did not, and inherited the default until the second close pushed it
+    // over (unitAI-rrdnt.52).
+  }, 120_000);
 
   it.skipIf(!runLive)(
     'acceptance B: with no override the child runs the effective configured model, and the turn completes',
@@ -471,7 +516,7 @@ describe('live smoke: native Specialist activation', () => {
       // is still sitting inside — so `pi_session_id` cannot change across the ask.
       const handle = await host.start({
         specialist: ASKING_SPECIALIST,
-        beadId,
+        beadId: askBeadId,
         requestedByParticipantId: 'coordinator:live-smoke',
       });
 
@@ -519,14 +564,14 @@ describe('live smoke: native Specialist activation', () => {
       const sessionBeforeAnswer = host.inspect(handle.activationId)?.piSessionId;
       expect(sessionBeforeAnswer).toBeTruthy();
 
-      const replied = await host.answer(ask.message.messageId, 'chartreuse');
+      const replied = await host.answer(ask.message.messageId, askSecret);
       expect(replied?.inReplyTo).toBe(ask.message.messageId);
 
       const result = await handle.result;
 
       expect(result.status, `activation failed: ${result.validation.errors?.join('; ')}`).toBe('completed');
       // The child used the answer it was given, so the reply reached it in-context.
-      expect(String(result.output).toLowerCase()).toContain('chartreuse');
+      expect(String(result.output)).toContain(askSecret);
 
       // THE assertion: same session across the ask. A restart would allocate a new id.
       expect(host.inspect(handle.activationId)?.piSessionId).toBe(sessionBeforeAnswer);

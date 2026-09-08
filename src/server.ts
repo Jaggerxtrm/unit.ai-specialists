@@ -38,6 +38,8 @@ import {
   specialistStopSchema,
 } from './tools/specialist/activation.tool.js';
 import { NativeActivationHost } from './activation/native-host.js';
+import { RuntimeEventPusher } from './activation/async-events.js';
+import { PeerAdapter } from './activation/transport/peer-adapter.js';
 import { createActivationForensicSink } from './activation/forensic-sink.js';
 import { logger } from './utils/logger.js';
 
@@ -132,6 +134,15 @@ export class SpecialistsServer {
    */
   private activationHost: NativeActivationHost;
 
+  /**
+   * Asynchronous runtime events toward the dispatching coordinator (PRD Phase 14).
+   *
+   * Process-lifetime for the same reason the host is: the coordinator turn that reads a
+   * completion is rarely the turn that dispatched it, and a per-call pusher would forget
+   * every result it had recorded.
+   */
+  private eventPusher: RuntimeEventPusher;
+
   constructor() {
     const circuitBreaker = new CircuitBreaker();
     const loader = new SpecialistLoader();
@@ -150,10 +161,15 @@ export class SpecialistsServer {
     });
     const getHost = () => this.activationHost;
 
+    this.eventPusher = new RuntimeEventPusher({
+      adapter: new PeerAdapter({ repoRoot: process.cwd() }),
+    });
+    const getPusher = () => this.eventPusher;
+
     this.tools = [
       createUseSpecialistTool(runner),
-      createSpecialistStatusTool(loader, circuitBreaker, getHost),
-      createSpecialistDispatchTool(getHost),
+      createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher),
+      createSpecialistDispatchTool(getHost, getPusher),
       createSpecialistReplyTool(getHost),
       createSpecialistStopActivationTool(getHost),
     ];

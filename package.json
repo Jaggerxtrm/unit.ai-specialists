@@ -1,7 +1,7 @@
 {
   "name": "@jaggerxtrm/specialists",
   "version": "3.21.6",
-  "description": "Specialists — Pi-based orchestration runtime exposing the single use_specialist MCP tool plus CLI workflows for .specialist.json definitions.",
+  "description": "Specialists \u2014 Pi-based orchestration runtime exposing the single use_specialist MCP tool plus CLI workflows for .specialist.json definitions.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xtrm-dev/specialists.git"
@@ -36,7 +36,7 @@
     "config/nodes/",
     "config/hooks/",
     "config/pi-extensions/",
-  "config/pi-extensions/specialist-subagents/",
+    "config/pi-extensions/specialist-subagents/",
     "config/presets.json",
     "docs/overrides-guide.md",
     "CHANGELOG.md",
@@ -67,7 +67,8 @@
     "changelog": "node scripts/changelog-update.mjs",
     "changelog:check": "node scripts/changelog-update.mjs --check",
     "preversion": "bun run changelog",
-    "version": "node scripts/changelog-update.mjs --tag v$npm_package_version && bun run build && git add CHANGELOG.md dist/"
+    "version": "node scripts/changelog-update.mjs --tag v$npm_package_version && bun run build && git add CHANGELOG.md dist/",
+    "typecheck:tests": "tsc -p tsconfig.test.json"
   },
   "keywords": [
     "omnispecialist",

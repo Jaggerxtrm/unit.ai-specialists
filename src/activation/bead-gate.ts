@@ -64,18 +64,46 @@ export function readContractState(beadId: string): string | undefined {
 /** Every heading this parser recognises as terminating the previous section. */
 const ALL_HEADINGS = new Set<string>([...REQUIRED_SECTIONS, 'SCRUTINY']);
 
+/** A recognised heading, plus any body text that shared its line. */
+type Heading = { readonly name: string; readonly inlineBody?: string };
+
 /**
- * Normalise one line to a canonical heading name, or undefined when it is not a heading.
+ * Normalise one line to a canonical heading, or undefined when it is not a heading.
  *
- * Headings are matched as a bare word on their own line, optionally decorated with
- * markdown heading marks, bold, or a trailing colon — `bd`'s renderer pads them and
- * operators write them several ways. A section name appearing inside prose is not a
- * heading: a heading has to head something.
+ * Two forms are accepted, because operators and models both write contracts and they do
+ * not write them the same way:
+ *
+ *   PROBLEM              a bare word on its own line, optionally decorated with markdown
+ *   the thing is broken  heading marks, bold, or a trailing colon
+ *
+ *   PROBLEM: the thing is broken     the section name, a colon, and the body on one line
+ *
+ * The second form used to be rejected, and rejected in the worst possible way: the whole
+ * line normalised to `PROBLEM:_THE_THING_IS_BROKEN`, matched nothing, so `extractSections`
+ * returned an empty map and the gate reported every section missing from a description
+ * that plainly contained all of them (unitAI-rrdnt.54). Anyone writing
+ * `bd create --description="PROBLEM: ...\nSUCCESS: ..."` hit it, and the refusal pointed
+ * away from the cause.
+ *
+ * A section name inside prose is still not a heading: the name must START the line and the
+ * colon must follow it immediately. `see OUTPUT: below` heads nothing.
  */
-function headingOf(line: string): string | undefined {
-  const bare = line.trim().replace(/^#+\s*/, '').replace(/\*/g, '').replace(/:$/, '').trim();
-  const normalized = bare.toUpperCase().replace(/[\s-]+/g, '_');
-  return ALL_HEADINGS.has(normalized) ? normalized : undefined;
+function headingOf(line: string): Heading | undefined {
+  const bare = line.trim().replace(/^#+\s*/, '').replace(/\*/g, '').trim();
+
+  const canonical = (text: string): string => text.toUpperCase().replace(/[\s-]+/g, '_');
+
+  const whole = canonical(bare.replace(/:$/, '').trim());
+  if (ALL_HEADINGS.has(whole)) return { name: whole };
+
+  const split = bare.match(/^([A-Za-z][A-Za-z _-]*?)\s*:\s*(.*)$/);
+  if (!split) return undefined;
+  const name = canonical(split[1].trim());
+  if (!ALL_HEADINGS.has(name)) return undefined;
+  // The text after the colon is this section's first body line. Discarding it would turn
+  // "missing" into "declared but empty" — a distinction this parser deliberately keeps.
+  const inlineBody = split[2].trim();
+  return inlineBody ? { name, inlineBody } : { name };
 }
 
 /**
@@ -100,8 +128,8 @@ export function extractSections(description: string): Map<string, string> {
     const heading = headingOf(line);
     if (heading) {
       flush();
-      current = heading;
-      body = [];
+      current = heading.name;
+      body = heading.inlineBody ? [heading.inlineBody] : [];
       continue;
     }
     if (current) body.push(line);

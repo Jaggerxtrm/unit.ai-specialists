@@ -147,6 +147,19 @@ describe('no silent loss', () => {
     expect(ask.delivery).toBe('pending');
   });
 
+  it('does not claim delivery when there is no transport at all', async () => {
+    // The untested case, and the one that was wrong: with no `deliver` configured the
+    // transport reported `delivered`, manufacturing a receipt out of the absence of a
+    // way to send. The host wires `deliver` only when a peer exists, so this is the
+    // ordinary configuration, not an edge case.
+    const t = new InteractionTransport();
+    await t.send({
+      kind: 'question', from: 'specialist::x', to: 'coordinator',
+      activationId: 'act:1', attemptId: 'att:1:1', body: 'q',
+    });
+    expect(t.pendingAsks()[0].delivery).toBe('pending');
+  });
+
   it('treats a throwing transport as failed delivery, never as a lost message', async () => {
     const t = new InteractionTransport({ deliver: () => { throw new Error('socket gone'); } });
     await t.send({ ...base(), kind: 'question' });
@@ -163,6 +176,16 @@ describe('no silent loss', () => {
     const acknowledging = new InteractionTransport({ deliver: () => true });
     await acknowledging.send({ ...base(), kind: 'question' });
     expect(acknowledging.pendingAsks()[0].delivery).toBe('delivered');
+  });
+
+  it('marks an ask pending when there is no transport at all (unitAI-rrdnt.45)', async () => {
+    // The Pi coordinator's configuration: no peer hook, polling only. Nothing
+    // received the ask, so nothing may claim it was delivered — otherwise
+    // specialist_status reports "delivered" for a question no one has seen, which
+    // is what a live run actually showed before this was fixed.
+    const t = new InteractionTransport();
+    await t.send({ ...base(), kind: 'question' });
+    expect(t.pendingAsks()[0].delivery).toBe('pending');
   });
 
   it('records every message in history, delivered or not', async () => {

@@ -21,7 +21,7 @@
  * notion of who is allowed to answer. Delivery over MCP or the peer channel is
  * unitAI-rrdnt.12 and PRD Phase 13/14; this module defines what they carry.
  */
-import type { ActivationId, AttemptId, ParticipantId } from './types.js';
+import type { ActivationId, AttemptId, ParticipantId, PiSessionId } from './types.js';
 /** Message id. Distinct from every activation identity — a message is not a participant. */
 export type MessageId = string;
 /**
@@ -47,6 +47,15 @@ export interface InteractionMessage {
     to: ParticipantId;
     activationId: ActivationId;
     attemptId: AttemptId;
+    /**
+     * The physical session that produced this message, when one exists.
+     *
+     * Correlation metadata, never identity (`types.ts`). It is on the message rather than
+     * derived by the reader because a pushed event leaves this process: a coordinator that
+     * received a completion over the peer channel has no registry to look the session up in,
+     * and PRD acceptance AY requires the full lineage to survive the push.
+     */
+    piSessionId?: PiSessionId;
     /** Set on a `reply`: the message this answers. The ONLY correlation mechanism. */
     inReplyTo?: MessageId;
     body: string;
@@ -74,6 +83,7 @@ export interface SendInput {
     to: ParticipantId;
     activationId: ActivationId;
     attemptId: AttemptId;
+    piSessionId?: PiSessionId;
     body: string;
     inReplyTo?: MessageId;
 }
@@ -139,7 +149,35 @@ export declare class InteractionTransport {
     /** Full ordered message history. Diagnostics only — never an authority for state. */
     history(): InteractionMessage[];
     private compose;
-    /** A throwing delivery is a failed delivery, never a lost message. */
+    /**
+     * A throwing delivery is a failed delivery, never a lost message.
+     *
+     * No transport is not a receipt either. This returned `true` until unitAI-rrdnt.45,
+     * which meant the polling-only configuration — the Pi coordinator's, where no peer
+     * hook is wired — marked every ask `delivered` the instant it was asked, with no
+     * receiver and no receipt anywhere. A live run caught it: the operator read
+     * `"delivery": "delivered"` off an ask nobody had seen.
+     *
+     * It survived because the three places that describe this path all agreed with each
+     * other and none of them agreed with the code: this module's own contract says
+     * `delivered` means a receipt was seen and never merely that nothing threw, and
+     * `native-host.ts` says an ask reads as `pending` when no coordinator address is
+     * configured. Every existing test supplied a `deliver` hook, so the one configuration
+     * that ships to the Pi surface was the one configuration never exercised.
+     */
     private attemptDelivery;
 }
+/**
+ * Build one canonical message.
+ *
+ * Exported because the peer channel composes messages the in-process transport never sees
+ * — a completion push originates from the runtime and expects no reply, so it needs the
+ * vocabulary without needing correlation, waiters or a pending-ask registration. Sharing
+ * this function is what keeps that a serialisation of `InteractionMessage` rather than a
+ * second message shape that happens to have similar field names (invariant BH).
+ */
+export declare function composeInteractionMessage(input: SendInput, identity: {
+    messageId: MessageId;
+    createdAt: number;
+}): InteractionMessage;
 //# sourceMappingURL=interaction.d.ts.map
