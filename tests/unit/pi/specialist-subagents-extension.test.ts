@@ -1036,7 +1036,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(mod.formatSpendShort({ input_tokens: 0, output_tokens: 0 })).toBe('');
     for (const view of [base, { ...base, token_usage: { input_tokens: 0, output_tokens: 0 } }]) {
       const row = mod.renderFleetRowLine(view);
-      expect(row).toBe('    ● explorer (m) · bd-1 · running 41s · working');
+      expect(row).toBe(`${mod.RAIL}     ● explorer (m) · bd-1 · running 41s · working`);
       expect(row).not.toContain('spent');
     }
   });
@@ -1062,12 +1062,13 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       last_activity_at: Math.floor(Date.now() / 1000),
     };
     expect(mod.renderFleetRowLine({ ...base, purpose: 'researching activation transport' }))
-      .toBe('    ● researcher (m) · ISSUE-92 · researching activation transport · running 47s · working');
+      .toBe(`${mod.RAIL}     ● researcher (m) · ISSUE-92 · researching activation transport · running 47s · working`);
     const long = mod.renderFleetRowLine({ ...base, purpose: `${'p '.repeat(100)}` });
-    expect(long.slice(4)).not.toMatch(/  /); // skip the four-space row indent
+    const longStripped = String(long).replace(/\x1b\[[0-9;]*m/g, '');
+    expect(longStripped.slice(6)).not.toMatch(/  /); // skip the rail + four-space row indent
     expect(long.split(' · ')[2].length).toBeLessThanOrEqual(mod.PURPOSE_ROW_MAX);
     expect(mod.renderFleetRowLine(base))
-      .toBe('    ● researcher (m) · ISSUE-92 · running 47s · working');
+      .toBe(`${mod.RAIL}     ● researcher (m) · ISSUE-92 · running 47s · working`);
   });
 
   it('elapsed always renders in seconds and settled rows keep token totals (unitAI-uvg4j)', async () => {
@@ -1126,21 +1127,61 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       }],
       asks: [],
     };
-    // Collapsed: two-space tree branch, chrome lowercase, identifiers canonical.
+    // Collapsed: magenta rail + two-space tree branch, chrome lowercase, identifiers canonical.
     expect(mod.renderCollapsedLine(fleet))
-      .toBe('  └ specialists · 1 active · 0 waiting · /specialists inspect');
+      .toBe(`${mod.RAIL}   └ specialists · 1 active · 0 waiting · /specialists inspect`);
     expect(mod.renderCollapsedLine({ activations: [], asks: [] }))
-      .toBe('  └ specialists · idle · /specialists inspect');
-    // Execution row: four-space indent, ● marker, canonical identifier case.
+      .toBe(`${mod.RAIL}   └ specialists · idle · /specialists inspect`);
+    // Execution row: magenta rail + four-space indent, ● marker, canonical identifier case.
     expect(mod.renderSectionLines(fleet)[1])
-      .toBe('    ● researcher (gpt-5.6-sol high) · ISSUE-92 · running 47s · 2.1k · working');
+      .toBe(`${mod.RAIL}     ● researcher (gpt-5.6-sol high) · ISSUE-92 · running 47s · 2.1k · working`);
     // Ask row: four-space indent with ! marker (seconds elided: wall-clock flake).
     const askRow = mod.renderFleetRowLine(
       { activation_id: 'act:q', specialist: 'reviewer', bead_id: 'ISSUE-92' },
       [{ activation_id: 'act:q', asked_at: now - 31 }],
     );
-    expect(askRow.startsWith('    ! reviewer (?model) · ISSUE-92 · needs reply ')).toBe(true);
+    expect(askRow.startsWith(`${mod.RAIL}     ! reviewer (?model) · ISSUE-92 · needs reply `)).toBe(true);
     expect(askRow.endsWith('s')).toBe(true);
+  });
+
+  it('magenta rail prefixes every fleet line with an aligned gutter (unitAI-beqby.13)', async () => {
+    const { mod } = await boot();
+    const now = Math.floor(Date.now() / 1000);
+    const strip = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
+    const fleet = {
+      activations: [{
+        activation_id: 'act:aaaa', specialist: 'researcher', bead_id: 'ISSUE-92',
+        state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+        elapsed_s: 47, token_usage: { input: 1500, output: 600, cache: 0 },
+        last_activity_at: now,
+      }],
+      asks: [],
+    };
+    // Collapsed + expanded + overflow lines all carry the rail.
+    const activations = Array.from({ length: mod.FLEET_MAX_ROWS + 1 }, (_, i) => ({
+      activation_id: `act:${i}`, specialist: `spec-${i}`, bead_id: 'bd-1', state: 'running',
+      resolved_model: 'm', elapsed_s: 10,
+    }));
+    const lines = mod.renderSectionLines({ activations, asks: [] }, { expanded: true });
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line.startsWith(mod.RAIL)).toBe(true);
+      expect(strip(line).startsWith('│ ')).toBe(true);
+    }
+    // Rail is the magenta accent, nothing else.
+    expect(mod.RAIL).toBe('\x1b[35m│\x1b[0m');
+    expect(mod.withRail('')).toBe(mod.RAIL);
+    // Human tool-result cards carry the rail on every line, collapsed and expanded.
+    const { pi } = await boot();
+    const tool = toolNamed(pi, 'specialist_dispatch');
+    const result = await tool.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' });
+    for (const collapsed of [false, true]) {
+      const component = tool.renderResult(result, { expanded: collapsed }, {}, {});
+      for (const line of component.render(80)) {
+        expect(line.startsWith(mod.RAIL)).toBe(true);
+        expect(strip(line).startsWith('│')).toBe(true);
+      }
+    }
   });
 
   it('/specialists reports in text too, so json and print modes are not blind', async () => {
