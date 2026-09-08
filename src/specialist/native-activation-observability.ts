@@ -4,6 +4,7 @@ import {
   createMetaEvent,
   createRunCompleteEvent,
   createRunStartEvent,
+  createControlSignalEvent,
   createStatusChangeEvent,
   createTokenUsageEvent,
   createTurnSummaryEvent,
@@ -56,12 +57,8 @@ export const NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
   output_validation_passed: 'Native result validation has no legacy timeline event kind.',
   output_validation_failed: 'Native result validation has no legacy timeline event kind; terminal failure is run_complete.',
   activation_disposed: 'In-memory session disposal after a terminal event has no legacy timeline event.',
-  lease_acquired: 'Workspace-lease contention has no legacy runner concept; admission identity is projected on specialist_jobs.',
-  lease_denied: 'Workspace-lease contention has no legacy runner concept; the refusal itself is run_complete.',
   lease_released: 'Workspace-lease teardown has no legacy timeline event.',
-  lease_uncertain: 'Uncertain lease release has no legacy timeline event; reconciliation is operator-visible via specialist_status.',
   lease_reconciled: 'Lease reconciliation has no legacy timeline event.',
-  tool_blocked: 'Per-call tool-guard refusal has no legacy timeline event; the turn continues and completion carries the outcome.',
   clarification_requested: 'Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.',
   clarification_answered: 'Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.',
   escalation_raised: 'Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.',
@@ -218,6 +215,26 @@ export function mapNativeLifecycleEvent(
           auto_compactions: context.autoCompactions,
         },
       }), t);
+    // Admission control, persisted as `control_signal` -> family `control`, severity `warn`
+    // (unitAI-rrdnt.58). Phase 7 originally dropped these on the grounds that lease contention
+    // has no legacy runner concept. True, and it does not follow: there is no legacy event to
+    // COMPARE against, which makes them uncomparable, not unimportant. Parity means a native
+    // activation answers the same queries a legacy one does — not that it may only emit events
+    // legacy also emits.
+    //
+    // Without them a write refused for lease contention left NO durable trace, which is both
+    // PRD acceptance V unsatisfiable and the exact situation an operator reconstructs from
+    // forensics hours later. `control_signal` is a shared timeline type the legacy runner uses
+    // too, so this restores the rows without reopening a native-only vocabulary. It is
+    // deliberately not `job`: these are admission decisions, not run lifecycle.
+    case 'lease_acquired':
+    case 'lease_denied':
+    case 'lease_uncertain':
+    case 'tool_blocked':
+      return at(createControlSignalEvent(event.name, {
+        bead_id: event.beadId,
+        ...(event.payload ?? {}),
+      } as never), t);
     case 'activation_failed':
     case 'activation_rejected':
       return at(createRunCompleteEvent('ERROR', Math.max(0, t - context.startedAtMs) / 1_000, {

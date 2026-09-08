@@ -41,12 +41,8 @@ export declare const NATIVE_LIFECYCLE_OBSERVABILITY_GAPS: Readonly<{
     readonly output_validation_passed: "Native result validation has no legacy timeline event kind.";
     readonly output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.";
     readonly activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.";
-    readonly lease_acquired: "Workspace-lease contention has no legacy runner concept; admission identity is projected on specialist_jobs.";
-    readonly lease_denied: "Workspace-lease contention has no legacy runner concept; the refusal itself is run_complete.";
     readonly lease_released: "Workspace-lease teardown has no legacy timeline event.";
-    readonly lease_uncertain: "Uncertain lease release has no legacy timeline event; reconciliation is operator-visible via specialist_status.";
     readonly lease_reconciled: "Lease reconciliation has no legacy timeline event.";
-    readonly tool_blocked: "Per-call tool-guard refusal has no legacy timeline event; the turn continues and completion carries the outcome.";
     readonly clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.";
     readonly clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.";
     readonly escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.";

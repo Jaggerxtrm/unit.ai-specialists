@@ -242,8 +242,13 @@ describe('native activation observability parity', () => {
       'activation_requested', 'step_contract_compiled', 'activation_admitted',
       'activation_starting', 'activation_resumed', 'output_validation_started',
       'output_validation_passed', 'output_validation_failed', 'activation_disposed',
-      'lease_acquired', 'lease_denied', 'lease_released', 'lease_uncertain',
-      'tool_blocked', 'clarification_requested', 'clarification_answered',
+      // lease_acquired, lease_denied, lease_uncertain and tool_blocked were listed here and
+      // are now MAPPED as control_signal rows (unitAI-rrdnt.58): a blocked write has to leave
+      // a durable trace, and "no legacy equivalent" makes them uncomparable rather than
+      // unimportant. lease_released and lease_reconciled stay gaps — teardown of a lease that
+      // was granted is already implied by the activation's terminal event.
+      'lease_released', 'lease_reconciled',
+      'clarification_requested', 'clarification_answered',
       'escalation_raised', 'escalation_resolved',
       'turn_started', 'turn_completed',
       'retry_started', 'retry_completed', 'compaction_started', 'compaction_completed',

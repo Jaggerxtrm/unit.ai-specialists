@@ -78191,12 +78191,8 @@ var NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
   output_validation_passed: "Native result validation has no legacy timeline event kind.",
   output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.",
   activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.",
-  lease_acquired: "Workspace-lease contention has no legacy runner concept; admission identity is projected on specialist_jobs.",
-  lease_denied: "Workspace-lease contention has no legacy runner concept; the refusal itself is run_complete.",
   lease_released: "Workspace-lease teardown has no legacy timeline event.",
-  lease_uncertain: "Uncertain lease release has no legacy timeline event; reconciliation is operator-visible via specialist_status.",
   lease_reconciled: "Lease reconciliation has no legacy timeline event.",
-  tool_blocked: "Per-call tool-guard refusal has no legacy timeline event; the turn continues and completion carries the outcome.",
   clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
   clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
   escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
@@ -78334,6 +78330,14 @@ function mapNativeLifecycleEvent(event, context, t = Date.now()) {
           auto_retries: context.autoRetries,
           auto_compactions: context.autoCompactions
         }
+      }), t);
+    case "lease_acquired":
+    case "lease_denied":
+    case "lease_uncertain":
+    case "tool_blocked":
+      return at(createControlSignalEvent(event.name, {
+        bead_id: event.beadId,
+        ...event.payload ?? {}
       }), t);
     case "activation_failed":
     case "activation_rejected":
