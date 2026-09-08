@@ -197,6 +197,42 @@ describe('native activation observability parity', () => {
     });
   });
 
+  it('persists settle output to last_output and results, surviving dispose (unitAI-u3mqu)', () => {
+    client = createObservabilitySqliteClientAtPath(dbPath);
+    expect(client).not.toBeNull();
+    const observability = client!;
+    const sink = createActivationForensicSink(observability);
+    const base = {
+      activationId: 'act:settle', attemptId: 'att:settle:1',
+      participantId: 'specialist::researcher', specialist: 'researcher', beadId: 'unitAI-settle',
+    };
+    const output = 'SETTLE OUTPUT unitAI-u3mqu';
+    sink.emit({ ...base, name: 'activation_started', payload: { pi_session_id: 'pi-settle' } });
+    sink.sessionEvent?.({ ...base, piSessionId: 'pi-settle', workspacePath: tempRoot, event: {
+      type: 'message_end', message: {
+        role: 'assistant', stopReason: 'stop',
+        content: [{ type: 'text', text: output }],
+      },
+    } });
+    // Authoritative host payload, byte-equal to ActivationResult.output.
+    sink.emit({ ...base, name: 'activation_completed', payload: { pi_session_id: 'pi-settle', output } });
+    sink.emit({ ...base, name: 'activation_disposed', payload: { reason: 'operator request' } });
+    observability.close();
+    client = null;
+    raw = new Database(dbPath);
+    expect(raw.query("SELECT last_output FROM specialist_jobs WHERE job_id = 'act:settle'").get()).toEqual({
+      last_output: output,
+    });
+    expect(raw.query("SELECT output FROM specialist_results WHERE job_id = 'act:settle'").get()).toEqual({
+      output,
+    });
+    // Redaction path unchanged: the forensic row stays marked redacted.
+    const forensic = raw.query(
+      "SELECT redaction_status FROM specialist_forensic_events WHERE job_id = 'act:settle' AND event_name = 'job.completed'",
+    ).get() as { redaction_status: string } | undefined;
+    expect(forensic?.redaction_status).toBe('redacted');
+  });
+
   it('rolls back status and events together when a projected event batch fails', () => {
     client = createObservabilitySqliteClientAtPath(dbPath);
     expect(client).not.toBeNull();
