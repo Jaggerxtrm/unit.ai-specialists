@@ -6,15 +6,19 @@
  * Chain scheduler can call `start()` with a synthetic request because nothing here depends
  * on TUI state.
  *
- * WHAT THIS DOES NOT DO YET, and why:
- *   - No writer support. Only read-only Specialists are admitted (see the `access` check
- *     below). `src/activation/workspace-lease.ts` now EXISTS and is mutation-tested, but it
- *     is imported by nothing in `src/` — this host does not acquire it. That is currently
- *     harmless precisely because writers are refused here: nothing is fenced because
- *     nothing writes. Enabling writers and wiring the lease is one change, not two, and it
- *     is `unitAI-rrdnt.36`. Flipping the admission check without the acquire call would
- *     ship write-capable Specialists guarded by a lease that is present, tested, closed on
- *     the board, and never called.
+ * WRITERS ARE ADMITTED, and the lease is wired. This paragraph used to say the opposite and
+ * was left behind when the wiring landed — the exact drift this epic kept finding elsewhere,
+ * so it is worth being precise about what is and is not true now:
+ *   - A `MEDIUM` or `HIGH` tier resolves to `access: 'write'` and MUST acquire the workspace
+ *     lease before an AgentSession exists; a denied lease is a refusal, not a warning.
+ *   - `admitToolCall` re-checks the lease on every mutating tool call, and `guarded-tools.ts`
+ *     wraps pi's four mutating builtins so a refusal comes back as a tool RESULT.
+ *   - `releaseIfWriter` releases on settle and converts a throwing release into
+ *     `lease_uncertain` evidence rather than a silent success.
+ *   The lease guards the LLM TOOL PATH ONLY. `pi.exec` and `AgentSession.executeBash` do not
+ *   fire the tool_call handler (`unitAI-rrdnt.6`, unclosed), so a child reaching the
+ *   filesystem that way is not fenced. Do not describe writers as "fenced" without that
+ *   qualifier.
  *   - No model picker.
  *
  * The interaction protocol and the Fleet DO exist: see `./interaction.ts`, `./ask-tool.ts`
@@ -242,9 +246,11 @@ export class NativeActivationHost {
     const execution = specialist.specialist.execution;
     const tier = execution.permission_required ?? 'READ_ONLY';
 
-    // Phase 1 admits readers only. The lease that makes a single writer safe does not
-    // exist yet, so a write-capable child would race the coordinator with nothing to stop
-    // it. This refusal is removed in Phase 10, not before.
+    // Readers and writers are both admitted. A write tier does not gate admission here; it
+    // selects the LEASE path below, and the lease is what makes a single writer safe. The
+    // refusal this comment used to describe was removed when the lease was wired
+    // (unitAI-rrdnt.21/.36) — a comment claiming writers are refused, above code that admits
+    // them, is worse than no comment.
     const access: WorkspaceAccess = WRITE_TIERS.has(tier) ? 'write' : 'read';
 
     const bead = this.beadsClient.readBead(request.beadId);
