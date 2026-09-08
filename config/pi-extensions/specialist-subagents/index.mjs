@@ -32,10 +32,12 @@
 // budget >= 3 minutes of polling before concluding an activation is stuck.
 
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
 import {
   createActivationForensicSink,
   createObservabilitySqliteClientAtPath,
+  describeBuildIdentity,
   DispatchRejectedError,
   evaluateBeadReadiness,
   extractSections,
@@ -46,6 +48,7 @@ import {
   SpecialistLoader,
   admitCoordinatorToolCall,
   leaseScopeFor,
+  readBuildId,
   toActivationResultView,
   toActivationView,
   toPendingAskView,
@@ -382,23 +385,44 @@ export function createBeadFromContract(contract, title) {
   }
 }
 
+// Build identity (unitAI-rrdnt.55): which dist artifact this session loaded vs what
+// is on disk now. The static dist import below is what keeps one session on one
+// gate, so staleness is structural — the only fix is making it visible. The loaded
+// id is hashed once at extension load; the on-disk id is re-read on every outcome
+// (a sub-millisecond hash of one file, never a re-import).
+const DIST_LIB_PATH = fileURLToPath(new URL('../../../dist/lib.js', import.meta.url));
+const LOADED_BUILD_ID = readBuildId(DIST_LIB_PATH);
+
+/**
+ * Attach the loaded-vs-on-disk build identity to an outcome payload. Exported
+ * (pure given explicit ids) for tests; the live path always uses the load-time
+ * id and a fresh on-disk read.
+ */
+export function annexBuildIdentity(
+  payload,
+  loadedId = LOADED_BUILD_ID,
+  onDiskId = readBuildId(DIST_LIB_PATH),
+) {
+  return { ...payload, build: describeBuildIdentity(loadedId, onDiskId) };
+}
+
 /** Render an inline-contract gate refusal as a structured tool result. */
 function inlineRejectionResult(reason, missing, note) {
-  return {
+  return annexBuildIdentity({
     status: 'rejected',
     reason,
     ...(missing?.length ? { missing } : {}),
     ...(note ? { note } : {}),
-  };
+  });
 }
 
 /** Render a host-thrown `DispatchRejectedError` as a structured tool result. */
 function rejectionResult(error) {
-  return {
+  return annexBuildIdentity({
     status: 'rejected',
     reason: error.message,
     detail: error.detail,
-  };
+  });
 }
 
 /** Wrap a payload into the pi AgentToolResult shape. */
@@ -679,7 +703,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({
+            text: JSON.stringify(annexBuildIdentity({
               status: 'dispatched',
               ...view,
               // An inline contract creates a durable board record. Saying so in the RESULT
@@ -699,7 +723,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
                 inputs: handle.stepContract.inputs.length,
                 outputs: handle.stepContract.outputs.length,
               },
-            }, null, 2),
+            }), null, 2),
           }],
           details: {},
         };
@@ -731,11 +755,11 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({
+          text: JSON.stringify(annexBuildIdentity({
             activations: h.list().map((snapshot) =>
               withResult(toActivationView(snapshot), results.get(snapshot.activationId))),
             pending_asks: h.pendingAsks().map(toPendingAskView),
-          }, null, 2),
+          }), null, 2),
         }],
         details: {},
       };

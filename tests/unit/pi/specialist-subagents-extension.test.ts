@@ -1178,3 +1178,65 @@ describe('settlement wake — a finished child notifies its coordinator (unitAI-
     expect(flag.description).toMatch(/finishes or fails/i);
   });
 });
+
+describe('build identity on every outcome surface (unitAI-rrdnt.55)', () => {
+  // The pinned requirement: identity rides the refusal, the status read, and the
+  // successful dispatch alike — the incident behind the bead was a successful
+  // dispatch whose build the coordinator could not name.
+
+  it('a bead-path refusal carries the loaded build, matching the file on disk', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    host.start.mockRejectedValueOnce(new DispatchRejectedError('bead_contract_incomplete', {
+      specialist: 'explorer',
+      beadId: 'bd-draft',
+      missing: ['VALIDATION', 'OUTPUT'],
+    }));
+    mod.default(pi, { createHost: () => host });
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', { specialist: 'explorer', bead_id: 'bd-draft' }));
+    expect(out.status).toBe('rejected');
+    expect(out.build).toContain('build: ');
+    // The test process loaded this same dist file, so loaded and on-disk agree.
+    expect(out.build).toContain('(loaded module matches the file on disk)');
+  });
+
+  it('an inline-contract refusal carries the build identity too', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', {
+      specialist: 'explorer',
+      contract: 'PROBLEM\nMissing everything else.',
+    }));
+    expect(out.status).toBe('rejected');
+    expect(out.build).toContain('build: ');
+  });
+
+  it('a successful dispatch result carries the build identity', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' }));
+    expect(out.status).toBe('dispatched');
+    expect(out.build).toContain('build: ');
+  });
+
+  it('specialist_status carries the build identity', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const out = resultText(await toolNamed(pi, 'specialist_status').execute('tc1', {}));
+    expect(out.build).toContain('build: ');
+  });
+
+  it('annexBuildIdentity names staleness when the on-disk build moved', async () => {
+    const mod = await loadExtension();
+    const out = mod.annexBuildIdentity({ status: 'rejected' }, 'aaaabbbbcccc', 'ddddffff0000');
+    expect(out.status).toBe('rejected');
+    expect(out.build).toContain('module loaded aaaabbbbcccc, file on disk ddddffff0000');
+    expect(out.build).toContain('rebuilt after');
+  });
+});

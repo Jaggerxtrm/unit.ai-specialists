@@ -18,6 +18,7 @@ export { createActivationForensicSink, } from './activation/forensic-sink.js';
 export { createObservabilitySqliteClientAtPath, } from './specialist/observability-sqlite.js';
 export { resolveObservabilityDbLocation } from './specialist/observability-db.js';
 export { evaluateBeadReadiness, extractSections } from './activation/bead-gate.js';
+export { describeBuildIdentity, hashFileBytes, readBuildId, shortBuildId, BUILD_ID_BYTES, UNKNOWN_BUILD_ID, } from './activation/build-identity.js';
 export type { BeadRecord } from './specialist/beads.js';
 export { LAUNCH_OUTCOME_SCHEMA_VERSION, LaunchOutcomeError, parseLaunchOutcome, validateLaunchOutcome, projectLaunchOutcome, } from './specialist/launch-outcome.js';
 export { readVerifiedCitationWindow, verifyExactLineCitation, } from './specialist/citation-evidence.js';

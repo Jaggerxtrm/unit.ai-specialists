@@ -22170,6 +22170,34 @@ function createActivationForensicSink(observability) {
     }
   };
 }
+// src/activation/build-identity.ts
+import { createHash as createHash6 } from "node:crypto";
+import { readFileSync as readFileSync12 } from "node:fs";
+var BUILD_ID_BYTES = 12;
+var UNKNOWN_BUILD_ID = "unknown";
+function hashFileBytes(path) {
+  return createHash6("sha256").update(readFileSync12(path)).digest("hex");
+}
+function shortBuildId(hash) {
+  return hash.slice(0, BUILD_ID_BYTES);
+}
+function readBuildId(path) {
+  try {
+    return shortBuildId(hashFileBytes(path));
+  } catch {
+    return UNKNOWN_BUILD_ID;
+  }
+}
+function describeBuildIdentity(loadedId, onDiskId) {
+  if (loadedId === UNKNOWN_BUILD_ID || onDiskId === UNKNOWN_BUILD_ID) {
+    const known = loadedId !== UNKNOWN_BUILD_ID ? loadedId : onDiskId;
+    return known !== UNKNOWN_BUILD_ID ? `build: ${known} (the other side of the comparison could not be read, so staleness cannot be ruled out)` : "build: unknown (build identity unavailable)";
+  }
+  if (loadedId === onDiskId) {
+    return `build: ${loadedId} (loaded module matches the file on disk)`;
+  }
+  return `build: module loaded ${loadedId}, file on disk ${onDiskId} — ` + "the runtime was rebuilt after this session loaded it. Restart the session to pick up " + "the new build; until then, treat a refusal below as possibly stale rather than broken.";
+}
 // src/specialist/launch-outcome.ts
 var LAUNCH_OUTCOME_SCHEMA_VERSION = "xtrm.command-outcome.v1";
 
@@ -22536,26 +22564,32 @@ export {
   toPendingAskView,
   toActivationView,
   toActivationResultView,
+  shortBuildId,
   runScriptSpecialist as runScript,
   resolveRuntimeToolContract,
   resolveObservabilityDbLocation,
   resolveModelChain,
   readVerifiedCitationWindow,
+  readBuildId,
   projectLaunchOutcome,
   parseLaunchOutcome,
   parseCompletionBody,
   leaseScopeFor,
+  hashFileBytes,
   extractSections,
   evaluateBeadReadiness,
+  describeBuildIdentity,
   createObservabilitySqliteClientAtPath,
   createActivationForensicSink,
   completionBody,
   admitCoordinatorToolCall,
+  UNKNOWN_BUILD_ID,
   SpecialistLoader,
   RuntimeEventPusher,
   ResultNotValidatedError,
   NativeActivationHost,
   LaunchOutcomeError,
   LAUNCH_OUTCOME_SCHEMA_VERSION,
-  DispatchRejectedError
+  DispatchRejectedError,
+  BUILD_ID_BYTES
 };
