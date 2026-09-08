@@ -1,0 +1,92 @@
+{
+  "content_sha256": "780e76de4d5e8c238b79adac6f6696d74cbb48f6caf05baabe2cd4f552089744",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-jhhu4.7"
+      }
+    ],
+    "id": "unitAI-jhhu4"
+  },
+  "issues": {
+    "unitAI-jhhu4": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "close_reason": "Epic complete. All 4 children done: jhhu4.1 inventory + pitfalls section; jhhu4.2 4-fragment templates + xt claude-sync; jhhu4.3 sp doctor + xt doctor; jhhu4.4 sp session-start hot tips. bd/gitnexus session-start hot tips filed as upstream-PR followup. xtrm-tools merged + pushed; specialists 4 commits on master.",
+        "closed_at": "2026-04-29T14:27:34Z",
+        "comment_count": 0,
+        "created_at": "2026-04-29T10:13:31Z",
+        "created_by": "you@example.com",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Agent guidance is split across three layers — tool-injected primes (bd, gitnexus, sp), static CLAUDE.md / AGENTS.md in each repo, and per-project overlays — with no reconciliation mechanism between them. Result:\n1. Vertical drift: parent CLAUDE.md (~/dev/CLAUDE.md) and project CLAUDE.md (specialists/, xtrm-tools/) diverge silently. Updates land in one place, not the others.\n2. Horizontal drift: tool-injected primes evolve with each tool version (new flags, new commands), but static CLAUDE.md repeats older versions and lies.\n3. Knowledge loss: agents repeatedly forget gotchas — `bd create --parent <epic-id>` for `.N` child auto-naming was missing in the bd reference (this session, the user had to point it out before I correctly used --parent for the KPI epic); memory gate ack was a surprise mid-session; `sp merge` file-based limitation surprised me when manual fallback was needed; `bd query` and `bd dep relate` exist but aren't loud enough to be defaults.\n\nSUCCESS: After all 4 children PASS:\n- A canonical \"Common pitfalls / gotchas\" section exists with at minimum 10 captured patterns, version-pinned.\n- Shared CLAUDE.md content lives in xtrm-tools/templates/claude-md-fragments/ as managed fragments wrapped with sentinel markers.\n- An `xt claude-sync` (or `xt init --reconcile-claude`) command exists: reports drift, --apply overwrites managed sections only.\n- `xt doctor` / `sp doctor` reports CLAUDE.md fragment drift alongside skill/specialist/hook checks.\n- Each tool's prime emits a short, version-pinned \"hot tips\" section at session start (bd, sp, gitnexus).\n\nSCOPE: see children. .1 inventory + pitfalls capture; .2 sentinel mechanism + sync script; .3 doctor wiring; .4 tool-injected hot-tips.\n\nNON_GOALS: No restructuring of the existing CLAUDE.md beyond what fragmentation requires. No deletion of project-specific overlay content. No new CLI commands beyond claude-sync. No automatic enforcement (always opt-in: --apply, --accept-overwrite). No onboarding skill in this epic — separate follow-up if needed after .4.\n\nCONSTRAINTS:\n- Sentinel boundaries must NEVER clobber non-managed prose; --apply requires --accept-overwrite or equivalent confirmation flag.\n- Fragments must be tool-version-aware: if bd ships v2.0 with new flags, the fragment increments and triggers drift detection.\n- Hot tips and fragments cannot duplicate each other — fragments are stable workflow knowledge; hot tips are version-pinned current-release callouts.\n- Mirror the canonical sync pattern from `sp init --sync-defaults` (already proven for .specialists/default/).\n- Bundle fragments into sp itself (or ship via xtrm-tools install path) so even xtrm-tools-less projects get them via sp init.\n\nVALIDATION:\n- After all 4 children: dispatch a fresh agent in a clean repo; verify it knows about --parent, memory gate, sp merge limitation, dep relate, query within first 3 turns of relevant work.\n- xt doctor reports CLAUDE.md fragments status alongside other checks.\n- xt claude-sync --check reports drift on a deliberately stale CLAUDE.md.\n- Hot tips visible in session-start banner; reflect current tool version.\n\nOUTPUT: 4 merged children + sp epic merge of this epic.",
+        "id": "unitAI-jhhu4",
+        "issue_type": "epic",
+        "owner": "you@example.com",
+        "priority": 2,
+        "status": "closed",
+        "title": "Epic: Agent guidance reconciliation + pitfall capture",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    },
+    "unitAI-jhhu4.7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-04-29T14:27:08Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-04-29T16:27:07Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-jhhu4",
+            "issue_id": "unitAI-jhhu4.7",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: jhhu4.4 implemented version-pinned hot tips for sp's session-start hook (specialists e6176e29 + c421d0fd). bd's session-start surface is bd prime (the bd binary) and gitnexus's is its own hook — both are external/upstream and require PRs to those projects.\n\nSUCCESS:\n- bd prime emits a 'Hot Tips' subsection with ≤6 entries pinned to current bd version. Examples (from jhhu4.4):\n  - bd create --parent <epic-id> auto-assigns .N\n  - bd kv set 'memory-acked:<id>' before bd close\n  - bd dep relate <a> <b> for non-blocking links\n  - bd defer <id> +<duration> for hidden deferrals\n  - bd query 'status=in_progress AND assignee=me' for SQL filters\n- gitnexus session-start (or equivalent surface; current gitnexus-hook.cjs is PostToolUse-only — needs a SessionStart sibling) emits ≤3 hot tips:\n  - gitnexus_impact BEFORE editing any symbol\n  - gitnexus_detect_changes BEFORE every commit\n  - gitnexus_rename for safe multi-file renames\n\nSCOPE:\n- Upstream beads project: bd prime output formatting\n- Upstream gitnexus project: SessionStart hook (likely a new file; existing hook is PostToolUse)\n\nNON_GOALS:\n- No changes inside this repo — both surfaces live upstream.\n\nCONSTRAINTS:\n- Same constraints as jhhu4.4: ≤6 lines, ≤80 chars/entry, version-pinned header.\n- Hot tips additive — must not displace existing prime content.\n\nVALIDATION:\n- After upstream releases land + 'npm i -g @beads/cli' (or equivalent), bd prime in any repo shows the Hot Tips block.\n- Same for gitnexus.\n\nOUTPUT: Two upstream PRs (one to beads, one to gitnexus). May be deferred indefinitely if upstream maintainers don't accept the pattern; that is acceptable since sp side already provides the version-pinned hot-tips functionality for the most-frequent agent friction surface.",
+        "id": "unitAI-jhhu4.7",
+        "issue_type": "task",
+        "notes": "AUDIT 2026-07-30: blocked on upstream Beads acceptance/release; add upstream PR/issue URL and last-check date",
+        "owner": "you@example.com",
+        "priority": 3,
+        "status": "deferred",
+        "title": "epic.4.upstream: Hot-tip injection for bd prime + gitnexus session-start (upstream PRs)",
+        "updated_at": "2026-07-30T14:35:35Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-04-29T16:27:07Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-jhhu4",
+        "issue_id": "unitAI-jhhu4.7",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-jhhu4.7",
+      "source_field": "dependencies",
+      "target": "unitAI-jhhu4",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-jhhu4",
+  "root_title": "Epic: Agent guidance reconciliation + pitfall capture",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

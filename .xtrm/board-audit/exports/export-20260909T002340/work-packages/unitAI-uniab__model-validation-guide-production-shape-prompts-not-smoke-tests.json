@@ -1,0 +1,90 @@
+{
+  "content_sha256": "0e965a13fa560f998f3f220359f626bfb424ba61c50a7f0f1a5c993803892f72",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-07T00:57:40Z",
+        "created_by": "dawid",
+        "depends_on_id": "specialists-83y",
+        "issue_id": "unitAI-uniab",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-uniab",
+      "source_field": "dependencies",
+      "target": "specialists-83y",
+      "target_present_in_snapshot": true,
+      "target_title": "Document script-class consumer contract: deploy recipe, prompt construction, model selection, integration patterns",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-20T17:52:30Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-x7dlo",
+        "issue_id": "unitAI-uniab",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-uniab",
+      "source_field": "dependencies",
+      "target": "unitAI-x7dlo",
+      "target_present_in_snapshot": true,
+      "target_title": "Document 'Option A' self-contained user-prompt pattern for consumers",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-uniab"
+  },
+  "issues": {
+    "unitAI-uniab": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-06T22:57:35Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-07T00:57:40Z",
+            "created_by": "dawid",
+            "depends_on_id": "specialists-83y",
+            "issue_id": "unitAI-uniab",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-20T17:52:30Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-x7dlo",
+            "issue_id": "unitAI-uniab",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: smoke prompts like 'summarize this paragraph' pass on many models. Production-shape Mercury Atomic Summarizer prompt (40KB content + role + JSON contract) reveals tool-call hallucinations on glm-5 and qwen3.5-thinking even with all isolation flags. Only kimi-k2.5 survives. Anyone selecting a new model from a smoke test will hit this in production. SUCCESS: docs/model-validation-checklist.md with a representative 30-40KB benchmark prompt, success criteria (canonical schema match, no <think>/<tool_call> tokens), failure-mode catalog. Optional: a 'sp model-validate <model> --bench <fixture>' subcommand. SCOPE: docs + optional CLI helper. NON_GOALS: no model gating in registry. REFERENCE: darth-feedor memory 'pi-llm-model-selection-for-darth-feedor-specialists'.",
+        "id": "unitAI-uniab",
+        "issue_type": "task",
+        "priority": 2,
+        "status": "open",
+        "title": "Model-validation guide: production-shape prompts, not smoke tests",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-uniab",
+  "root_title": "Model-validation guide: production-shape prompts, not smoke tests",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

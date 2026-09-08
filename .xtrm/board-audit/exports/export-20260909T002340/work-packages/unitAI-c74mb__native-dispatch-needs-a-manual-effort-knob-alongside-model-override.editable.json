@@ -1,0 +1,111 @@
+{
+  "content_sha256": "28c336e1dff1403c22fb84c8b83e73da321e40a3be95e898c8e7deb176d13b28",
+  "desired_issues": {
+    "unitAI-c74mb": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T21:20:49Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T21:20:52Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-cwert",
+          "issue_id": "unitAI-c74mb",
+          "metadata": "{}",
+          "type": "relates-to"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: Canonical per-specialist model and effort defaults live in the shipped config/specialists definitions plus ~/.config/specialists/user.json per-specialist execution overrides (which already support thinking_level). But a coordinator doing a one-off manual override -- e.g. pinning a whole lane to opencode-go/muse-spark-1.3-contributor via specialist_dispatch model_override -- can only pass the model. Thinking level always resolves from the definition (executor, reviewer, seconder all pin low), so the manual override silently keeps low effort with no knob to raise it and no signal that effort did not follow the model.\n\nSUCCESS: A manual dispatch accepts an optional effort or thinking knob next to model_override; the resolved thinking level stays visible in dispatch result and status; an operator can set effort per dispatch without editing definitions. If the maintainer decides against a knob, the decision and reasoning are recorded on the bead instead.\n\nSCOPE: Native dispatch surface only: specialist_dispatch parameters, the activation tool input (modelOverride handling in src/tools/specialist/activation.tool.ts), resolution in src/activation/native-host.ts, and result/status projection. Requirement, not mechanism: maintainer picks param shape.\n\nNON_GOALS: Changing shipped definition defaults; user.json schema migration; the CLI run --model path (sibling unitAI-cwert); chain runtime work.\n\nCONSTRAINTS: Fully backward compatible: knob absent means exactly current behavior. Effort values constrained to levels the runtime supports. Suite green, tsc clean.\n\nVALIDATION: Unit tests: explicit effort resolves and surfaces in status output; absent knob preserves the definition level. Live dispatch proof optional and recorded if done.\n\nOUTPUT: Implemented knob with docs and tests, or a recorded maintainer decision, plus findings in bead notes.\n\nSCRUTINY: low",
+      "id": "unitAI-c74mb",
+      "issue_type": "feature",
+      "labels": [
+        "contract:ready"
+      ],
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "Native dispatch needs a manual effort knob alongside model_override",
+      "updated_at": "2026-09-08T21:20:49Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-08T21:20:52Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-cwert",
+        "issue_id": "unitAI-c74mb",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-c74mb",
+      "source_field": "dependencies",
+      "target": "unitAI-cwert",
+      "target_present_in_snapshot": true,
+      "target_title": "run --model override is ignored by missing-model preflight gate",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-c74mb"
+  },
+  "issues": {
+    "unitAI-c74mb": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T21:20:49Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T21:20:52Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-cwert",
+            "issue_id": "unitAI-c74mb",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Canonical per-specialist model and effort defaults live in the shipped config/specialists definitions plus ~/.config/specialists/user.json per-specialist execution overrides (which already support thinking_level). But a coordinator doing a one-off manual override -- e.g. pinning a whole lane to opencode-go/muse-spark-1.3-contributor via specialist_dispatch model_override -- can only pass the model. Thinking level always resolves from the definition (executor, reviewer, seconder all pin low), so the manual override silently keeps low effort with no knob to raise it and no signal that effort did not follow the model.\n\nSUCCESS: A manual dispatch accepts an optional effort or thinking knob next to model_override; the resolved thinking level stays visible in dispatch result and status; an operator can set effort per dispatch without editing definitions. If the maintainer decides against a knob, the decision and reasoning are recorded on the bead instead.\n\nSCOPE: Native dispatch surface only: specialist_dispatch parameters, the activation tool input (modelOverride handling in src/tools/specialist/activation.tool.ts), resolution in src/activation/native-host.ts, and result/status projection. Requirement, not mechanism: maintainer picks param shape.\n\nNON_GOALS: Changing shipped definition defaults; user.json schema migration; the CLI run --model path (sibling unitAI-cwert); chain runtime work.\n\nCONSTRAINTS: Fully backward compatible: knob absent means exactly current behavior. Effort values constrained to levels the runtime supports. Suite green, tsc clean.\n\nVALIDATION: Unit tests: explicit effort resolves and surfaces in status output; absent knob preserves the definition level. Live dispatch proof optional and recorded if done.\n\nOUTPUT: Implemented knob with docs and tests, or a recorded maintainer decision, plus findings in bead notes.\n\nSCRUTINY: low",
+        "id": "unitAI-c74mb",
+        "issue_type": "feature",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Native dispatch needs a manual effort knob alongside model_override",
+        "updated_at": "2026-09-08T21:20:49Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-c74mb",
+  "root_title": "Native dispatch needs a manual effort knob alongside model_override",
+  "roundtrip": {
+    "base_package_sha256": "28c336e1dff1403c22fb84c8b83e73da321e40a3be95e898c8e7deb176d13b28",
+    "base_record_sha256": {
+      "unitAI-c74mb": "222730de4728464486ad059467b50d4e573f921b085c271dda8e27260def8c10"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-08T22:23:43Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

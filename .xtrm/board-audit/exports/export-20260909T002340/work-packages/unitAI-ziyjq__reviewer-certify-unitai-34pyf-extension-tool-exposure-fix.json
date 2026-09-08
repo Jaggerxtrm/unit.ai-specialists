@@ -1,0 +1,93 @@
+{
+  "content_sha256": "0b18a0cf82c9e2b58806ea072f9fbe9e2c67168a00f2bcea5f121fda100a5539",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-08-29T15:10:33Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-iob03",
+        "issue_id": "unitAI-ziyjq",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-ziyjq",
+      "source_field": "dependencies",
+      "target": "unitAI-iob03",
+      "target_present_in_snapshot": true,
+      "target_title": "reviewer v2: certify fail-closed extension tool-policy gate",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-29T14:38:37Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-34pyf",
+        "issue_id": "unitAI-ziyjq",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "unitAI-ziyjq",
+      "source_field": "dependencies",
+      "target": "unitAI-34pyf",
+      "target_present_in_snapshot": true,
+      "target_title": "Configured native extension tools load but remain unavailable under specialist tool allowlists",
+      "type": "validates"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-ziyjq"
+  },
+  "issues": {
+    "unitAI-ziyjq": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "claude/081dc",
+        "comment_count": 0,
+        "created_at": "2026-08-29T14:38:36Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-29T14:38:37Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-34pyf",
+            "issue_id": "unitAI-ziyjq",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-08-29T15:10:33Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-iob03",
+            "issue_id": "unitAI-ziyjq",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Independent adversarial review of debugger commit 6129ebb1 on branch fix/unitAI-34pyf-extension-tool-grants, based on RC af65334b. Review live tree and full af65334b..6129ebb1 diff. Verify no dead code, stale generic-forwarding reimplementation, dirty/generated drift, unresolved TODOs, or unrelated changes. Confirm the minimal --exclude-tools strategy preserves native tier restrictions, only activates when extensionSources is non-empty, works identically in PiAgentSession and direct script/serve, does not accidentally expose denied built-ins, and makes arbitrary explicitly enabled extension tools callable without hard-coded sources. Verify required_tools downgrade behavior, extension advisory accuracy/trust wording, malformed/unhealthy source behavior, source ordering, offline behavior, and no regression to --no-extensions. Inspect all tests for theatre; rerun focused tests, tsc, full unit suite as practical, and model-backed extension-grant test if credentials available. Check git status and exact pushed commit. Treat configured source=true as the operator trust signal; no per-tool grant schema. Review advisory feature unitAI-kaae7 only insofar as commit 6129ebb1 implements it. Return PASS/PARTIAL/FAIL with blockers and exact citations. READ-ONLY: do not edit or commit.",
+        "id": "unitAI-ziyjq",
+        "issue_type": "task",
+        "notes": "xt claude reviewer at exact 6129ebb1 returned PASS 92. Verified clean live tree, single scoped commit, tsc, focused 82 tests, full unit 1889 pass/2 skip, no dead code/TODO drift, both spawn paths, deny-list gate and native exclusions. Gaps: required_tools warning downgrade branch lacks dedicated unit test; model-backed test not independently rerun. Reviewer suggested ship, but coordinator is holding merge pending security audit because this changes permission-boundary semantics.\nPost-review security audit verdict FAIL for commit 6129ebb1; reviewer PASS superseded. Merge blocked. Findings SA-01 static deny-list fail-open (powershell/future builtins), SA-02 allowed grep/find/ls disappear, SA-04 stale dist. Writer resumed unitAI-34pyf for correction and re-review.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "reviewer: certify unitAI-34pyf extension-tool exposure fix",
+        "updated_at": "2026-08-29T14:55:02Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-ziyjq",
+  "root_title": "reviewer: certify unitAI-34pyf extension-tool exposure fix",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

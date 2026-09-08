@@ -1,0 +1,138 @@
+{
+  "content_sha256": "d0ef85cab63ea2f3ebe9447d6c55d28ac3659c64576d6eb2a855167cd83ac632",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-15T01:13:50Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-xr45u",
+        "issue_id": "unitAI-ucpcy",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-ucpcy",
+      "source_field": "dependencies",
+      "target": "unitAI-xr45u",
+      "target_present_in_snapshot": true,
+      "target_title": "Implement global user specialist overrides (~/.config/specialists/user.json)",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-23T22:33:19Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-efkjn",
+        "issue_id": "unitAI-ucpcy",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-ucpcy",
+      "source_field": "dependencies",
+      "target": "unitAI-efkjn",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-23: pick up next priorities",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-15T01:36:31Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-gp7nq",
+        "issue_id": "unitAI-ucpcy",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-ucpcy",
+      "source_field": "dependencies",
+      "target": "unitAI-gp7nq",
+      "target_present_in_snapshot": true,
+      "target_title": "Expand global user config: broaden allowlist + model chains + preset references",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-23T02:10:04Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-pv7x8",
+        "issue_id": "unitAI-ucpcy",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-ucpcy",
+      "source_field": "dependencies",
+      "target": "unitAI-pv7x8",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-23: dependency policy + global override follow-ups",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-ucpcy"
+  },
+  "issues": {
+    "unitAI-ucpcy": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-14T23:13:50Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-23T22:33:19Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-efkjn",
+            "issue_id": "unitAI-ucpcy",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-15T01:36:31Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-gp7nq",
+            "issue_id": "unitAI-ucpcy",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-23T02:10:04Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-pv7x8",
+            "issue_id": "unitAI-ucpcy",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-15T01:13:50Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-xr45u",
+            "issue_id": "unitAI-ucpcy",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Reported by operator after running sp init --global from /home/dawid/dev/specialists/. Got 31 entries in ~/.config/specialists/user.json: 23 package canonical + 8 from this repo's .specialists/user/ (mercury-atomic-summarizer, official-document-analyzer, overthinker (overrides package), smoke-echo, squawk-event-curator, squawk-rolling-context, squawk-session-analyst, squawk-session-analyst-normalize).\n\nThree concerns with the current behavior:\n\n1. POLLUTION: in a different repo, those repo-local entries are inert — there's no matching package spec for them to override. They just sit there.\n\n2. STICKINESS: the idempotency rule (C2: 'extends with newly-shipped specialists') only adds, never removes. Once a name is in user.json, it stays forever. Init from one repo permanently infects the global file.\n\n3. CONCEPT MISMATCH: the global file's job is *cross-repo* defaults. Repo-specific specs belong in .specialists/user/<repo> and shouldn't ride in the cross-repo layer.\n\nProposed fix options:\n(a) Restrict sp init --global to package canonical scope only (cleanest, least surprising)\n(b) Prompt for each non-package spec ('include mercury-atomic-summarizer in global config? [y/N]')\n(c) Add a --include-repo-overrides flag, default off\n\nThe current C2 implementation uses SpecialistLoader.list() directly (src/cli/init.ts, src/specialist/global-config.ts). The fix is to filter by scope='package' before generating the template entries.",
+        "id": "unitAI-ucpcy",
+        "issue_type": "feature",
+        "priority": 1,
+        "status": "open",
+        "title": "sp init --global should not bake repo-local .specialists/user/ specs into the global file",
+        "updated_at": "2026-06-14T23:13:50Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-ucpcy",
+  "root_title": "sp init --global should not bake repo-local .specialists/user/ specs into the global file",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

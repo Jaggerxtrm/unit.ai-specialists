@@ -1,0 +1,223 @@
+{
+  "content_sha256": "ba414cc85162bf3280c406ce3f2c0fac46351e6e004bef210e9f4530f5591dea",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-02T19:31:59Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-o1fs4",
+        "issue_id": "unitAI-jndsb",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-jndsb",
+      "source_field": "dependencies",
+      "target": "unitAI-o1fs4",
+      "target_present_in_snapshot": true,
+      "target_title": "security: pin executable pi-service-knowledge extension source",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-02T03:54:47Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-7sxw4",
+        "issue_id": "unitAI-jndsb.13",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-jndsb.13",
+      "source_field": "dependencies",
+      "target": "unitAI-7sxw4",
+      "target_present_in_snapshot": true,
+      "target_title": "preserve endpoint and glob data in service preflight sanitizer",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-02T00:02:49Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-jndsb.12",
+        "issue_id": "unitAI-jndsb.13",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-jndsb.13",
+      "source_field": "dependencies",
+      "target": "unitAI-jndsb.12",
+      "target_present_in_snapshot": true,
+      "target_title": "specialists-creator: bind service-knowledge-sync to project pack",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-02T05:38:52Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-jndsb.14",
+        "issue_id": "unitAI-jndsb.13",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-jndsb.13",
+      "source_field": "dependencies",
+      "target": "unitAI-jndsb.14",
+      "target_present_in_snapshot": true,
+      "target_title": "security: canonicalize direct skill roots and hash directory SKILL.md",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-02T02:17:07Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-p9wo2",
+        "issue_id": "unitAI-jndsb.13",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-jndsb.13",
+      "source_field": "dependencies",
+      "target": "unitAI-p9wo2",
+      "target_present_in_snapshot": true,
+      "target_title": "raise bounded service-knowledge preflight cap for real infra drift output",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-jndsb.13"
+      }
+    ],
+    "id": "unitAI-jndsb"
+  },
+  "issues": {
+    "unitAI-jndsb": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-28T13:14:54Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-02T19:31:59Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-o1fs4",
+            "issue_id": "unitAI-jndsb",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nSpecialists currently starts Pi with --no-extensions and reconstructs a hardcoded extension set in two separate spawn paths. The approved design and native Pi probes show that execution.extensions can instead select path/npm/git sources and each enabled source can be forwarded as one explicit -e argument, but the runtime, package artifact, update path, and clean-machine evidence do not yet implement or prove that outcome.\n\n## SUCCESS\nA released-candidate Specialists build forwards configured sources identically through PiAgentSession and direct script/serve execution, preserves user overrides across package update, loads Service Knowledge from its standalone package, and passes unit, integration, packed-artifact, local xt build, isolated-install, upgrade, and clean-machine smoke gates. Publication remains a separately approved irreversible action after reviewer PASS.\n\n## SCOPE\n/home/dawid/dev/specialists runtime/schema/loader/config/docs/tests/dist/release artifacts; Core's existing local RC pack/install/update smoke surfaces and design document; local isolated HOME/prefix/container validation using packed artifacts.\n\n## NON_GOALS\n- No custom extension package resolver or separate extensions.json.\n- No Core Pi bundle growth or arbitrary vendoring.\n- No npm publish, tag, or force-push without explicit operator confirmation after all pre-release gates.\n- No rewrite of Pi or xt interactive ambient extension discovery.\n\n## CONSTRAINTS\nSCRUTINY: high. Base Specialists work on exact origin/master 79dbecc82789e8cbc02b733c50cd4c7d867043e1; do not inherit the dirty local checkout or unmerged acc7e163. PiAgentSession impact is HIGH (8 direct, 182 depth-3); applyOverrideFields impact is CRITICAL (15 processes), so tests must precede implementation and preserve legacy gitnexus/serena semantics. No new dependency. Log only ordered configured source identifiers; never prompts, credentials, or environment values. Publication is operator-only.\n\n## VALIDATION\n- [ ] Focused schema/loader/runner/session/script-runner tests pass.\n- [ ] Full Specialists lint, test, build, package payload, and attestation gates pass.\n- [ ] Both Pi spawn paths produce identical repeated -e ordering and remote-source offline behavior.\n- [ ] Packed Specialists artifact installs over v3.21.5 in an isolated prefix and preserves ~/.config/specialists/user.json extension fields.\n- [ ] Local packed xt + Specialists artifacts pass existing installed-artifact/update suite and clean-machine/container smoke or an evidenced equivalent.\n- [ ] Security auditor and reviewer PASS on cumulative release candidate.\n- [ ] Post-publication latest install/update smoke is planned but not executed before explicit approval.\n\n## OUTPUT\nCross-repo completion report with commits/PRs, artifact versions and hashes, exact pass/fail counts, local build/install/update commands, smoke artifact paths, security/reviewer verdicts, publish decision, and any residual platform limitations.\n\n## REFERENCES\nCore design commit 21fa05cc, packages/pi-extensions/docs/specialist-extension-injection-design.md. Native probes: xtrm-qejmp. Recent state: Core PR #607 and Specialists PR #271 are latest merged surfaces; Specialists origin/master is 79dbecc8.\n\n## CROSS_REPO_TRACKS\nCore coordination epic: xtrm-lk07w. This Specialists-local epic owns code, tests, release artifacts, security, and review jobs.",
+        "id": "unitAI-jndsb",
+        "issue_type": "epic",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "Release gap discovered 2026-09-02: current v1.9 service-knowledge-sync source avoids stale global path but does not bind repo layout v2 .xtrm/skills/<pack>/service-knowledge or dynamically find its scripts. Runtime/config/test tracks: unitAI-jndsb.11-.13; Core counterparts xtrm-lk07w.14-.15. Do not publish 3.21.6 before three-path live smoke.\nRelease artifact audit (opencode-go/glm-5.3-flash) found stale CHANGELOG, 3.21.3 attestation/tests, README pre-linearization SHA + absent github-researcher examples, and inaccurate seven-tool package description. Created child unitAI-jndsb.15 blocked by o1fs4/x64ys/641h0 for non-publication release reconciliation. Current accepted dist hashes remain authoritative; do not rebuild dist/index/lib/types for metadata-only changes.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-08-28T13:15:44Z",
+        "status": "in_progress",
+        "title": "Ship native Pi extension forwarding in Specialists",
+        "updated_at": "2026-09-02T21:36:36Z"
+      }
+    },
+    "unitAI-jndsb.13": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-02T00:02:49Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-02T03:54:47Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-7sxw4",
+            "issue_id": "unitAI-jndsb.13",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-09-02T00:02:49Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-jndsb",
+            "issue_id": "unitAI-jndsb.13",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-02T00:02:49Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-jndsb.12",
+            "issue_id": "unitAI-jndsb.13",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-09-02T05:38:52Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-jndsb.14",
+            "issue_id": "unitAI-jndsb.13",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-09-02T02:17:07Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-p9wo2",
+            "issue_id": "unitAI-jndsb.13",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 4,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nThe runtime and specialist-definition changes cross validation, tracked execution, direct execution, pre-script discovery, and packaged-artifact boundaries. A dedicated test gate must prove the behavior before 3.21.6 publication.\n\n## SUCCESS\n\nFocused and package-level tests pass, an isolated consumer fixture proves arbitrary pack-name resolution in both Specialists spawn paths, and failures are classified with exact evidence for the cross-repo live smoke.\n\n## SCOPE\n\nTests covering unitAI-jndsb.11 and unitAI-jndsb.12, exact package commands, packed RC artifact, isolated HOME/prefix fixture, and bounded Specialists forensic output.\n\n## NON_GOALS\n\n- No Core xt launcher validation; Core task owns xt Claude/Pi live smoke.\n- No npm publish/tag.\n- No production consumer mutation.\n\n## CONSTRAINTS\n\nSCRUTINY: high. Use real filesystem fixtures and packed artifact where possible; do not mock the path resolver itself. Require positive, missing, and ambiguous cases. Capture start/resolution/failure evidence without secrets or full prompts. Clean all temporary jobs/worktrees/HOMEs.\n\n## VALIDATION\n\n- [ ] Focused resolver/config/session/script tests pass with exact counts.\n- [ ] Full Specialists unit/type/lint/build gates pass or failures are classified.\n- [ ] Packed 3.21.6 artifact contains the corrected v1.9+ specialist definition.\n- [ ] Isolated consumer fixture with non-default pack starts both tracked and direct execution paths.\n- [ ] Missing/ambiguous project-pack cases fail before model invocation.\n- [ ] Logs/forensic records identify the logical skill and bounded repo-relative resolution outcome.\n\n## LIBRARIES\n\nN/A — existing test runner, temp fixtures, npm pack, and Pi fake/runtime harnesses.\n\n## OUTPUT\n\nExact commands/counts, artifact hash and payload evidence, path-resolution matrix, bounded logs, cleanup proof, and product/pre-existing/infrastructure failure classification.",
+        "id": "unitAI-jndsb.13",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "External delivery contract ISSUE-127 (mercuryintel): local build/pack must be installed into `/home/dawid/.nvm/versions/node/v24.15.0/lib/node_modules/@jaggerxtrm/specialists` (or the exact live resolved global package location proven at test time). Re-run actual infra + market-data role launches. Pre-script must resolve pack-scoped scope.py and emit real per-service triage, not `not available`. Record artifact hash, installed manifest version/source, exact commands, cleanup/restore, and provide receipt to mercury-64. No npm publication.\nArchitecture correction pending mercury-64 confirmation: actual/source v2 layout intentionally keeps scope.py/drift_detector.py in repo-local `.xtrm/skills/default/service-knowledge/scripts`, while `.xtrm/skills/<pack>/service-knowledge` is the registry/skill umbrella. Do not duplicate machinery into pack. Validate that the bound pack SKILL plus repo-local machinery produce real triage; reject `not available`.\nmercury-64 accepted corrected architecture and retracted pack-local scripts. Artifact success = pack-scoped SKILL binding + repo-local default machinery execution resolving that pack registry, with real triage.\nPacked artifact db0529d0 installed at exact live global path; dist hash c4af47ea, role hash 392959d3. Isolated arbitrary-pack fixture passed installed sp view, Pi/Claude prefixes, direct/script fake Pi path forwarding, tracked fake-RPC path+extension forwarding, and missing/ambiguous/malformed no-model failures; evidence under ~/.cache/xtrm-validation/unitAI-jndsb13. Capacity incident from isolated HOME remote-extension cache filled /tmp tmpfs; producer-attributed fixture cleanup reclaimed 543 MiB (100% -> 74%, later 72%). Real repo smoke found release blocker: infra drift output 43,505 bytes exceeds 32,768 cap and preflight ends PRE_SCRIPT_ERROR; market-data raw drift 21,119. Bug unitAI-p9wo2 created/claimed and blocks .13; target bounded 65,536 bytes.\nFinal artifact 5585556c installed; packed real view/preflight passes infra 60,381B/544 lines and market 37,313B/348 lines with exact pack paths/prefixes/extensions and no mutation. Initial live runs exposed generic `sp run --model` precedence bug: override did not satisfy missing-model gate; filed unitAI-cwert. Retrying via isolated XDG user model config (same model), without consumer mutation.\nTracked infra live job d5dc3c PASS: installed role preflight ok, exact umbrella runtime skill loaded, 17 registry services, prometheus true, 312 drift candidates, clean service content; model reported zero mutations. Independent git status found only GitNexus auto-analysis layout changes under .claude/skills, not service edits. Both infra and market jobs emitted forensic UNIQUE seq collision for gitnexus_analyze; filed unitAI-mqt73. Market current HEAD negative efc5ae preserved; local-only commit df6d5819 tracks its existing ignored machinery for repaired artifact-isolation run.\nFinal packed-validation receipt: /home/dawid/.cache/xtrm-validation/unitAI-jndsb13/final-575c8847/receipt.json; receipt SHA256 5a88ced08e5023ba25f4d026585ee91b8e21da532ab2123a5a7ed2b879b19ae7; evidence manifest SHA256 bb7d2a36816138facff77170ab54d13ec04032715a3790e50ff7710730f333e4. Independent receipt reviewer PASS 100/100; receipt status VALIDATION_COMPLETE_WITH_RELEASE_BLOCKERS. Candidate artifact SHA256 9201b8f75ffb669f10da236263f4fe266d9a7b4acb03ebdf118d4dc1bb46e9b9. Global package full-tree restored. Blockers: unitAI-jndsb.14 missing-fallback host path diagnostic; unitAI-641h0 host-read sandbox; market-data umbrella 16/17 parity.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-02T01:55:03Z",
+        "status": "blocked",
+        "title": "test-runner: verify Specialists project-pack skill resolution",
+        "updated_at": "2026-09-02T05:46:45Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-02T00:02:49Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-jndsb",
+        "issue_id": "unitAI-jndsb.13",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-jndsb.13",
+      "source_field": "dependencies",
+      "target": "unitAI-jndsb",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-jndsb",
+  "root_title": "Ship native Pi extension forwarding in Specialists",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

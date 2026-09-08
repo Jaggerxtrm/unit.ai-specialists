@@ -1,0 +1,543 @@
+{
+  "content_sha256": "2cacf311e2ff8cba22e2b5b89e45dfb18ec737fc8318ed2433e34a56dc854a69",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-07T00:57:40Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-2fz5b",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-2fz5b",
+      "target_present_in_snapshot": true,
+      "target_title": "Compose deploy recipe for non-host-network specialists-service",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-07T00:57:39Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-31kwe",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-31kwe",
+      "target_present_in_snapshot": true,
+      "target_title": "Validate canonical-schema for response_format='text' specs (saved-but-corrupt mitigation)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-07T12:13:48Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-8y70l",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-8y70l",
+      "target_present_in_snapshot": true,
+      "target_title": "sp serve emits no operational logs (request, error, model, latency)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-07T12:18:11Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-cnlea",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-cnlea",
+      "target_present_in_snapshot": true,
+      "target_title": "Bake working HEALTHCHECK into specialists-service Dockerfile",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-07T00:57:35Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-huwov",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-huwov",
+      "target_present_in_snapshot": true,
+      "target_title": "Reference Python client for specialists-service",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-07T00:57:35Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-i6khn",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-i6khn",
+      "target_present_in_snapshot": true,
+      "target_title": "Defensive check: warn when 'template' field is a known spec key name",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-07T00:57:40Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-uniab",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-uniab",
+      "target_present_in_snapshot": true,
+      "target_title": "Model-validation guide: production-shape prompts, not smoke tests",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-07T00:57:40Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-x7dlo",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-x7dlo",
+      "target_present_in_snapshot": true,
+      "target_title": "Document 'Option A' self-contained user-prompt pattern for consumers",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-06T13:55:50Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-z2vpq.13",
+        "issue_id": "unitAI-z2vpq.10",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-z2vpq.10",
+      "source_field": "dependencies",
+      "target": "unitAI-z2vpq.13",
+      "target_present_in_snapshot": true,
+      "target_title": "Test: trust/readiness/observability contracts for service specialists",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "specialists-83y"
+      },
+      {
+        "children": [],
+        "id": "unitAI-z2vpq.10"
+      },
+      {
+        "children": [],
+        "id": "unitAI-z2vpq.11"
+      },
+      {
+        "children": [],
+        "id": "unitAI-z2vpq.14"
+      }
+    ],
+    "id": "unitAI-z2vpq"
+  },
+  "issues": {
+    "specialists-83y": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-06T08:38:05Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-07T00:57:40Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-2fz5b",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-07T00:57:39Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-31kwe",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-07T12:13:48Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-8y70l",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-07T12:18:11Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-cnlea",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-07T00:57:35Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-huwov",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-07T00:57:35Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-i6khn",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-07T00:57:40Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-uniab",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-07T00:57:40Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-x7dlo",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-19T19:07:46Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-z2vpq",
+            "issue_id": "specialists-83y",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: specialists-service is shipping as the v1 production runtime for non-coding LLM tasks (darth-feedor cutover May 2026 was the first reference consumer). The consumer-side contract (HTTP adapter shape, JSON spec authoring, container deploy, prompt construction patterns, model selection trade-offs) is currently tribal knowledge — captured in darth-feedor session memories and friction reports but not codified upstream. Future Mercury pipelines and any external consumer needs a canonical doc.\n\nSUCCESS:\n(1) New doc at docs/script-class-consumer-guide.md (top-level next to specialists-service.md, authoring.md). Sections:\n   - Overview: when to use script-class vs package-class\n   - HTTP contract: POST /v1/generate request/response shape; required fields (specialist, variables, template, timeout_ms); error_type vocabulary; trace_id propagation\n   - JSON spec authoring for script-class consumers: required execution flags, response_format choice (text vs json), model + fallback_model selection guidance with measured behaviour notes (e.g. instruction-tuned vs thinking models, kimi-k2.5 vs glm-5 vs qwen3.5-thinking observations from darth-feedor)\n   - Prompt construction patterns:\n     * Pattern A (self-contained user prompt; prompt.system empty) — recommended when consumer pre-renders templates; works with pi's current --no-* flag set\n     * Pattern B (split: prompt.system for role/contract, task_template for content) — works once specialists-6vy lands\n     * Pattern C (raw variables to service; task_template owns rendering) — design-doc pattern, requires consumer to pass typed variables; deferred until consumers refactor\n   - Container deploy recipe: image (specialists-service:local), required user (1000:1000), HOME=/pi-home, mounts (project's .specialists rw, ~/.pi ro+rw for auth), healthcheck note (image lacks wget; use exec wget or remove healthcheck), network membership pattern\n   - Observability: how to query observability.db; correlate trace_id with consumer logs; standard SLO for duration_ms / error_rate\n   - Reference Python adapter: link to docs/examples/specialists_client.py; note error_type stability contract\n\n(2) Update docs/specialists-service.md to cross-link to consumer-guide.md from §3 (request shape) and §5 (observability).\n\n(3) Update docs/authoring.md script-class section to reference Pattern A/B/C and the model-selection guidance.\n\n(4) Add a worked example: full lifecycle of mercury-atomic-summarizer (anonymized as 'newsletter-summarizer') from JSON spec → adapter call → pi spawn → observability row → consumer-side persistence. Pull from darth-feedor experience.\n\nSCOPE: docs/ only. No code changes.\n\nNON_GOALS: do not document the package-class runner (covered in existing specialist docs). Do not migrate or rewrite specialists-service.md; just add cross-links.\n\nCONSTRAINTS:\n- Doc must not assume readers come from xtrm/coding-agent context; assume general Python service author who knows HTTP+JSON.\n- Model selection section must call out specialists-6vy as in-flight; once it lands, expand the recommended-models list (currently artificially constrained).\n- Use measured numbers from darth-feedor where available (token counts, latencies, schema-match rates).\n\nVALIDATION: a second engineer with no specialists-service prior context can build a Python consumer for an unrelated service in <1 day reading only this doc + adapter example.\n\nOUTPUT: PR adding consumer-guide.md and cross-links. No runtime changes.\n\nREFERENCE: discovered need during darth-feedor migration session 2026-05-05/06; complementary to specialists-37x and specialists-6vy.",
+        "id": "specialists-83y",
+        "issue_type": "task",
+        "owner": "dawid",
+        "priority": 2,
+        "status": "open",
+        "title": "Document script-class consumer contract: deploy recipe, prompt construction, model selection, integration patterns",
+        "updated_at": "2026-06-04T02:58:11Z",
+        "work_type": "mutex"
+      }
+    },
+    "unitAI-z2vpq": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-06T11:55:40Z",
+        "created_by": "dawid",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## Overview\n\nHarden script-class specialists (`sp script` and `sp serve`) for production non-coding pipelines such as darth-feedor article/news summarization, then evaluate and roll out a Pi SDK-backed runner if benchmarks prove it better than per-request Pi subprocesses.\n\nThis epic is ordered for production recovery first: small subprocess hardening fixes land before trust cleanup, readiness improvements, and SDK migration work.\n\n## Goals\n\n- Resume darth-feedor production pipeline ASAP with deterministic prompt handling and bounded failure modes.\n- Keep script/service specialists usable as non-coding LLM transforms with no coding tools by default.\n- Preserve Pi auth/model compatibility while reducing prompt leakage, process-list leakage, and runtime drift.\n- Establish an SDK migration path behind a flag, with subprocess fallback until proven safe.\n\n## Non-goals\n\n- Do not change package-class `sp run` specialist orchestration semantics.\n- Do not enable coding tools for service/script specialists.\n- Do not require darth-feedor to clone specialists source or change its HTTP contract unless explicitly versioned.\n\n## Success criteria\n\n- Production-fast hardening tasks are complete before SDK work begins.\n- `sp script`/`sp serve` prompts are not passed via argv and run with correct cwd/project context.\n- Prompt size, output schema, trust flags, db path, and readiness behavior are test-covered.\n- SDK runner is benchmarked against subprocess runner on darth-feedor-style article workloads before becoming default.\n\n## Context / background\n\n- Discovered from specialists-6vy: Pi CLI auto-context injection required isolation flags for script-class calls.\n- Relevant code: `src/specialist/script-runner.ts`, `src/cli/script.ts`, `src/cli/serve.ts`, docs under `docs/specialists-service*.md`, skill docs under `config/skills/using-script-specialists/`.\n- Pi docs reviewed: CLI JSON mode, stdin in print/json mode, SDK `createAgentSession`, zero-tool/custom ResourceLoader possibilities, RPC mode tradeoffs.",
+        "id": "unitAI-z2vpq",
+        "issue_type": "epic",
+        "labels": [
+          "darth-feedor",
+          "script-runner",
+          "sdk",
+          "service",
+          "specialists"
+        ],
+        "priority": 1,
+        "status": "open",
+        "title": "Epic: production-harden script/service specialists and evaluate SDK runner",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    },
+    "unitAI-z2vpq.10": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-06T11:55:44Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-06T13:55:44Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-z2vpq",
+            "issue_id": "unitAI-z2vpq.10",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-05-06T13:55:50Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-z2vpq.13",
+            "issue_id": "unitAI-z2vpq.10",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 2,
+        "description": "## Context\n\nMedium-term migration. Pi docs recommend SDK for Node/TypeScript integrations. Service specialists are non-coding LLM transforms, so SDK can provide zero-tool in-memory sessions, exact ResourceLoader control, and lower per-request overhead than spawning Pi.\n\n## What to build\n\n- Implement a spike/prototype SDK runner path for script-class specialists without changing default production behavior.\n- Enforce no coding tools and no resource discovery by default.\n- Benchmark against subprocess runner on darth-feedor-style article/news summarization payloads.\n- Compare latency, token input overhead, output schema drift, memory growth, auth/model behavior, and failure modes.\n\n## Acceptance criteria\n\n- Benchmark report attached to bead notes with subprocess vs SDK results.\n- Prototype supports system prompt, rendered task prompt, model override, thinking level, timeout, JSON output parsing, and no tools.\n- Clear go/no-go recommendation for production rollout.",
+        "id": "unitAI-z2vpq.10",
+        "issue_type": "task",
+        "labels": [
+          "benchmark",
+          "darth-feedor",
+          "script-runner",
+          "sdk",
+          "service",
+          "specialists"
+        ],
+        "priority": 2,
+        "status": "open",
+        "title": "SDK runner spike: zero-tool script specialist benchmark for darth-feedor workloads",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    },
+    "unitAI-z2vpq.11": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-06T11:55:45Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-06T13:55:44Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-z2vpq",
+            "issue_id": "unitAI-z2vpq.11",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-05-06T13:55:50Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-z2vpq.10",
+            "issue_id": "unitAI-z2vpq.11",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## Context\n\nIf SDK benchmark succeeds, service/script specialists need a safe rollout path that preserves subprocess fallback. If SDK is not suitable, RPC worker-pool feasibility should be captured as the alternate process-isolated path.\n\n## What to build\n\n- Add runner backend selection behind env/CLI flag (for example `SP_SCRIPT_RUNNER=sdk` or `sp serve --runner sdk`).\n- Keep subprocess as fallback until production confidence is established.\n- If SDK is rejected, create/attach decision notes for RPC worker-pool option instead of implementing it prematurely.\n- Include migration docs for darth-feedor and other pipeline consumers.\n\n## Acceptance criteria\n\n- Backend selection is test-covered and defaults to subprocess until explicitly switched.\n- SDK path (if enabled) preserves HTTP response contract and `sp script --json` envelope.\n- Rollback path is one config change.\n- Decision record captures SDK vs subprocess vs RPC pool tradeoffs.",
+        "id": "unitAI-z2vpq.11",
+        "issue_type": "task",
+        "labels": [
+          "darth-feedor",
+          "rollout",
+          "script-runner",
+          "sdk",
+          "service",
+          "specialists"
+        ],
+        "priority": 2,
+        "status": "open",
+        "title": "Script/service runner: rollout SDK backend behind flag with subprocess fallback",
+        "updated_at": "2026-06-04T02:58:15Z"
+      }
+    },
+    "unitAI-z2vpq.14": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-06T11:55:46Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-06T13:55:46Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-z2vpq",
+            "issue_id": "unitAI-z2vpq.14",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-05-06T13:55:48Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-z2vpq.10",
+            "issue_id": "unitAI-z2vpq.14",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-05-06T13:55:48Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-z2vpq.11",
+            "issue_id": "unitAI-z2vpq.14",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 2,
+        "dependent_count": 0,
+        "description": "## Covers\n\nImplementation issues: unitAI-z2vpq.10, unitAI-z2vpq.11.\n\n## Layer classification\n\nBoundary + performance/integration: SDK runner, backend selection, service HTTP/CLI contract preservation.\n\n## Strategy\n\nCharacterization tests for subprocess behavior, contract tests for SDK parity, benchmark harness for darth-feedor article/news payloads.\n\n## Assertions\n\n- SDK backend returns same `ScriptGenerateResult` envelope as subprocess backend.\n- Zero tools/resource-discovery invariant is enforced.\n- Backend selection defaults safely and is reversible.\n- Benchmark captures latency, input tokens/overhead, schema drift, memory growth, and failure modes.\n\n## Acceptance criteria\n\n- SDK rollout cannot become default without benchmark evidence in bead notes.\n- Subprocess fallback remains green.",
+        "id": "unitAI-z2vpq.14",
+        "issue_type": "task",
+        "labels": [
+          "benchmark",
+          "boundary",
+          "darth-feedor",
+          "script-runner",
+          "sdk",
+          "service",
+          "specialists",
+          "testing"
+        ],
+        "priority": 2,
+        "status": "open",
+        "title": "Test: SDK runner parity and benchmark harness",
+        "updated_at": "2026-06-04T02:58:15Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-19T19:07:46Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-z2vpq",
+        "issue_id": "specialists-83y",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "specialists-83y",
+      "source_field": "dependencies",
+      "target": "unitAI-z2vpq",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-06T13:55:44Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-z2vpq",
+        "issue_id": "unitAI-z2vpq.10",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-z2vpq.10",
+      "source_field": "dependencies",
+      "target": "unitAI-z2vpq",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-06T13:55:50Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-z2vpq.10",
+        "issue_id": "unitAI-z2vpq.11",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-z2vpq.11",
+      "source_field": "dependencies",
+      "target": "unitAI-z2vpq.10",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-06T13:55:44Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-z2vpq",
+        "issue_id": "unitAI-z2vpq.11",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-z2vpq.11",
+      "source_field": "dependencies",
+      "target": "unitAI-z2vpq",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-06T13:55:48Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-z2vpq.10",
+        "issue_id": "unitAI-z2vpq.14",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-z2vpq.14",
+      "source_field": "dependencies",
+      "target": "unitAI-z2vpq.10",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-06T13:55:48Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-z2vpq.11",
+        "issue_id": "unitAI-z2vpq.14",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-z2vpq.14",
+      "source_field": "dependencies",
+      "target": "unitAI-z2vpq.11",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-06T13:55:46Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-z2vpq",
+        "issue_id": "unitAI-z2vpq.14",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-z2vpq.14",
+      "source_field": "dependencies",
+      "target": "unitAI-z2vpq",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-z2vpq",
+  "root_title": "Epic: production-harden script/service specialists and evaluate SDK runner",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

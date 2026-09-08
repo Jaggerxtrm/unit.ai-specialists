@@ -1,0 +1,190 @@
+{
+  "content_sha256": "e456776b2de33561a11621cdffbc6036b0437bdb800565ebe40ed6a55521d3b8",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-04-04T02:20:57Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-j75r",
+        "issue_id": "unitAI-a2xm",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-a2xm",
+      "source_field": "dependencies",
+      "target": "unitAI-j75r",
+      "target_present_in_snapshot": true,
+      "target_title": "Create specialist: security-auditor",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-04-04T02:20:58Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-ygvk",
+        "issue_id": "unitAI-a2xm",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-a2xm",
+      "source_field": "dependencies",
+      "target": "unitAI-ygvk",
+      "target_present_in_snapshot": true,
+      "target_title": "specialist:researcher",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-29T17:03:28Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-544sf.4",
+        "issue_id": "unitAI-x84i8",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-x84i8",
+      "source_field": "dependencies",
+      "target": "unitAI-544sf.4",
+      "target_present_in_snapshot": true,
+      "target_title": "Research: HexStrike AI — 150+ cybersecurity tools MCP for security-auditor enhancement",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-30T02:34:26Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-9qhtg",
+        "issue_id": "unitAI-x84i8",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-x84i8",
+      "source_field": "dependencies",
+      "target": "unitAI-9qhtg",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-05-30: DevOps/Platform initiative — pick up next priorities",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-x84i8"
+      }
+    ],
+    "id": "unitAI-a2xm"
+  },
+  "issues": {
+    "unitAI-a2xm": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "close_reason": "superseded by KAN-121 evaluated role/profile program; child unitAI-x84i8 remains as Bucket F (needs human) — independent",
+        "closed_at": "2026-07-30T15:06:13Z",
+        "comment_count": 0,
+        "created_at": "2026-04-04T00:20:41Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-04-04T02:20:57Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-j75r",
+            "issue_id": "unitAI-a2xm",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-04-04T02:20:58Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-ygvk",
+            "issue_id": "unitAI-a2xm",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Parent epic for creating new specialist YAML definitions. Each child defines one specialist type.",
+        "id": "unitAI-a2xm",
+        "issue_type": "epic",
+        "notes": "Deferred: parent backlog item only; not urgent in current cleanup lane.",
+        "owner": "you@example.com",
+        "priority": 3,
+        "status": "closed",
+        "title": "New specialist definitions",
+        "updated_at": "2026-07-30T15:06:13Z"
+      }
+    },
+    "unitAI-x84i8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-29T15:03:27Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-29T17:03:28Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-544sf.4",
+            "issue_id": "unitAI-x84i8",
+            "metadata": "{}",
+            "type": "discovered-from"
+          },
+          {
+            "created_at": "2026-05-30T02:34:26Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-9qhtg",
+            "issue_id": "unitAI-x84i8",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-05T00:54:37Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-a2xm",
+            "issue_id": "unitAI-x84i8",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "From epic 544sf research (.4). Operator direction: rather than bolt offensive tooling onto scan-only security-auditor, SPEC a distinct 'security-tester' specialist for ACTIVE/authorized testing. HexStrike AI (~100-150 tools) as the tool backend via a NEW pi adapter/catalog (resolver only knows native+gitnexus+serena today). Capability tiers: analysis (gdb/ghidra/binwalk) + authorized recon (nmap/nuclei/trivy/prowler) baseline; active offense (hydra/sqlmap/msfvenom/pacu) OPT-IN only. Default-OFF; per-repo opt-in + per-run audit log; gate on authorized scope + SCRUTINY=critical. HexStrike has NO built-in auth/sandbox — require isolated VM + approval token + secret redaction. security-auditor stays scan-only; security-pipeline stays semgrep+osv+gitleaks+dependabot. REF: docs/design/post-aws-summit-research-findings.md §4. SCRUTINY: high (new permissioned/offensive specialist). NON_GOALS: do NOT auto-enable; spec+capability-matrix first.",
+        "id": "unitAI-x84i8",
+        "issue_type": "task",
+        "priority": 3,
+        "status": "open",
+        "title": "evaluate/spec: NEW 'security-tester' specialist (active/authorized testing) via HexStrike adapter",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-05T00:54:37Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-a2xm",
+        "issue_id": "unitAI-x84i8",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-x84i8",
+      "source_field": "dependencies",
+      "target": "unitAI-a2xm",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-a2xm",
+  "root_title": "New specialist definitions",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

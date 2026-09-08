@@ -1,0 +1,43 @@
+{
+  "content_sha256": "090fc21577b443308a2f33f74bc8c82dedd31c428c54afc527b90fc129010c18",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-v0msh"
+  },
+  "issues": {
+    "unitAI-v0msh": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T11:15:12Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\n'xt pi <name> --bead <id>' writes the beads claim kv under the LAUNCHING session's id, not the launched session's. Observed twice on 2026-09-08 launching lanes for unitAI-rrdnt.47 and unitAI-rrdnt.20 from coordinator session 088c856b-5b68-4b1d-a44a-7c3ecc8d9367:\n\n  claimed:088c856b-...(the coordinator)  = unitAI-rrdnt.47\n  claimed:01a07e4a-...(the launched pi)  = unitAI-rrdnt.47\n\nBoth exist. The launched session's claim is correct; the coordinator's is spurious.\n\nCONSEQUENCE, and it is not cosmetic. The commit gate refuses the COORDINATOR's next commit with 'Close open issues before committing — Claimed: <the lane's bead> (still in_progress)'. The coordinator is then told to close a bead another session is actively working on, and the only correct action — clearing a kv key by hand — is not one the error suggests. A coordinator that dispatches lanes and merges their work is exactly the session that cannot afford a false claim.\n\nBoth launches also printed 'bead assignee: pi did not signal readiness within 30s; session launch continues', and the assignee stayed on the shared actor rather than becoming pi/<slug>. The two symptoms are likely the same handshake failing: the readiness signal that would carry the launched session's identity never arrives, and something falls back to the caller's identity instead of failing.\n\nSCOPE\nThe xt pi --bead claim/assignee handshake. CROSS-REPO: xtrm-tools, not this repo.\n\nWORKAROUND used twice today: bd kv clear \"claimed:<launcher-session-id>\" after launch, and bd update <bead> --assignee pi/<slug>.\n\nTBD\nWhether the 30s readiness timeout is the root cause or a second symptom.",
+        "id": "unitAI-v0msh",
+        "issue_type": "bug",
+        "labels": [
+          "contract:draft"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "xt pi --bead stamps the claim under the LAUNCHING session, blocking the launcher's own commits",
+        "updated_at": "2026-09-08T11:15:12Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-v0msh",
+  "root_title": "xt pi --bead stamps the claim under the LAUNCHING session, blocking the launcher's own commits",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

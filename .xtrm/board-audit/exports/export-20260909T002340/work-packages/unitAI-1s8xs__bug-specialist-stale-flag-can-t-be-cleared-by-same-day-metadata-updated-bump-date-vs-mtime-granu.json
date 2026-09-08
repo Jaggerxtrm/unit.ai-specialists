@@ -1,0 +1,90 @@
+{
+  "content_sha256": "3c1eacbc7bcab5fde89e9c302eb75b191461e70cb8b24dd0c00fecdf77457a0b",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-30T14:46:35Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-tkl69",
+        "issue_id": "unitAI-1s8xs",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-1s8xs",
+      "source_field": "dependencies",
+      "target": "unitAI-tkl69",
+      "target_present_in_snapshot": true,
+      "target_title": "chore: bump specialists-creator.specialist.json updated/version after SKILL.md refresh",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T01:59:05Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-grqud",
+        "issue_id": "unitAI-1s8xs",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-1s8xs",
+      "source_field": "dependencies",
+      "target": "unitAI-grqud",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-05-30: output_file decouple + handoff persistence + skill propagation — next: sfwe1 (fresh session) + release",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-1s8xs"
+  },
+  "issues": {
+    "unitAI-1s8xs": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-30T12:46:36Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-31T01:59:05Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-grqud",
+            "issue_id": "unitAI-1s8xs",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-30T14:46:35Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-tkl69",
+            "issue_id": "unitAI-1s8xs",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Specialist staleness STALE flag cannot be cleared by a same-day metadata.updated bump. computeStaleness (src/specialist/loader.ts:46,51) does updatedMs = new Date(metadata.updated).getTime() — a 'YYYY-MM-DD' string parses to MIDNIGHT UTC — then flags STALE when a files_to_watch target's mtimeMs > updatedMs. A watched file touched later the SAME calendar day (e.g. 03:4x) has mtime > midnight, so the specialist stays STALE forever until metadata.updated is a LATER date. The mechanism is day-granular in intent (stale_threshold_days is in days, updated is a date) but the comparison is ms-granular — a granularity mismatch.\n\nREPRO: Update a watched skill/file today, set the specialist's metadata.updated to today's date, run `specialists status` → still STALE (observed with specialists-creator after the SKILL.md refresh, unitAI-tkl69).\n\nFIX (proposed): make the staleness comparison date-granular — compare the watched file's mtime DATE to the updated DATE (e.g. floor mtimeMs to its calendar day, or compare end-of-updated-day). STALE only when file's date > updated's date. AGED logic (stale_threshold_days) unchanged. Preserve OK when updated/files_to_watch absent or updated unparseable.\n\nSCOPE: src/specialist/loader.ts (computeStaleness ~line 41-55) + a unit test asserting same-day file-touch + same-day updated = OK (not STALE), and next-day file-touch = STALE.\n\nNON_GOALS: do not change the metadata.updated field format (stays YYYY-MM-DD); do not change stale_threshold_days semantics; do not touch the validation schema.\n\nVALIDATION: targeted vitest for computeStaleness (same-day OK, prior-day OK, next-day STALE, AGED past threshold); bunx tsc --noEmit. NEVER run supervisor.test.ts (FIFO hang).\n\nSCRUTINY: low (isolated pure-ish helper, display-only effect).\n\nNOTE: loader.ts is consumed by specialists list/status/resolution — run gitnexus_impact on computeStaleness before editing. Memory: specialist-staleness-stale-flag-can-t-be-cleared.",
+        "id": "unitAI-1s8xs",
+        "issue_type": "bug",
+        "priority": 3,
+        "status": "open",
+        "title": "bug: specialist STALE flag can't be cleared by same-day metadata.updated bump (date-vs-mtime granularity in loader.ts)",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-1s8xs",
+  "root_title": "bug: specialist STALE flag can't be cleared by same-day metadata.updated bump (date-vs-mtime granularity in loader.ts)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

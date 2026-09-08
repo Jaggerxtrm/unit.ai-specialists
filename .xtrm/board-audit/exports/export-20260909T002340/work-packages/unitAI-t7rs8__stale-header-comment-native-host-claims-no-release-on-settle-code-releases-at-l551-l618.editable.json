@@ -1,0 +1,111 @@
+{
+  "content_sha256": "6aca8a55cdbb9a7fc133695c5ee23152fe0635492c3edc51afd361d1cbbb2b97",
+  "desired_issues": {
+    "unitAI-t7rs8": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T18:15:17Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T18:15:17Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-zhh40",
+          "issue_id": "unitAI-t7rs8",
+          "metadata": "{}",
+          "type": "discovered-from"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: src/activation/native-host.ts header (L16-18) states releaseIfWriter releases on disposal and does NOT release on settle, citing unitAI-rrdnt.59 as design decision. The code releases on settle (L551 agent_settled) and completed (L618). Explorer-verified live 2026-09-08 (unitAI-zhh40). A reader trusts the header over the code.\\n\\nSCOPE: Rough -- the header comment block in native-host.ts; confirm whether .59 changed the decision, then correct the comment or the code.",
+      "id": "unitAI-t7rs8",
+      "issue_type": "bug",
+      "labels": [
+        "contract:draft"
+      ],
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 3,
+      "status": "open",
+      "title": "Stale header comment: native-host claims no release on settle, code releases at L551/L618",
+      "updated_at": "2026-09-08T18:15:17Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-08T18:15:17Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-zhh40",
+        "issue_id": "unitAI-t7rs8",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-t7rs8",
+      "source_field": "dependencies",
+      "target": "unitAI-zhh40",
+      "target_present_in_snapshot": true,
+      "target_title": "Explorer retest: map lease acquire/release lifecycle",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-t7rs8"
+  },
+  "issues": {
+    "unitAI-t7rs8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T18:15:17Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T18:15:17Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-zhh40",
+            "issue_id": "unitAI-t7rs8",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: src/activation/native-host.ts header (L16-18) states releaseIfWriter releases on disposal and does NOT release on settle, citing unitAI-rrdnt.59 as design decision. The code releases on settle (L551 agent_settled) and completed (L618). Explorer-verified live 2026-09-08 (unitAI-zhh40). A reader trusts the header over the code.\\n\\nSCOPE: Rough -- the header comment block in native-host.ts; confirm whether .59 changed the decision, then correct the comment or the code.",
+        "id": "unitAI-t7rs8",
+        "issue_type": "bug",
+        "labels": [
+          "contract:draft"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "Stale header comment: native-host claims no release on settle, code releases at L551/L618",
+        "updated_at": "2026-09-08T18:15:17Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-t7rs8",
+  "root_title": "Stale header comment: native-host claims no release on settle, code releases at L551/L618",
+  "roundtrip": {
+    "base_package_sha256": "6aca8a55cdbb9a7fc133695c5ee23152fe0635492c3edc51afd361d1cbbb2b97",
+    "base_record_sha256": {
+      "unitAI-t7rs8": "5b5db3fd5a130ce34d48f8d5367990ece4fdebf8768601868780293c14c4870e"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-08T22:23:47Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
