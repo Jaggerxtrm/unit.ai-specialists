@@ -1,4 +1,5 @@
 export declare const FORENSIC_SCHEMA_VERSION: "xtrm.forensic.v1";
+export declare function deploymentEnvironment(): string;
 export type ForensicSeverity = 'debug' | 'info' | 'warn' | 'error' | 'critical';
 export type RedactionStatus = 'clean' | 'redacted' | 'unknown';
 export interface ForensicResource {
@@ -23,6 +24,9 @@ export interface ForensicCorrelation {
     bead_id?: string;
     issue_id?: string;
     container_id?: string;
+    attempt_id?: string;
+    pi_session_id?: string;
+    workspace_id?: string;
     chain_id?: string;
     chain_root_job_id?: string;
     chain_root_bead_id?: string;
@@ -140,7 +144,7 @@ export interface ParticipantIdentityInput {
     member_index?: number;
     adapter_id?: string;
 }
-export declare function deriveParticipantId(input: ParticipantIdentityInput): string | undefined;
+export declare function deriveParticipantId(input: ParticipantIdentityInput): string;
 export declare function assertKnownTopLevelFields(event: Record<string, unknown>): void;
 export declare function assertNoForbiddenLabels(labels: Record<string, unknown>): void;
 export declare function pickAllowedLabels(source: Record<string, unknown>, allowlist?: Set<string>): Record<string, string>;
@@ -159,6 +163,9 @@ export interface TimelineForensicContext {
     chainRootBeadId?: string;
     epicId?: string;
     sessionId?: string;
+    attemptId?: string;
+    piSessionId?: string;
+    workspaceId?: string;
     conversationId?: string;
     traceId?: string;
     spanId?: string;

@@ -88,6 +88,22 @@ export declare function createUseSpecialistTool(runner: SpecialistRunner): {
     execute(input: z.infer<typeof useSpecialistSchema>, onProgress?: (msg: string) => void): Promise<import("../../specialist/runner.js").RunResult | {
         status: "error";
         error: string;
+    } | {
+        readiness_warning: string;
+        output: string;
+        backend: string;
+        model: string;
+        durationMs: number;
+        specialistVersion: string;
+        promptHash: string;
+        beadId?: string;
+        metrics?: import("../../pi/session.js").SessionRunMetrics;
+        permissionRequired?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH";
+        autoCommit?: "never" | "checkpoint_on_waiting" | "checkpoint_on_terminal";
+        outputType?: string;
+        payloadBreakdown?: import("../../specialist/payload-measure.js").PayloadBreakdown;
+        status?: undefined;
+        error?: undefined;
     }>;
 };
 //# sourceMappingURL=use_specialist.tool.d.ts.map

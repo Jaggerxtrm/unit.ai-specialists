@@ -65,6 +65,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Every test file gets its own observability database. Without this the resolver
+    // falls back to <gitRoot>/.specialists/db and tests operate on the repository's
+    // authoritative forensic store. See tests/setup/isolate-observability.ts.
+    setupFiles: ['tests/setup/isolate-observability.ts'],
     server: {
       deps: {
         external: [/^bun:/, /^@mariozechner\/pi/],

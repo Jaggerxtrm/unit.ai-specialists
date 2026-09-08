@@ -1,0 +1,17 @@
+{
+  "name": "@jaggerxtrm-bundled/specialist-subagents",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The PRIMARY coordinator surface: dispatches native XTRM Specialists on the in-process NativeActivationHost (unitAI-rrdnt.37).",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.mjs",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.1"
+  },
+  "pi": {
+    "extensions": [
+      "./index.mjs"
+    ]
+  }
+}

@@ -6945,12 +6945,12 @@ var require_public_api = __commonJS((exports) => {
 
 // src/specialist/script-runner.ts
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash3, randomUUID } from "node:crypto";
+import { createHash as createHash4, randomUUID } from "node:crypto";
 import {
   accessSync,
   closeSync,
   constants,
-  existsSync as existsSync10,
+  existsSync as existsSync11,
   fstatSync,
   lstatSync as lstatSync2,
   openSync,
@@ -6958,7 +6958,7 @@ import {
   realpathSync
 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { isAbsolute as isAbsolute2, join as join7, relative, resolve as resolve7 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join8, relative, resolve as resolve10 } from "node:path";
 
 // src/pi/session.ts
 import { createHash } from "node:crypto";
@@ -12384,16 +12384,19 @@ ${stderrTail}` : ""}`;
 // src/specialist/mandatory-rules.ts
 import { existsSync as existsSync8, readFileSync as readFileSync4 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
-import { resolve as resolve5 } from "node:path";
+import { resolve as resolve7 } from "node:path";
+
+// src/specialist/memory-retrieval.ts
+import { execSync } from "node:child_process";
 
 // src/specialist/observability-sqlite.ts
 import { existsSync as existsSync7, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync } from "node:fs";
-import { dirname as dirname5, join as join6 } from "node:path";
+import { dirname as dirname6, join as join7, normalize, resolve as resolve6 } from "node:path";
 
 // src/specialist/observability-db.ts
 import { chmodSync, existsSync as existsSync6, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join as join5, sep as sep2 } from "node:path";
+import { join as join5, sep as sep2, resolve as resolvePath } from "node:path";
 var OBSERVABILITY_DB_FILENAME = "observability.db";
 var DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
 function resolveGitRootFrom(cwd) {
@@ -12428,13 +12431,21 @@ function resolveDbDirectory(gitRoot) {
     source: "git-root"
   };
 }
+function relocateIfForbidden(directory) {
+  const forbidden = process.env.SPECIALISTS_FORBID_DB_DIR?.trim();
+  const fallback = process.env.SPECIALISTS_FALLBACK_DB_DIR?.trim();
+  if (!forbidden || !fallback)
+    return directory;
+  return resolvePath(directory) === resolvePath(forbidden) ? fallback : directory;
+}
 function resolveObservabilityDbLocation(cwd = process.cwd()) {
   const gitRoot = resolveGitRootFrom(cwd);
   const resolved = resolveDbDirectory(gitRoot);
-  const dbPath = join5(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  const directory = relocateIfForbidden(resolved.directory);
+  const dbPath = join5(directory, OBSERVABILITY_DB_FILENAME);
   return {
     gitRoot,
-    dbDirectory: resolved.directory,
+    dbDirectory: directory,
     dbPath,
     dbWalPath: `${dbPath}-wal`,
     dbShmPath: `${dbPath}-shm`,
@@ -12450,8 +12461,29 @@ function ensureObservabilityDbFile(location) {
   return { created: !alreadyExists };
 }
 
+// src/specialist/job-root.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { dirname as dirname5, join as join6, resolve as resolve5 } from "node:path";
+function resolveCommonGitRoot(cwd) {
+  const result = spawnSync2("git", ["rev-parse", "--git-common-dir"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const gitCommonDir = result.stdout?.trim();
+  if (!gitCommonDir)
+    return;
+  return dirname5(resolve5(cwd, gitCommonDir));
+}
+
 // src/specialist/forensic-events.ts
 var FORENSIC_SCHEMA_VERSION = "xtrm.forensic.v1";
+var NODE_ENV_KEY = ["NODE", "ENV"].join("_");
+function deploymentEnvironment() {
+  return process.env[NODE_ENV_KEY]?.trim() || "local";
+}
 var FORBIDDEN_PROMETHEUS_LABELS = new Set([
   "participant_id",
   "job_id",
@@ -12675,18 +12707,19 @@ function normalizeResource(resource) {
   return normalized;
 }
 function deriveParticipantId(input) {
-  const kind = input.participant_kind ?? "specialist";
-  if (kind === "specialist" && input.chain_id)
-    return `${input.chain_id}::${input.participant_role}`;
-  if (kind === "orchestrator" && input.session_uuid)
+  if ((input.participant_kind ?? "specialist") === "specialist") {
+    const role = typeof input.participant_role === "string" ? input.participant_role.trim() : "";
+    return `specialist::${role ? role : "<unknown>"}`;
+  }
+  if (input.participant_kind === "orchestrator" && input.session_uuid)
     return `orch::${input.session_uuid}`;
-  if (kind === "pulse_emitter" && input.container_id)
+  if (input.participant_kind === "pulse_emitter" && input.container_id)
     return `${input.container_id}::emitter::${input.participant_role}`;
-  if (kind === "node_member" && input.node_id)
+  if (input.participant_kind === "node_member" && input.node_id)
     return `node::${input.node_id}::${input.participant_role}::${input.member_index ?? 0}`;
-  if (kind === "adapter" && input.adapter_id)
+  if (input.participant_kind === "adapter" && input.adapter_id)
     return input.adapter_id;
-  return;
+  return `${input.participant_kind ?? "specialist"}::<unknown>`;
 }
 function assertKnownTopLevelFields(event) {
   for (const key of Object.keys(event)) {
@@ -12779,7 +12812,7 @@ function forensicEventFromTimelineEvent(event, context) {
       service_namespace: "xtrm",
       service_name: "specialists",
       service_component: context.serviceComponent ?? "runtime",
-      deployment_environment: "local",
+      deployment_environment: deploymentEnvironment(),
       repo: context.repo ?? "unknown",
       participant_kind: participantKind,
       participant_role: participantRole,
@@ -12792,6 +12825,9 @@ function forensicEventFromTimelineEvent(event, context) {
       job_id: context.jobId,
       bead_id: context.beadId,
       node_id: context.nodeId,
+      attempt_id: context.attemptId,
+      pi_session_id: context.piSessionId ?? context.sessionId,
+      workspace_id: context.workspaceId,
       chain_id: context.chainId,
       chain_root_job_id: context.chainRootJobId,
       chain_root_bead_id: context.chainRootBeadId,
@@ -13117,6 +13153,53 @@ function redactionStatusForTimelineEvent(event) {
 // src/specialist/observability-sqlite.ts
 var _BunDatabase = null;
 var _probed = false;
+function nodeSqliteAdapter() {
+  let DatabaseSync;
+  try {
+    DatabaseSync = __require("node:sqlite").DatabaseSync;
+  } catch {
+    return null;
+  }
+  if (!DatabaseSync)
+    return null;
+  return class NodeSqliteDatabase {
+    inner;
+    constructor(path) {
+      this.inner = new DatabaseSync(path);
+    }
+    run(sql, ...params) {
+      if (params.length === 0) {
+        this.inner.exec(sql);
+        return;
+      }
+      let flat = params.length === 1 && Array.isArray(params[0]) ? params[0] : params;
+      flat = flat.map((value) => value === undefined ? null : value);
+      return this.inner.prepare(sql).run(...flat);
+    }
+    query(sql) {
+      return this.inner.prepare(sql);
+    }
+    transaction(fn) {
+      const self = this;
+      return function wrapped(...args) {
+        self.inner.exec("BEGIN");
+        try {
+          const out = fn.apply(this, args);
+          self.inner.exec("COMMIT");
+          return out;
+        } catch (error) {
+          try {
+            self.inner.exec("ROLLBACK");
+          } catch {}
+          throw error;
+        }
+      };
+    }
+    close() {
+      this.inner.close();
+    }
+  };
+}
 function loadBunDatabase() {
   if (_probed)
     return _BunDatabase;
@@ -13124,7 +13207,7 @@ function loadBunDatabase() {
   try {
     _BunDatabase = __require("bun:sqlite").Database;
   } catch {
-    _BunDatabase = null;
+    _BunDatabase = nodeSqliteAdapter();
   }
   return _BunDatabase;
 }
@@ -13345,6 +13428,17 @@ function parseJsonRecord(input) {
 function stringifyJson(value) {
   return JSON.stringify(value);
 }
+function normalizeWorkspacePath(worktreePath) {
+  if (!worktreePath || worktreePath.trim().length === 0)
+    return null;
+  return normalize(resolve6(worktreePath));
+}
+function buildAttemptId(jobId, attemptNo) {
+  return `${jobId}::attempt::${attemptNo}`;
+}
+function isRetryStartEvent(event) {
+  return event.type === "retry" && event.phase === "start";
+}
 function migrateToV4(db) {
   const hasV4 = db.query("SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1").get();
   if (hasV4) {
@@ -13556,6 +13650,7 @@ function initSchema(db) {
   migrateToV12(db);
   migrateToV13(db);
   migrateToV14(db);
+  migrateToV15(db);
   verifyWalMode(db);
 }
 function migrateToV13(db) {
@@ -13612,6 +13707,81 @@ function migrateToV14(db) {
     INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
       VALUES (14, strftime('%s', 'now') * 1000);
   `);
+}
+function migrateToV15(db) {
+  const hasV15 = db.query("SELECT 1 FROM schema_version WHERE version = 15 LIMIT 1").get();
+  const jobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "participant_id", definition: "TEXT" },
+    { name: "pi_session_id", definition: "TEXT" },
+    { name: "workspace_id", definition: "TEXT" },
+    { name: "attempt_no", definition: "INTEGER DEFAULT 0" },
+    { name: "attempt_id", definition: "TEXT" }
+  ]) {
+    if (!jobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  const eventsColumns = new Set(db.query("PRAGMA table_info(specialist_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!eventsColumns.has("attempt_id")) {
+    db.run("ALTER TABLE specialist_events ADD COLUMN attempt_id TEXT");
+  }
+  const forensicColumns = new Set(db.query("PRAGMA table_info(specialist_forensic_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!forensicColumns.has("attempt_id")) {
+    db.run("ALTER TABLE specialist_forensic_events ADD COLUMN attempt_id TEXT");
+  }
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_participant ON specialist_jobs(participant_id) WHERE participant_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_pi_session ON specialist_jobs(pi_session_id) WHERE pi_session_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_workspace ON specialist_jobs(workspace_id) WHERE workspace_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_attempt ON specialist_events(job_id, attempt_id, seq) WHERE attempt_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_job_attempt ON specialist_forensic_events(job_id, attempt_id, seq) WHERE attempt_id IS NOT NULL");
+  if (hasV15)
+    return;
+  const backfill = db.transaction(() => {
+    db.run(`
+      UPDATE specialist_jobs
+      SET pi_session_id = NULLIF(JSON_EXTRACT(status_json, '$.session_id'), '')
+    `);
+    db.run(`
+      UPDATE specialist_jobs
+      SET participant_id = 'specialist::' || COALESCE(NULLIF(TRIM(specialist), ''), '<unknown>')
+    `);
+    db.run(`
+      UPDATE specialist_jobs
+      SET attempt_no = 0
+      WHERE attempt_no IS NULL
+    `);
+    const worktreeRows = db.query(`
+      SELECT job_id, worktree_column
+      FROM specialist_jobs
+      WHERE worktree_column IS NOT NULL AND worktree_column != ''
+    `).all();
+    const workspaceStmt = db.query("UPDATE specialist_jobs SET workspace_id = ? WHERE job_id = ?");
+    for (const row of worktreeRows) {
+      if (!row.job_id || !row.worktree_column)
+        continue;
+      workspaceStmt.run(normalizeWorkspacePath(row.worktree_column), row.job_id);
+    }
+    db.run(`
+      UPDATE specialist_forensic_events AS forensic
+      SET participant_id = 'specialist::' || COALESCE(
+        NULLIF(TRIM(forensic.participant_role), ''),
+        NULLIF(TRIM((
+          SELECT jobs.specialist
+          FROM specialist_jobs AS jobs
+          WHERE jobs.job_id = forensic.job_id
+          LIMIT 1
+        )), ''),
+        '<unknown>'
+      )
+      WHERE forensic.participant_kind = 'specialist'
+    `);
+    db.run(`
+      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+        VALUES (15, strftime('%s', 'now') * 1000);
+    `);
+  });
+  backfill();
 }
 function migrateToV5(db) {
   const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
@@ -13857,11 +14027,16 @@ class SqliteClient {
     this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
     this.db.run("PRAGMA journal_mode=WAL");
   }
-  writeStatusRow(status, lastOutput) {
+  writeStatusRow(status, lastOutput, identity) {
     const statusJson = JSON.stringify(status);
+    const workspaceId = normalizeWorkspacePath(status.worktree_path);
+    const piSessionId = status.session_id ?? null;
+    const participantId = deriveParticipantId({ participant_role: status.specialist });
+    const attemptNo = identity?.attemptNo ?? 1;
+    const attemptId = identity?.attemptId ?? `${status.id}::attempt::1`;
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json, participant_id, pi_session_id, workspace_id, attempt_no, attempt_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
@@ -13876,7 +14051,12 @@ class SqliteClient {
         status_json = excluded.status_json,
         updated_at_ms = excluded.updated_at_ms,
         last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
-        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json);
+        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json),
+        participant_id = excluded.participant_id,
+        pi_session_id = CASE WHEN ? THEN COALESCE(excluded.pi_session_id, specialist_jobs.pi_session_id) ELSE excluded.pi_session_id END,
+        workspace_id = CASE WHEN ? THEN COALESCE(excluded.workspace_id, specialist_jobs.workspace_id) ELSE excluded.workspace_id END,
+        attempt_no = CASE WHEN ? AND excluded.attempt_no >= specialist_jobs.attempt_no THEN excluded.attempt_no ELSE specialist_jobs.attempt_no END,
+        attempt_id = CASE WHEN ? AND excluded.attempt_no >= specialist_jobs.attempt_no THEN excluded.attempt_id ELSE specialist_jobs.attempt_id END;
     `, [
       status.id,
       status.specialist,
@@ -13892,7 +14072,16 @@ class SqliteClient {
       statusJson,
       Date.now(),
       lastOutput ?? null,
-      status.startup_payload_json ?? null
+      status.startup_payload_json ?? null,
+      participantId,
+      piSessionId,
+      workspaceId,
+      attemptNo,
+      attemptId,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
+      identity ? 1 : 0
     ]);
   }
   writeEpicRunRow(epic) {
@@ -13934,17 +14123,44 @@ class SqliteClient {
     const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?").get(nodeRunId);
     return row?.next_seq ?? 1;
   }
-  writeEventRow(jobId, specialist, beadId, event) {
+  readJobAttempt(jobId) {
+    const row = this.db.query("SELECT attempt_no, attempt_id FROM specialist_jobs WHERE job_id = ? LIMIT 1").get(jobId);
+    if (!row)
+      return null;
+    const attemptNo = typeof row.attempt_no === "bigint" ? Number(row.attempt_no) : typeof row.attempt_no === "number" ? row.attempt_no : 0;
+    return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === "string" ? row.attempt_id : null };
+  }
+  writeEventRow(jobId, specialist, beadId, event, identity) {
     const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
+    const current = this.readJobAttempt(jobId);
+    let attemptId;
+    if (identity) {
+      attemptId = identity.attemptId;
+      if (current && identity.attemptNo >= current.attempt_no) {
+        this.db.run("UPDATE specialist_jobs SET attempt_no = ?, attempt_id = ?, updated_at_ms = ? WHERE job_id = ?", [identity.attemptNo, attemptId, Date.now(), jobId]);
+      }
+    } else if (isRetryStartEvent(event)) {
+      const nextNo = (current?.attempt_no ?? 0) + 1;
+      attemptId = buildAttemptId(jobId, nextNo);
+      if (current) {
+        this.db.run("UPDATE specialist_jobs SET attempt_no = ?, attempt_id = ?, updated_at_ms = ? WHERE job_id = ?", [nextNo, attemptId, Date.now(), jobId]);
+      }
+    } else if (current && current.attempt_no > 0) {
+      attemptId = current.attempt_id ?? buildAttemptId(jobId, current.attempt_no);
+    } else if (!current) {
+      attemptId = buildAttemptId(jobId, 1);
+    } else {
+      attemptId = null;
+    }
     this.db.run(`
-      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
-    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent);
+      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json, attempt_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson, attemptId]);
+    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent, attemptId);
   }
-  writeForensicEventRow(jobId, specialist, beadId, event) {
+  writeForensicEventRow(jobId, specialist, beadId, event, attemptId) {
     const context = this.readForensicContext(jobId);
     const forensicEvent = forensicEventFromTimelineEvent(event, {
       jobId,
@@ -13961,6 +14177,9 @@ class SqliteClient {
       chainRootBeadId: context.chainRootBeadId,
       epicId: context.epicId,
       sessionId: context.sessionId,
+      attemptId: attemptId ?? context.attemptId,
+      piSessionId: context.piSessionId ?? context.sessionId,
+      workspaceId: context.workspaceId,
       conversationId: context.conversationId,
       traceId: context.traceId,
       spanId: context.spanId,
@@ -13969,16 +14188,18 @@ class SqliteClient {
       spawnOrigin: context.spawnOrigin,
       rootRuntimeOrigin: context.rootRuntimeOrigin
     });
-    this.insertForensicEventRow(jobId, event.seq, forensicEvent);
+    this.insertForensicEventRow(jobId, event.seq, forensicEvent, attemptId);
   }
   readForensicContext(jobId) {
     const row = this.db.query(`
-      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status_json
+      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id,
+             participant_id, pi_session_id, workspace_id, attempt_id, status_json
       FROM specialist_jobs
       WHERE job_id = ?
       LIMIT 1
     `).get(jobId);
     const statusJson = parseJsonRecord(typeof row?.status_json === "string" ? row.status_json : undefined);
+    const columnSession = typeof row?.pi_session_id === "string" ? row.pi_session_id : undefined;
     return {
       beadId: typeof row?.bead_id === "string" ? row.bead_id : undefined,
       nodeId: typeof row?.node_id === "string" ? row.node_id : undefined,
@@ -13990,7 +14211,11 @@ class SqliteClient {
       chainRootJobId: typeof row?.chain_root_job_id === "string" ? row.chain_root_job_id : undefined,
       chainRootBeadId: typeof row?.chain_root_bead_id === "string" ? row.chain_root_bead_id : undefined,
       epicId: typeof row?.epic_id === "string" ? row.epic_id : undefined,
-      sessionId: typeof statusJson.session_id === "string" ? statusJson.session_id : undefined,
+      sessionId: columnSession ?? (typeof statusJson.session_id === "string" ? statusJson.session_id : undefined),
+      attemptId: typeof row?.attempt_id === "string" ? row.attempt_id : undefined,
+      piSessionId: columnSession ?? (typeof statusJson.session_id === "string" ? statusJson.session_id : undefined),
+      workspaceId: typeof row?.workspace_id === "string" ? row.workspace_id : undefined,
+      participantId: typeof row?.participant_id === "string" ? row.participant_id : undefined,
       conversationId: typeof statusJson.conversation_id === "string" ? statusJson.conversation_id : undefined,
       traceId: typeof statusJson.trace_id === "string" ? statusJson.trace_id : undefined,
       spanId: typeof statusJson.span_id === "string" ? statusJson.span_id : undefined,
@@ -14000,12 +14225,13 @@ class SqliteClient {
       rootRuntimeOrigin: statusJson.root_runtime_origin
     };
   }
-  insertForensicEventRow(jobId, seq, forensicEvent) {
+  insertForensicEventRow(jobId, seq, forensicEvent, attemptId) {
+    const columnAttemptId = attemptId ?? (typeof forensicEvent.correlation.attempt_id === "string" ? forensicEvent.correlation.attempt_id : null);
     this.db.run(`
       INSERT INTO specialist_forensic_events (
         job_id, seq, t, schema_version, event_family, event_name,
-        participant_kind, participant_role, participant_id, redaction_status, event_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        participant_kind, participant_role, participant_id, redaction_status, event_json, attempt_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       jobId,
       seq,
@@ -14017,7 +14243,8 @@ class SqliteClient {
       forensicEvent.resource.participant_role ?? null,
       typeof forensicEvent.correlation.participant_id === "string" ? forensicEvent.correlation.participant_id : null,
       forensicEvent.redaction.status,
-      JSON.stringify(forensicEvent)
+      JSON.stringify(forensicEvent),
+      columnAttemptId
     ]);
   }
   findActiveJob(beadId, specialist) {
@@ -14238,9 +14465,9 @@ class SqliteClient {
       updatedAtMs
     ]);
   }
-  upsertStatus(status) {
+  upsertStatus(status, identity) {
     withRetry(() => {
-      this.writeStatusRow(status);
+      this.writeStatusRow(status, undefined, identity);
     }, "upsertStatus");
   }
   markSpecialistJobCancelled(jobId, reason) {
@@ -14277,6 +14504,17 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEvent");
   }
+  upsertStatusWithEvents(status, events, identity) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status, undefined, identity);
+        for (const event of events) {
+          this.writeEventRow(status.id, status.specialist, status.bead_id, event, identity);
+        }
+      });
+      transaction();
+    }, "upsertStatusWithEvents");
+  }
   upsertStatusWithEventAndResult(status, event, output) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
@@ -14287,9 +14525,9 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEventAndResult");
   }
-  appendEvent(jobId, specialist, beadId, event) {
+  appendEvent(jobId, specialist, beadId, event, identity) {
     withRetry(() => {
-      this.writeEventRow(jobId, specialist, beadId, event);
+      this.writeEventRow(jobId, specialist, beadId, event, identity);
     }, "appendEvent");
   }
   appendForensicEvent(jobId, specialist, beadId, forensicEvent) {
@@ -14931,7 +15169,7 @@ class SqliteClient {
       const dir = filters.order === "desc" ? "DESC" : "ASC";
       return this.db.query(`
         SELECT id, job_id, seq, t, schema_version, event_family, event_name,
-               participant_kind, participant_role, participant_id, redaction_status, event_json
+               participant_kind, participant_role, participant_id, attempt_id, redaction_status, event_json
         FROM specialist_forensic_events
         ${where}
         ORDER BY t ${dir}, seq ${dir}, id ${dir}
@@ -15584,8 +15822,14 @@ function openObservabilitySqliteClient(dbPath) {
     return null;
   }
 }
+function createObservabilitySqliteClient(cwd = process.cwd()) {
+  const location = resolveObservabilityDbLocation(cwd);
+  if (!existsSync7(location.dbPath))
+    return null;
+  return openObservabilitySqliteClient(location.dbPath);
+}
 function createObservabilitySqliteClientAtPath(dbPath) {
-  mkdirSync3(dirname5(dbPath), { recursive: true });
+  mkdirSync3(dirname6(dbPath), { recursive: true });
   return openObservabilitySqliteClient(dbPath);
 }
 
@@ -15633,6 +15877,9 @@ var DEFAULT_STOP_WORDS = new Set([
   "not",
   "only"
 ]);
+var MAX_KEYWORDS = 6;
+var MAX_MEMORIES = 10;
+var MAX_MEMORY_TOKENS = 600;
 var CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 var STATIC_WORKFLOW_RULES_BLOCK = `
 ## Beads Workflow Quick Rules
@@ -15646,6 +15893,156 @@ var STATIC_WORKFLOW_RULES_BLOCK = `
 2. \`git commit -m "..."\`
 3. \`git push\`
 `.trim();
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+function normalizeToken(raw) {
+  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").trim();
+}
+function extractTokens(input) {
+  return input.split(/\s+/g).map(normalizeToken).filter((token) => token.length >= 3 && !DEFAULT_STOP_WORDS.has(token));
+}
+function extractMemoryKeywords(title, description) {
+  const tokens = [
+    ...extractTokens(title),
+    ...extractTokens(description ?? "")
+  ];
+  const unique = [];
+  const seen = new Set;
+  for (const token of tokens) {
+    if (seen.has(token))
+      continue;
+    seen.add(token);
+    unique.push(token);
+    if (unique.length >= MAX_KEYWORDS)
+      break;
+  }
+  return unique;
+}
+function parseMemoriesPayload(jsonText) {
+  if (!jsonText.trim())
+    return [];
+  const parsed = JSON.parse(jsonText);
+  if (Array.isArray(parsed)) {
+    return parsed.map((entry) => {
+      if (!entry || typeof entry !== "object")
+        return null;
+      const maybeRecord = entry;
+      const key = typeof maybeRecord.key === "string" ? maybeRecord.key : null;
+      const value = typeof maybeRecord.value === "string" ? maybeRecord.value : null;
+      if (!key || value === null)
+        return null;
+      return { key, value };
+    }).filter((entry) => Boolean(entry));
+  }
+  if (parsed && typeof parsed === "object") {
+    return Object.entries(parsed).filter((entry) => typeof entry[0] === "string" && typeof entry[1] === "string").map(([key, value]) => ({ key, value }));
+  }
+  return [];
+}
+function readBdMemories(cwd) {
+  try {
+    const stdout = execSync("bd memories --json", {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 5000
+    });
+    return parseMemoriesPayload(stdout);
+  } catch (error) {
+    const commandError = error;
+    const stderr = typeof commandError.stderr === "string" ? commandError.stderr : commandError.stderr?.toString("utf8") ?? "";
+    if (/no beads database found/i.test(stderr)) {
+      return [];
+    }
+    throw error;
+  }
+}
+function shouldRefreshCache(args) {
+  if (args.cacheCount === null || args.cacheLastSyncAtMs === null)
+    return true;
+  if (args.cacheCount !== args.sourceCount)
+    return true;
+  return args.nowMs - args.cacheLastSyncAtMs > CACHE_MAX_AGE_MS;
+}
+function toMemoryRecord(memory) {
+  return { key: memory.key, value: memory.value };
+}
+function syncMemoriesCacheFromBd(cwd, nowMs = Date.now(), forceFullSync = false) {
+  const sqliteClient = createObservabilitySqliteClient(cwd);
+  if (!sqliteClient) {
+    return { synced: false, memoryCount: 0 };
+  }
+  try {
+    const sourceMemories = readBdMemories(cwd);
+    const cacheState = sqliteClient.getMemoriesCacheState();
+    const needsRefresh = forceFullSync || shouldRefreshCache({
+      nowMs,
+      cacheCount: cacheState?.memoryCount ?? null,
+      cacheLastSyncAtMs: cacheState?.lastSyncAtMs ?? null,
+      sourceCount: sourceMemories.length
+    });
+    if (!needsRefresh) {
+      return { synced: false, memoryCount: sourceMemories.length };
+    }
+    sqliteClient.syncMemoriesCache(sourceMemories, nowMs);
+    return { synced: true, memoryCount: sourceMemories.length };
+  } finally {
+    sqliteClient.close();
+  }
+}
+function buildFilteredMemoryInjection(args) {
+  const keywords = extractMemoryKeywords(args.beadTitle, args.beadDescription);
+  if (keywords.length === 0) {
+    return { block: "", memories: [], estimatedTokens: 0 };
+  }
+  const nowMs = Date.now();
+  try {
+    syncMemoriesCacheFromBd(args.cwd, nowMs, false);
+  } catch {}
+  const sqliteClient = createObservabilitySqliteClient(args.cwd);
+  if (!sqliteClient) {
+    return { block: "", memories: [], estimatedTokens: 0 };
+  }
+  try {
+    const ranked = sqliteClient.queryRelevantMemories(keywords, MAX_MEMORIES, nowMs);
+    if (ranked.length === 0) {
+      return { block: "", memories: [], estimatedTokens: 0 };
+    }
+    const selected = [];
+    let tokenBudget = 0;
+    for (const memory of ranked) {
+      const line = `- ${memory.key}: ${memory.value}`;
+      const lineTokens = estimateTokens(line);
+      if (selected.length > 0 && tokenBudget + lineTokens > MAX_MEMORY_TOKENS)
+        break;
+      selected.push(toMemoryRecord(memory));
+      tokenBudget += lineTokens;
+    }
+    if (selected.length === 0) {
+      return { block: "", memories: [], estimatedTokens: 0 };
+    }
+    const lines = selected.map((memory) => `- ${memory.key}: ${memory.value}`);
+    const block = [
+      "## Filtered Beads Memories",
+      `_Keyword matched from bead context: ${keywords.join(", ")}_`,
+      ...lines
+    ].join(`
+`);
+    return {
+      block,
+      memories: selected,
+      estimatedTokens: estimateTokens(block)
+    };
+  } catch {
+    return { block: "", memories: [], estimatedTokens: 0 };
+  } finally {
+    sqliteClient.close();
+  }
+}
+function estimateInjectedTokens(text) {
+  return estimateTokens(text);
+}
 
 // src/specialist/mandatory-rules.ts
 class MandatoryRulesBudgetError extends Error {
@@ -15672,14 +16069,14 @@ ${sections.map((section) => section.block).join(`
 
 `)}` : "";
 }
-function estimateTokens(text) {
+function estimateTokens2(text) {
   return text ? Math.max(1, Math.ceil(text.length / 4)) : 0;
 }
 function compileMandatoryRulesBudget(candidateSections, budgetLimit) {
   const sections = candidateSections.filter((section) => section.block.trim() && section.ruleCount > 0);
-  const candidateTokens = estimateTokens(formatSectionsBlock(sections));
+  const candidateTokens = estimateTokens2(formatSectionsBlock(sections));
   const mustKeep = sections.filter((section) => section.priority === "must_keep");
-  const floorTokens = estimateTokens(formatSectionsBlock(mustKeep));
+  const floorTokens = estimateTokens2(formatSectionsBlock(mustKeep));
   if (floorTokens > budgetLimit) {
     throw new MandatoryRulesBudgetError(budgetLimit, candidateTokens, floorTokens, [], sections.map((section) => section.setId));
   }
@@ -15687,7 +16084,7 @@ function compileMandatoryRulesBudget(candidateSections, budgetLimit) {
   for (const priority of ["important", "optional"]) {
     for (const section of sections.filter((item) => item.priority === priority)) {
       const proposed = sections.filter((item) => retained.has(item) || item === section);
-      if (estimateTokens(formatSectionsBlock(proposed)) <= budgetLimit)
+      if (estimateTokens2(formatSectionsBlock(proposed)) <= budgetLimit)
         retained.add(section);
     }
   }
@@ -15699,7 +16096,7 @@ function compileMandatoryRulesBudget(candidateSections, budgetLimit) {
     sections: injected,
     budgetLimit,
     candidateTokens,
-    injectedTokens: estimateTokens(block),
+    injectedTokens: estimateTokens2(block),
     injectedSectionIds: injected.map((section) => section.setId),
     evictedSectionIds: evicted.map((section) => section.setId),
     payloadDigest: createHash2("sha256").update(block).digest("hex"),
@@ -15723,12 +16120,12 @@ function mergeIndex(base, overlay) {
   };
 }
 function loadMandatoryRulesIndex(cwd) {
-  const sourcePath = resolve5(cwd, "config/mandatory-rules/index.json");
-  const canonicalCopyPath = resolve5(cwd, ".specialists/default/mandatory-rules/index.json");
-  const userOverlayPath = resolve5(cwd, ".specialists/user/mandatory-rules/index.json");
+  const sourcePath = resolve7(cwd, "config/mandatory-rules/index.json");
+  const canonicalCopyPath = resolve7(cwd, ".specialists/default/mandatory-rules/index.json");
+  const userOverlayPath = resolve7(cwd, ".specialists/user/mandatory-rules/index.json");
   const packageLivePath = resolveCanonicalAssetDir("mandatory-rules");
-  const overlayPath = resolve5(cwd, ".specialists/mandatory-rules/index.json");
-  const packageLiveIndexPath = packageLivePath ? resolve5(packageLivePath, "index.json") : null;
+  const overlayPath = resolve7(cwd, ".specialists/mandatory-rules/index.json");
+  const packageLiveIndexPath = packageLivePath ? resolve7(packageLivePath, "index.json") : null;
   const tierPaths = [userOverlayPath, sourcePath, canonicalCopyPath, overlayPath].filter((value) => Boolean(value));
   const tiers = [];
   for (const path of tierPaths) {
@@ -15835,11 +16232,11 @@ function readMandatoryRuleSet(cwd, id) {
   }
   const packageCanonicalDir = resolveCanonicalAssetDir("mandatory-rules");
   const candidates = [
-    resolve5(cwd, `.specialists/user/mandatory-rules/${id}.md`),
-    resolve5(cwd, `.specialists/mandatory-rules/${id}.md`),
-    resolve5(cwd, `.specialists/default/mandatory-rules/${id}.md`),
-    resolve5(cwd, `config/mandatory-rules/${id}.md`),
-    ...packageCanonicalDir ? [resolve5(packageCanonicalDir, `${id}.md`)] : []
+    resolve7(cwd, `.specialists/user/mandatory-rules/${id}.md`),
+    resolve7(cwd, `.specialists/mandatory-rules/${id}.md`),
+    resolve7(cwd, `.specialists/default/mandatory-rules/${id}.md`),
+    resolve7(cwd, `config/mandatory-rules/${id}.md`),
+    ...packageCanonicalDir ? [resolve7(packageCanonicalDir, `${id}.md`)] : []
   ];
   const filePath = candidates.find((path) => existsSync8(path));
   if (!filePath)
@@ -15986,15 +16383,192 @@ function dedupeModels(models) {
   return [...new Set(models)];
 }
 
+// src/specialist/task-prompt.ts
+import { basename, dirname as dirname7 } from "node:path";
+import { createHash as createHash3 } from "node:crypto";
+
 // src/specialist/templateEngine.ts
 var PLACEHOLDER_RE = /\$([a-zA-Z_][a-zA-Z0-9_]*)/g;
+function extractTemplateTokens(template) {
+  return [...template.matchAll(PLACEHOLDER_RE)].map((match) => match[1]);
+}
 function renderTemplate(template, variables) {
   return template.replace(PLACEHOLDER_RE, (match, key) => {
     return variables[key] !== undefined ? variables[key] : match;
   });
 }
 
+// src/specialist/beads.ts
+import { spawnSync as spawnSync3 } from "node:child_process";
+function buildBeadContext(bead, completedBlockers = []) {
+  const lines = [`# Task: ${bead.title}`, `## Bead id: ${bead.id}`];
+  if (bead.description?.trim()) {
+    lines.push(bead.description.trim());
+  }
+  if (bead.parent?.trim()) {
+    lines.push("", "## Parent epic", bead.parent.trim());
+  }
+  if (bead.notes?.trim()) {
+    lines.push("", "## Notes", bead.notes.trim());
+  }
+  if (completedBlockers.length > 0) {
+    lines.push("", "## Context from completed dependencies:");
+    for (const blocker of completedBlockers) {
+      lines.push("", `### ${blocker.title} (${blocker.id})`);
+      if (blocker.description?.trim()) {
+        lines.push(blocker.description.trim());
+      }
+      if (blocker.notes?.trim()) {
+        lines.push("", blocker.notes.trim());
+      }
+    }
+  }
+  return lines.join(`
+`).trim();
+}
+
+class BeadsClient {
+  available;
+  constructor() {
+    this.available = BeadsClient.checkAvailable();
+    if (!this.available) {
+      console.warn("[specialists] bd CLI not found — beads tracking disabled");
+    }
+  }
+  static checkAvailable() {
+    const result = spawnSync3("bd", ["--version"], { stdio: "ignore" });
+    return result.status === 0;
+  }
+  isAvailable() {
+    return this.available;
+  }
+  createBead(specialistName) {
+    if (!this.available)
+      return null;
+    const result = spawnSync3("bd", ["q", `specialist:${specialistName}`, "--type", "task", "--labels", "specialist"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    if (result.status !== 0)
+      return null;
+    const id = result.stdout?.trim();
+    return id || null;
+  }
+  readBead(id) {
+    if (!this.available || !id)
+      return null;
+    const result = spawnSync3("bd", ["show", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+    if (result.error || result.status !== 0 || !result.stdout?.trim())
+      return null;
+    try {
+      const parsed = JSON.parse(result.stdout);
+      const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (!bead || typeof bead !== "object" || typeof bead.id !== "string" || typeof bead.title !== "string")
+        return null;
+      return bead;
+    } catch (err) {
+      console.warn(`[specialists] readBead: JSON parse failed for id=${id}: ${err}`);
+      return null;
+    }
+  }
+  getCompletedBlockers(id, depth = 1) {
+    if (!this.available || !id || depth < 1)
+      return [];
+    const result = spawnSync3("bd", ["dep", "list", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+    if (result.error || result.status !== 0 || !result.stdout?.trim())
+      return [];
+    let deps;
+    try {
+      deps = JSON.parse(result.stdout);
+      if (!Array.isArray(deps))
+        return [];
+    } catch {
+      return [];
+    }
+    const blockers = deps.filter((d) => d.dependency_type === "blocks" && d.status === "closed");
+    const records = [];
+    for (const dep of blockers) {
+      const record = this.readBead(dep.id);
+      if (record) {
+        records.push(record);
+        if (depth > 1) {
+          records.push(...this.getCompletedBlockers(dep.id, depth - 1));
+        }
+      }
+    }
+    return records;
+  }
+  addDependency(trackingBeadId, inputBeadId) {
+    if (!this.available || !trackingBeadId || !inputBeadId)
+      return;
+    spawnSync3("bd", ["dep", "add", trackingBeadId, inputBeadId], { stdio: "ignore" });
+  }
+  closeBead(id, status, durationMs, model) {
+    if (!this.available || !id)
+      return;
+    const reason = `${status}, ${Math.round(durationMs)}ms, ${model}`;
+    spawnSync3("bd", ["close", id, "-r", reason], { stdio: "ignore" });
+  }
+  closeBeadIfInProgress(id, reason) {
+    if (!this.available || !id)
+      return false;
+    const bead = this.readBead(id);
+    if (!bead)
+      return false;
+    if (bead.status !== "open" && bead.status !== "in_progress")
+      return false;
+    const result = spawnSync3("bd", ["close", id, "-r", reason], { stdio: "ignore" });
+    return result.status === 0;
+  }
+  updateBeadNotes(id, notes) {
+    if (!this.available || !id || !notes)
+      return { ok: false, error: "beads unavailable or empty payload" };
+    const result = spawnSync3("bd", ["update", id, "--append-notes", notes], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (result.error) {
+      return { ok: false, error: result.error.message };
+    }
+    if (result.status !== 0) {
+      const stderr = result.stderr?.trim();
+      return { ok: false, error: stderr || `bd update failed with exit code ${result.status}` };
+    }
+    return { ok: true };
+  }
+  auditBead(id, toolName, model, exitCode) {
+    if (!this.available || !id)
+      return;
+    spawnSync3("bd", [
+      "audit",
+      "record",
+      "--kind",
+      "tool_call",
+      "--tool-name",
+      toolName,
+      "--model",
+      model,
+      "--issue-id",
+      id,
+      "--exit-code",
+      String(exitCode)
+    ], { stdio: "ignore" });
+  }
+}
+
+// src/specialist/payload-measure.ts
+function estimateTokens3(text) {
+  if (!text)
+    return 0;
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+function measureUtf8Bytes(text) {
+  return Buffer.byteLength(text, "utf8");
+}
+function measurePayloadComponent(kind, name, text) {
+  return { kind, name, tokens: estimateTokens3(text), bytes: measureUtf8Bytes(text) };
+}
+
 // src/specialist/task-prompt.ts
+var MANDATORY_RULES_TOKEN_LIMIT = 2400;
+var SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 var OPTIONALLY_ABSENT_PLACEHOLDERS = new Set([
   "bead_context",
   "gitnexus_summary",
@@ -16005,6 +16579,148 @@ var OPTIONALLY_ABSENT_PLACEHOLDERS = new Set([
   "writer_diff",
   "writer_job_id"
 ]);
+
+class TemplatePlaceholderError extends Error {
+  unresolved;
+  constructor(unresolved) {
+    super(`task_template references unresolved placeholder(s): ${unresolved.map((n) => `$${n}`).join(", ")}`);
+    this.name = "TemplatePlaceholderError";
+    this.unresolved = unresolved;
+  }
+}
+function deriveSkillName(path) {
+  const base = basename(path);
+  if (base === "SKILL.md")
+    return basename(dirname7(path));
+  return base.endsWith(".md") ? base.slice(0, -3) : base;
+}
+function buildSkillPrefix(specialist, surface) {
+  const paths = specialist.skills?.paths ?? [];
+  if (paths.length === 0)
+    return "";
+  const seen = new Set;
+  const names = [];
+  for (const p of paths) {
+    const n = deriveSkillName(p);
+    if (!SKILL_NAME_PATTERN.test(n)) {
+      throw new Error("Invalid skill name derived from skills.paths");
+    }
+    if (seen.has(n))
+      continue;
+    seen.add(n);
+    names.push(n);
+  }
+  if (names.length === 0)
+    return "";
+  if (surface === "claude")
+    return `${names.map((n) => `/${n}`).join(`
+`)}
+
+`;
+  if (surface === "codex")
+    return `${names.map((n) => `$${n}`).join(" ")}
+
+`;
+  return `${names.map((n) => `/skill:${n}`).join(" ")}
+
+`;
+}
+function buildBeadBoundaryInstruction(cwd, worktreeBoundary) {
+  const boundary = worktreeBoundary?.trim() || cwd;
+  return [
+    "## Runtime Boundary Rules",
+    `- Current cwd: ${cwd}`,
+    `- Assigned worktree boundary: ${boundary}`,
+    "- Stay inside current cwd / assigned worktree unless the task explicitly says otherwise.",
+    "- Do NOT run `cd` outside the current cwd / assigned worktree.",
+    "- Do NOT use absolute paths outside the current cwd / assigned worktree.",
+    "- Do NOT broad-search /home, repo root, or unrelated paths when evidence is missing.",
+    "- If required evidence is missing inside the current scope, STOP immediately, report exactly what is missing, and ask for the artifact or clarification instead of widening search."
+  ].join(`
+`);
+}
+function renderTaskPrompt(input) {
+  const { specialist, cwd, beadId } = input;
+  const prompt = specialist.prompt;
+  const bare = specialist.execution?.bare ?? false;
+  const completedBlockers = input.completedBlockers ?? [];
+  const beadContextText = input.bead ? buildBeadContext(input.bead, completedBlockers) : "";
+  const beadContextOwn = beadContextText ? measurePayloadComponent("bead_context", "own", beadContextText) : null;
+  const beadContextParent = input.bead?.parent?.trim() ? measurePayloadComponent("bead_context", "parent", input.bead.parent.trim()) : null;
+  const beadContextBlockers = completedBlockers.map((blocker) => measurePayloadComponent("bead_context", blocker.id, buildBeadContext(blocker, [])));
+  const resolvedPrompt = beadId && beadContextText ? `${beadContextText}
+
+${buildBeadBoundaryInstruction(cwd, input.worktreeBoundary)}`.trim() : input.fallbackPrompt?.() ?? "";
+  const lineageVariables = {
+    ...input.reusedFromJobId ? { reused_from_job_id: input.reusedFromJobId } : {},
+    ...input.worktreeOwnerJobId ? { worktree_owner_job_id: input.worktreeOwnerJobId } : {},
+    ...input.gitnexusSummary ? { gitnexus_summary: input.gitnexusSummary } : {}
+  };
+  const beadVariables = beadId ? { bead_context: resolvedPrompt, bead_id: beadId } : {};
+  const beadTemplateVariables = {
+    prompt: resolvedPrompt,
+    bead_id: beadId ?? "",
+    ...lineageVariables
+  };
+  const variables = {
+    prompt: resolvedPrompt,
+    cwd,
+    pre_script_output: input.preScriptOutput ?? "",
+    bead_id: beadId ?? "",
+    ...lineageVariables,
+    ...input.variables ?? {},
+    ...beadVariables
+  };
+  for (const name of OPTIONALLY_ABSENT_PLACEHOLDERS) {
+    if (variables[name] === undefined)
+      variables[name] = "";
+  }
+  const unresolvedTokens = extractTemplateTokens(prompt.task_template).filter((name) => variables[name] === undefined);
+  if (unresolvedTokens.length > 0)
+    throw new TemplatePlaceholderError(unresolvedTokens);
+  let renderedTask = renderTemplate(prompt.task_template, variables);
+  const taskTemplateComponent = measurePayloadComponent("task_template", "task_template", renderedTask);
+  let mandatoryRulesBlock = "";
+  let mandatoryRules = null;
+  let mandatoryRulesError = null;
+  try {
+    if (!bare) {
+      mandatoryRules = buildMandatoryRulesInjection({ cwd, specialist }, MANDATORY_RULES_TOKEN_LIMIT);
+      mandatoryRulesBlock = mandatoryRules.block;
+      if (mandatoryRulesBlock.trim())
+        renderedTask = `${renderedTask}
+
+${mandatoryRulesBlock}`;
+    }
+  } catch (error) {
+    if (error instanceof MandatoryRulesBudgetError)
+      throw error;
+    mandatoryRulesError = String(error);
+    console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: ${mandatoryRulesError}`);
+  }
+  if (!bare && input.appendExecutionContext) {
+    renderedTask = input.appendExecutionContext(renderedTask, cwd, variables);
+  }
+  const skillPrefix = buildSkillPrefix(specialist, input.surface ?? "pi");
+  if (skillPrefix)
+    renderedTask = `${skillPrefix}${renderedTask}`;
+  return {
+    initial_prompt: renderedTask,
+    prompt_hash: createHash3("sha256").update(renderedTask).digest("hex").slice(0, 16),
+    skillPrefix,
+    taskTemplateComponent,
+    beadContextOwn,
+    beadContextParent,
+    beadContextBlockers,
+    mandatoryRules,
+    mandatoryRulesBlock,
+    mandatoryRulesError,
+    variables,
+    beadTemplateVariables,
+    beadContextText,
+    resolvedPrompt
+  };
+}
 
 // src/utils/circuitBreaker.ts
 class CircuitBreaker {
@@ -16041,10 +16757,242 @@ class CircuitBreaker {
   }
 }
 
+// src/specialist/system-prompt.ts
+import { execSync as execSync2 } from "node:child_process";
+import { existsSync as existsSync9 } from "node:fs";
+import { resolve as resolve8 } from "node:path";
+var OUTPUT_TYPE_GUIDANCE = {
+  codegen: "- Codegen focus: include exact file paths, symbols touched, and implementation outcomes.",
+  analysis: "- Analysis focus: include architecture understanding and evidence-backed findings.",
+  review: "- Review focus: include severity-ranked findings with clear merge/readiness recommendation.",
+  synthesis: "- Synthesis focus: consolidate findings into decisions and clear next steps.",
+  orchestration: "- Orchestration focus: include actions, blockers, routing rationale, and rehydration state.",
+  workflow: "- Workflow focus: include procedural state transitions and operational checkpoints.",
+  research: "- Research focus: include sources checked, confidence, and final recommendations."
+};
+function buildOutputContractInstruction(responseFormat, outputType, outputSchema) {
+  if (responseFormat === "text")
+    return "";
+  const lines = ["## Output Contract"];
+  if (responseFormat === "markdown") {
+    lines.push("Respond using markdown with canonical sections (include when applicable):", "- `## Summary`", "- `## Status`", "- `## Changes`", "- `## Verification`", "- `## Risks`", "- `## Follow-ups`", "- `## Beads`", "Optional sections when relevant:", "- `## Architecture`", "- `## Acceptance Criteria`", "- `## Machine-readable block`", "Do not impose artificial bullet limits — prioritize completeness and clarity.");
+  } else {
+    lines.push("Respond with a single valid JSON object only.", "Do not wrap JSON in markdown fences, headers, or prose.");
+  }
+  if (outputType !== "custom") {
+    lines.push(`Output archetype: \`${outputType}\``);
+    lines.push(OUTPUT_TYPE_GUIDANCE[outputType]);
+  }
+  if (outputSchema) {
+    lines.push("Structure your output to match this schema:", "```json", JSON.stringify(outputSchema, null, 2), "```");
+    if (responseFormat === "markdown") {
+      lines.push("MANDATORY: include `## Machine-readable block` with exactly one JSON object in a single ```json fenced block.", "The machine-readable JSON block is canonical and must match the schema.");
+    }
+  }
+  return `
+
+${lines.join(`
+`)}`;
+}
+function sanitizeBeadIdForPrompt(beadId) {
+  const withoutControlChars = beadId.replace(/[\x00-\x1F\x7F]/g, "");
+  const withoutBackticks = withoutControlChars.replace(/`/g, "");
+  return withoutBackticks.replace(/[^A-Za-z0-9-]/g, "");
+}
+function defaultHasGitnexusIndex(cwd) {
+  return existsSync9(resolve8(cwd, ".gitnexus/meta.json"));
+}
+function defaultQueryGitnexusSymbol(cwd, symbol) {
+  try {
+    const raw = execSync2(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
+      cwd,
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const parsed = JSON.parse(raw);
+    if (parsed.status !== "found" || !parsed.symbol?.name)
+      return;
+    const callers = (parsed.incoming?.calls ?? []).slice(0, 3).map((call) => call.name).filter(Boolean);
+    const callees = (parsed.outgoing?.calls ?? []).slice(0, 3).map((call) => call.name).filter(Boolean);
+    const processes = (parsed.processes ?? []).slice(0, 2).map((proc) => proc.name).filter(Boolean);
+    return `- ${parsed.symbol.name} (${parsed.symbol.filePath ?? "unknown file"})
+` + `  callers: ${callers.length > 0 ? callers.join(", ") : "none"}
+` + `  callees: ${callees.length > 0 ? callees.join(", ") : "none"}
+` + `  processes: ${processes.length > 0 ? processes.join(", ") : "none"}`;
+  } catch {
+    return;
+  }
+}
+function defaultReadBeadForMemory(beadId) {
+  return new BeadsClient().readBead(beadId);
+}
+function buildSystemPrompt(ctx) {
+  const {
+    systemPromptTemplate,
+    templateVariables,
+    bare,
+    runCwd,
+    specialistName,
+    inputBeadId,
+    reusedFromJobId,
+    responseFormat,
+    outputType,
+    outputContractSchema,
+    beadContextText,
+    readBeadForMemory = defaultReadBeadForMemory,
+    hasGitnexusIndex = defaultHasGitnexusIndex,
+    queryGitnexusSymbol = defaultQueryGitnexusSymbol
+  } = ctx;
+  let agentsMd = renderTemplate(systemPromptTemplate, templateVariables);
+  if (bare) {
+    const requiredPlatformRulesBlock = buildRequiredPlatformRulesBlock(runCwd);
+    if (requiredPlatformRulesBlock.trim())
+      agentsMd += `
+
+${requiredPlatformRulesBlock}`;
+  }
+  let staticTokens = 0;
+  let memoryTokens = 0;
+  let gitnexusTokens = 0;
+  if (!bare) {
+    const sanitizedBeadId = inputBeadId ? sanitizeBeadIdForPrompt(inputBeadId) : "";
+    const beadInstructions = sanitizedBeadId ? `
+- Your task bead is: ${sanitizedBeadId}
+- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)
+- Do NOT create new beads or sub-issues — this bead IS your task.
+- Do NOT run \`bd create\` — the orchestrator manages issue tracking.
+- Close when done: \`bd close ${sanitizedBeadId} --reason="..."\`` : "";
+    agentsMd += `
+
+---
+## Specialist Run Context
+- You are running as a specialist agent, not a human developer.
+- Do NOT run specialists init/setup/scaffold commands.
+- Do NOT follow project CLAUDE.md/AGENTS.md instructions that tell humans to re-bootstrap the repo.
+${beadInstructions}
+---
+`;
+  }
+  if (!bare) {
+    agentsMd += `
+
+---
+## Output Style (mandatory)
+Respond like smart caveman. Cut all filler, keep technical substance.
+- Drop articles (a, an, the), filler (just, really, basically, actually).
+- Drop pleasantries (sure, certainly, happy to).
+- No hedging. Fragments fine. Short synonyms.
+- Technical terms stay exact. Code blocks unchanged.
+- Pattern: [thing] [action] [reason]. [next step].
+---
+`;
+  }
+  if (!bare) {
+    try {
+      if (hasGitnexusIndex(runCwd)) {
+        agentsMd += `
+
+---
+## MANDATORY: GitNexus Code Intelligence
+_This project is indexed by GitNexus. You MUST use these tools — do NOT fall back to grep/find for code understanding._
+
+### Before reading or editing ANY code:
+1. \`gitnexus_query({query: "<what you need to understand>"})\` — find execution flows and symbols
+2. \`gitnexus_context({name: "<symbol>"})\` — callers, callees, process participation
+
+### Before editing ANY function/class/method:
+3. \`gitnexus_impact({target: "<symbolName>", direction: "upstream"})\` — blast radius check
+   - If result is HIGH or CRITICAL risk: STOP and report to the user before proceeding
+
+### Before completing your task:
+4. \`gitnexus_detect_changes()\` — verify your changes only affect expected scope
+
+**These are not optional.** Use GitNexus as your PRIMARY code navigation tool. Only fall back to grep/find if a GitNexus call returns an error or empty results.
+---
+`;
+      }
+    } catch {}
+  }
+  const staticRulesBlock = `
+
+---
+${STATIC_WORKFLOW_RULES_BLOCK}
+---
+`;
+  if (!bare) {
+    agentsMd += staticRulesBlock;
+    staticTokens = estimateInjectedTokens(staticRulesBlock);
+  }
+  if (inputBeadId) {
+    const beadForMemory = readBeadForMemory(inputBeadId);
+    if (beadForMemory?.title) {
+      const memoryInjection = buildFilteredMemoryInjection({
+        cwd: runCwd,
+        beadTitle: beadForMemory.title,
+        beadDescription: beadForMemory.description
+      });
+      if (!bare && memoryInjection.block) {
+        const memoryBlock = `
+
+---
+${memoryInjection.block}
+---
+`;
+        agentsMd += memoryBlock;
+        memoryTokens = memoryInjection.estimatedTokens;
+      }
+      try {
+        if (hasGitnexusIndex(runCwd)) {
+          const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? []).slice(0, 2);
+          const summaries = [];
+          for (const symbol of symbolCandidates) {
+            const summary = queryGitnexusSymbol(runCwd, symbol);
+            if (summary)
+              summaries.push(summary);
+          }
+          if (!bare && summaries.length > 0) {
+            const gitnexusBlock = `
+
+---
+## GitNexus Pre-query Snapshot
+${summaries.join(`
+`)}
+---
+`;
+            agentsMd += gitnexusBlock;
+            gitnexusTokens = estimateInjectedTokens(gitnexusBlock);
+          }
+        }
+      } catch {}
+    }
+  }
+  if (!bare && specialistName === "reviewer" && reusedFromJobId) {
+    agentsMd += '\n\nReviewer patch retrieval: run `git diff master..HEAD -- ":!dist/" ":!*.map"` inside reused worktree. Find worktree path via `sp ps ${reviewed_job_id}` first.\n';
+  }
+  if (!bare) {
+    agentsMd += buildOutputContractInstruction(responseFormat, outputType, outputContractSchema);
+  }
+  const components = [
+    measurePayloadComponent("system_prompt", "system_prompt", agentsMd)
+  ];
+  if (staticTokens > 0)
+    components.push(measurePayloadComponent("memory", "static", STATIC_WORKFLOW_RULES_BLOCK));
+  if (memoryTokens > 0)
+    components.push(measurePayloadComponent("memory", "dynamic", beadContextText || ""));
+  if (gitnexusTokens > 0)
+    components.push(measurePayloadComponent("memory", "gitnexus", agentsMd.includes("GitNexus") ? "GitNexus" : ""));
+  return {
+    text: agentsMd,
+    components,
+    tokens: { static: staticTokens, memory: memoryTokens, gitnexus: gitnexusTokens }
+  };
+}
+
 // src/specialist/runner.ts
-import { execSync, spawnSync as spawnSync2 } from "node:child_process";
-import { existsSync as existsSync9, readFileSync as readFileSync5 } from "node:fs";
-import { basename, resolve as resolve6 } from "node:path";
+import { execSync as execSync3, spawnSync as spawnSync4 } from "node:child_process";
+import { existsSync as existsSync10, readFileSync as readFileSync5 } from "node:fs";
+import { basename as basename2, resolve as resolve9 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 function sanitizeScriptName(name) {
   const cleaned = name.replace(/[\u0000-\u001f\u007f-\u009f"\\<>]/g, "").slice(0, 128);
@@ -16062,8 +17010,8 @@ function runScript(command, cwd) {
   if (!run) {
     return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", stderr: "", exitCode: 1 };
   }
-  const scriptName = sanitizeScriptName(basename(run.split(" ")[0]));
-  const result = spawnSync2(run, {
+  const scriptName = sanitizeScriptName(basename2(run.split(" ")[0]));
+  const result = spawnSync4(run, {
     encoding: "utf8",
     timeout: 30000,
     cwd,
@@ -16146,11 +17094,11 @@ ${r.output.trim()}
 ${blocks}
 </pre_flight_context>`;
 }
-function resolvePath(p) {
-  return p.startsWith("~/") ? resolve6(homedir3(), p.slice(2)) : resolve6(p);
+function resolvePath2(p) {
+  return p.startsWith("~/") ? resolve9(homedir3(), p.slice(2)) : resolve9(p);
 }
 function commandExists(cmd) {
-  const result = spawnSync2("which", [cmd], { stdio: "ignore" });
+  const result = spawnSync4("which", [cmd], { stdio: "ignore" });
   return result.status === 0;
 }
 var SHELL_BUILTINS = new Set([
@@ -16217,8 +17165,8 @@ function validateBeforeRun(spec, permissionLevel, resolvedToolContract) {
   const errors = [];
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
-    const abs = resolvePath(p);
-    if (!existsSync9(abs)) {
+    const abs = resolvePath2(p);
+    if (!existsSync10(abs)) {
       errors.push(`  ✗ skills.paths: skill not found: ${p}
 ` + `    resolved to: ${abs}
 ` + `    canonical global skills live in ~/.xtrm/skills/default/<skill>/`);
@@ -16230,8 +17178,8 @@ function validateBeforeRun(spec, permissionLevel, resolvedToolContract) {
       continue;
     const isFilePath = run.startsWith("./") || run.startsWith("../") || run.startsWith("/") || run.startsWith("~/");
     if (isFilePath) {
-      const abs = resolvePath(run);
-      if (!existsSync9(abs)) {
+      const abs = resolvePath2(run);
+      if (!existsSync10(abs)) {
         errors.push(`  ✗ skills.scripts: script not found: ${run}`);
       } else {
         validateShebang(abs, errors);
@@ -16490,6 +17438,14 @@ function createMetaEvent(model, backend) {
     backend
   };
 }
+function createStatusChangeEvent(status, previousStatus) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STATUS_CHANGE,
+    status,
+    ...previousStatus !== undefined ? { previous_status: previousStatus } : {}
+  };
+}
 function createTokenUsageEvent(token_usage, source) {
   return {
     t: Date.now(),
@@ -16527,6 +17483,14 @@ function createRunCompleteEvent(status, elapsed_s, options) {
     ...options
   };
 }
+function createControlSignalEvent(action, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.CONTROL_SIGNAL,
+    action,
+    ...options
+  };
+}
 
 // src/specialist/script-runner.ts
 class CompatGuardError extends Error {
@@ -16540,7 +17504,7 @@ class CompatGuardError extends Error {
 function normalizePath(path, baseDir) {
   if (isAbsolute2(path))
     return path;
-  return resolve7(baseDir ?? process.cwd(), path);
+  return resolve10(baseDir ?? process.cwd(), path);
 }
 function isPathWithinRoot(candidate, root) {
   const rel = relative(root, candidate);
@@ -16570,7 +17534,7 @@ function canonicalizeSkillPath(field, path, baseDir) {
       throw new Error("not a file or directory");
     accessSync(canonical, stat.isDirectory() ? constants.R_OK | constants.X_OK : constants.R_OK);
     if (stat.isDirectory()) {
-      const skillFile = join7(canonical, "SKILL.md");
+      const skillFile = join8(canonical, "SKILL.md");
       const skillStat = lstatSync2(skillFile);
       if (skillStat.isSymbolicLink() || !skillStat.isFile())
         throw new Error("invalid SKILL.md");
@@ -16650,7 +17614,7 @@ function readSkillSourceBytes(path, noFollowFlag) {
   const declaredStat = lstatSync2(path);
   if (declaredStat.isSymbolicLink())
     throw new Error("symlinked skill source");
-  const sourcePath = declaredStat.isDirectory() ? join7(path, "SKILL.md") : path;
+  const sourcePath = declaredStat.isDirectory() ? join8(path, "SKILL.md") : path;
   if (realpathSync(sourcePath) !== sourcePath)
     throw new Error("skill file canonical path changed");
   const sourceStat = lstatSync2(sourcePath);
@@ -16673,7 +17637,7 @@ function computeSkillSources(spec, baseDir) {
   for (const { path, source } of entries) {
     try {
       const content = readSkillSourceBytes(path, noFollowFlag);
-      const sha256 = createHash3("sha256").update(content).digest("hex");
+      const sha256 = createHash4("sha256").update(content).digest("hex");
       sources.push({ path, sha256, source, attestation: "observation_time_only" });
     } catch {
       sources.push({ path, sha256: "unreadable", source, attestation: "observation_time_only" });
@@ -17344,17 +18308,17 @@ function appendExtensionArgs(args, spec, resolvedToolContract, extensionSources 
   const readLineNumbersPath = getReadLineNumbersExtensionPath();
   if (readLineNumbersPath)
     args.push("-e", readLineNumbersPath);
-  const piExtDir = join7(homedir4(), ".pi", "agent", "extensions");
+  const piExtDir = join8(homedir4(), ".pi", "agent", "extensions");
   if (permissionLevel !== "READ_ONLY") {
-    const qualityGatesPath = join7(piExtDir, "quality-gates");
-    if (existsSync10(qualityGatesPath))
+    const qualityGatesPath = join8(piExtDir, "quality-gates");
+    if (existsSync11(qualityGatesPath))
       args.push("-e", qualityGatesPath);
   }
-  const cavemanPath = join7(piExtDir, "caveman");
-  if (existsSync10(cavemanPath))
+  const cavemanPath = join8(piExtDir, "caveman");
+  if (existsSync11(cavemanPath))
     args.push("-e", cavemanPath);
   const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
-  if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync10(gitnexusContract.packagePath)) {
+  if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync11(gitnexusContract.packagePath)) {
     args.push("-e", gitnexusContract.packagePath);
   }
   for (const source of extensionSources) {
@@ -17499,7 +18463,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       });
     }
   }
-  return await new Promise((resolve8, reject) => {
+  return await new Promise((resolve11, reject) => {
     const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-skills"];
     if (extensionSelection.offline !== false)
       args.push("--offline");
@@ -17594,7 +18558,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
     pi.on("error", reject);
     pi.on("close", (code) => {
       clearTimeout(timer);
-      resolve8({
+      resolve11({
         model,
         text: assistantText,
         stderr,
@@ -17639,8 +18603,8 @@ function isAuthFailureMessage(message) {
 }
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename as basename2, join as join11 } from "node:path";
-import { existsSync as existsSync13 } from "node:fs";
+import { basename as basename3, join as join12 } from "node:path";
+import { existsSync as existsSync14 } from "node:fs";
 
 // node_modules/yaml/dist/index.js
 var composer = require_composer();
@@ -17908,14 +18872,14 @@ ${result.warnings.map((w) => `  ⚠ ${w}`).join(`
 
 // src/specialist/global-config.ts
 import {
-  existsSync as existsSync11,
+  existsSync as existsSync12,
   mkdirSync as mkdirSync4,
   readFileSync as readFileSync7,
   renameSync,
   rmSync,
   writeFileSync as writeFileSync3
 } from "node:fs";
-import { dirname as dirname6, join as join8 } from "node:path";
+import { dirname as dirname8, join as join9 } from "node:path";
 import { homedir as homedir5 } from "node:os";
 var CONFIG_FILENAME = "user.json";
 var SPECIALISTS_SUBDIR = "specialists";
@@ -17923,15 +18887,15 @@ function getGlobalUserConfigPath() {
   const home = process.env.HOME?.trim() || homedir5();
   const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
   if (xdgConfigHome) {
-    const xdgPath = join8(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
-    return { path: xdgPath, exists: existsSync11(xdgPath), source: "xdg" };
+    const xdgPath = join9(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+    return { path: xdgPath, exists: existsSync12(xdgPath), source: "xdg" };
   }
-  const configHomePath = join8(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
-  if (existsSync11(configHomePath)) {
+  const configHomePath = join9(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+  if (existsSync12(configHomePath)) {
     return { path: configHomePath, exists: true, source: "config-home" };
   }
-  const legacyPath = join8(home, ".specialists", CONFIG_FILENAME);
-  if (existsSync11(legacyPath)) {
+  const legacyPath = join9(home, ".specialists", CONFIG_FILENAME);
+  if (existsSync12(legacyPath)) {
     return { path: legacyPath, exists: true, source: "legacy" };
   }
   return { path: configHomePath, exists: false, source: "config-home" };
@@ -17985,8 +18949,8 @@ function readGlobalUserConfig(location) {
 }
 
 // src/specialist/preset-resolver.ts
-import { existsSync as existsSync12, readFileSync as readFileSync8 } from "node:fs";
-import { join as join9 } from "node:path";
+import { existsSync as existsSync13, readFileSync as readFileSync8 } from "node:fs";
+import { join as join10 } from "node:path";
 var PRESET_REFERENCE_PREFIX = "@preset/";
 var PRESET_REFERENCE_MAX_DEPTH = 4;
 var presetsCache = null;
@@ -18068,11 +19032,11 @@ function loadPresets(options = {}) {
   if (presetsCache && presetsCacheBaseDir === baseDir && !options.force)
     return presetsCache;
   const paths = [
-    join9(baseDir, "config", "presets.json"),
-    join9(baseDir, "config", "specialists", "presets.json")
+    join10(baseDir, "config", "presets.json"),
+    join10(baseDir, "config", "specialists", "presets.json")
   ];
   for (const path of paths) {
-    if (!existsSync12(path))
+    if (!existsSync13(path))
       continue;
     try {
       presetsCache = JSON.parse(readFileSync8(path, "utf-8"));
@@ -18176,7 +19140,7 @@ function formatReferenceLocation(specialist, fieldPath) {
 // src/specialist/project-pack-skill-resolver.ts
 import { accessSync as accessSync2, constants as constants2, readdirSync, lstatSync as lstatSync3, realpathSync as realpathSync2 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { join as join10, relative as relative2, isAbsolute as isAbsolute3 } from "node:path";
+import { join as join11, relative as relative2, isAbsolute as isAbsolute3 } from "node:path";
 var RESERVED_SKILL_ROOTS = [
   "default",
   "optional",
@@ -18234,9 +19198,9 @@ function isBareLogicalSkillName(declared) {
 }
 function resolveSkillPath(declared, ctx) {
   if (declared.startsWith("~/"))
-    return join10(process.env.HOME || "", declared.slice(2));
+    return join11(process.env.HOME || "", declared.slice(2));
   if (declared.startsWith("./"))
-    return join10(ctx.fileDir, declared.slice(2));
+    return join11(ctx.fileDir, declared.slice(2));
   if (isBareLogicalSkillName(declared))
     return resolveBareLogicalSkill(declared, ctx.consumerRoot);
   return declared;
@@ -18246,7 +19210,7 @@ function isPathInside(candidate, root) {
   return rel === "" || rel.length > 0 && !rel.startsWith("..") && !isAbsolute3(rel);
 }
 function globalDefaultCandidate(skillName) {
-  return join10(homedir6(), ".xtrm", "skills", "default", skillName);
+  return join11(homedir6(), ".xtrm", "skills", "default", skillName);
 }
 function probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candidate) {
   const candidateRel = relative2(canonicalConsumer, candidate);
@@ -18264,7 +19228,7 @@ function probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candi
   if (!dirStat.isDirectory()) {
     throw new ProjectPackSkillSecurityError(skillName, candidateRel, "is not a directory (ENOTDIR); expected a skill directory");
   }
-  const skillFile = join10(candidate, "SKILL.md");
+  const skillFile = join11(candidate, "SKILL.md");
   const skillFileRel = relative2(canonicalConsumer, skillFile);
   let mdStat;
   try {
@@ -18308,7 +19272,7 @@ function resolveBareLogicalSkill(skillName, consumerRoot) {
       return globalDefaultCandidate(skillName);
     throw wrapFsError(skillName, ".", "resolving the consumer root", error);
   }
-  const skillsRoot = join10(canonicalConsumer, ".xtrm", "skills");
+  const skillsRoot = join11(canonicalConsumer, ".xtrm", "skills");
   let canonicalSkillsRoot;
   try {
     canonicalSkillsRoot = realpathSync2(skillsRoot);
@@ -18332,7 +19296,7 @@ function resolveBareLogicalSkill(skillName, consumerRoot) {
   for (const entry of entries) {
     if (entry.isSymbolicLink()) {
       if (!RESERVED_SKILL_ROOTS.includes(entry.name)) {
-        throw new ProjectPackSkillSecurityError(skillName, join10(".xtrm", "skills", entry.name), "is a symlink; symlinked pack directories are rejected");
+        throw new ProjectPackSkillSecurityError(skillName, join11(".xtrm", "skills", entry.name), "is a symlink; symlinked pack directories are rejected");
       }
       continue;
     }
@@ -18345,7 +19309,7 @@ function resolveBareLogicalSkill(skillName, consumerRoot) {
   packs.sort();
   const matches = [];
   for (const pack of packs) {
-    const candidate = join10(canonicalSkillsRoot, pack, skillName);
+    const candidate = join11(canonicalSkillsRoot, pack, skillName);
     const resolved = probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candidate);
     if (resolved)
       matches.push(resolved);
@@ -18384,12 +19348,12 @@ class SpecialistLoader {
   }
   getScanDirs() {
     const dirs = [
-      { path: join11(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
-      { path: join11(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join11(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
+      { path: join12(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
+      { path: join12(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
+      { path: join12(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
       { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" }
     ];
-    return dirs.filter((d) => d.path && existsSync13(d.path));
+    return dirs.filter((d) => d.path && existsSync14(d.path));
   }
   toJson(content, isYaml) {
     if (!isYaml)
@@ -18397,12 +19361,12 @@ class SpecialistLoader {
     return JSON.stringify($parse(content));
   }
   resolveSpecialistPath(dirPath, specialistName) {
-    const jsonPath = join11(dirPath, `${specialistName}.specialist.json`);
-    if (existsSync13(jsonPath)) {
+    const jsonPath = join12(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync14(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
-    const yamlPath = join11(dirPath, `${specialistName}.specialist.yaml`);
-    if (existsSync13(yamlPath)) {
+    const yamlPath = join12(dirPath, `${specialistName}.specialist.yaml`);
+    if (existsSync14(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
     return null;
@@ -18605,7 +19569,7 @@ class SpecialistLoader {
     for (const dir of this.getScanDirs()) {
       const files = await readdir(dir.path).catch(() => []);
       for (const file of files.filter((f) => f.endsWith(".specialist.json") || f.endsWith(".specialist.yaml"))) {
-        const specialistName = basename2(file).replace(/\.specialist\.(json|yaml)$/, "");
+        const specialistName = basename3(file).replace(/\.specialist\.(json|yaml)$/, "");
         if (seen.has(specialistName))
           continue;
         try {
@@ -18801,6 +19765,2410 @@ function resolveSkillsPaths(spec, fileDir, consumerRoot) {
     return;
   const resolved = rawPaths.map((p) => resolveSkillPath(p, { consumerRoot, fileDir }));
   spec.specialist.skills.paths = resolved;
+}
+// src/activation/native-host.ts
+import { randomUUID as randomUUID3 } from "node:crypto";
+
+// src/activation/bead-gate.ts
+import { spawnSync as spawnSync5 } from "node:child_process";
+var REQUIRED_SECTIONS = [
+  "PROBLEM",
+  "SUCCESS",
+  "SCOPE",
+  "NON_GOALS",
+  "CONSTRAINTS",
+  "VALIDATION",
+  "OUTPUT"
+];
+var SCRUTINY_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+var NON_DISPATCHABLE_STATUSES = new Set(["closed", "deferred"]);
+function readContractState(beadId) {
+  const result = spawnSync5("bd", ["state", beadId, "contract"], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 5000
+  });
+  if (result.error || result.status !== 0)
+    return;
+  const value = result.stdout?.trim().toLowerCase();
+  return value ? value : undefined;
+}
+var ALL_HEADINGS = new Set([...REQUIRED_SECTIONS, "SCRUTINY"]);
+function headingOf(line) {
+  const bare = line.trim().replace(/^#+\s*/, "").replace(/\*/g, "").trim();
+  const canonical = (text) => text.toUpperCase().replace(/[\s-]+/g, "_");
+  const whole = canonical(bare.replace(/:$/, "").trim());
+  if (ALL_HEADINGS.has(whole))
+    return { name: whole };
+  const split = bare.match(/^([A-Za-z][A-Za-z _-]*?)\s*:\s*(.*)$/);
+  if (!split)
+    return;
+  const name = canonical(split[1].trim());
+  if (!ALL_HEADINGS.has(name))
+    return;
+  const inlineBody = split[2].trim();
+  return inlineBody ? { name, inlineBody } : { name };
+}
+function extractSections(description) {
+  const sections = new Map;
+  let current;
+  let body = [];
+  const flush = () => {
+    if (current)
+      sections.set(current, body.join(`
+`).trim());
+  };
+  for (const line of description.split(`
+`)) {
+    const heading = headingOf(line);
+    if (heading) {
+      flush();
+      current = heading.name;
+      body = heading.inlineBody ? [heading.inlineBody] : [];
+      continue;
+    }
+    if (current)
+      body.push(line);
+  }
+  flush();
+  return sections;
+}
+function scrutinyLevel(description) {
+  const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-—]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
+  return match?.[1]?.toUpperCase();
+}
+function evaluateBeadReadiness(bead, options = {}) {
+  const status = bead.status?.trim().toLowerCase();
+  if (status && NON_DISPATCHABLE_STATUSES.has(status)) {
+    return { ok: false, reason: `bead is ${status} and is not dispatchable`, missing: [] };
+  }
+  const contractState = (options.readContractState ?? readContractState)(bead.id);
+  if (contractState === "draft") {
+    return {
+      ok: false,
+      reason: "bead contract is marked draft — promote it with `bd set-state <id> contract=ready` first",
+      missing: []
+    };
+  }
+  const description = bead.description ?? "";
+  const sections = extractSections(description);
+  const missing = REQUIRED_SECTIONS.filter((section) => !sections.get(section));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: "bead is not a usable task contract: required sections are missing or empty",
+      missing: [...missing]
+    };
+  }
+  if (!scrutinyLevel(description)) {
+    return {
+      ok: false,
+      reason: `bead declares no SCRUTINY level (expected one of ${SCRUTINY_LEVELS.join(", ")})`,
+      missing: ["SCRUTINY"]
+    };
+  }
+  return { ok: true };
+}
+
+// src/activation/step-contract.ts
+function toList(body) {
+  if (!body)
+    return [];
+  return body.split(`
+`).map((line) => line.trim().replace(/^[-*•]\s*/, "").replace(/^\d+[.)]\s*/, "").trim()).filter((line) => line.length > 0);
+}
+function compileStepContract(input) {
+  const { bead, specialist } = input;
+  const now = input.now ?? (() => Date.now());
+  const sections = extractSections(bead.description ?? "");
+  const scopeText = sections.get("SCOPE") ?? "";
+  const successText = sections.get("SUCCESS") ?? "";
+  const mandate = [successText, scopeText].filter(Boolean).join(`
+
+`);
+  const inputs = [
+    { kind: "bead", ref: bead.id, title: bead.title },
+    ...(bead.dependencies ?? []).filter((dep) => typeof dep?.id === "string" && dep.id.length > 0).map((dep) => ({ kind: "blocker", ref: dep.id }))
+  ];
+  const outputText = sections.get("OUTPUT") ?? "";
+  const outputs = outputText ? [{ description: outputText, ...input.responseFormat ? { format: input.responseFormat } : {} }] : [];
+  const constraints = toList(sections.get("CONSTRAINTS"));
+  const validation = toList(sections.get("VALIDATION")).map((description) => ({ description }));
+  const revision = bead.revision;
+  return {
+    rootWorkRef: bead.id,
+    mandate,
+    inputs,
+    outputs,
+    scope: { inScope: scopeText },
+    nonGoals: toList(sections.get("NON_GOALS")),
+    ...constraints.length > 0 ? { constraints } : {},
+    ...validation.length > 0 ? { validation } : {},
+    provenance: {
+      specialist,
+      generatedAt: now(),
+      ...revision === undefined || revision === null ? {} : { sourceBeadRevision: String(revision) }
+    }
+  };
+}
+
+// src/activation/interaction.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
+
+class UncorrelatedReplyError extends Error {
+  inReplyTo;
+  constructor(inReplyTo) {
+    super(inReplyTo ? `reply cites unknown or already-answered message "${inReplyTo}"` : "reply carries no inReplyTo — replies must be correlated by id, never by ordering");
+    this.inReplyTo = inReplyTo;
+    this.name = "UncorrelatedReplyError";
+  }
+}
+
+class InteractionTransport {
+  now;
+  newId;
+  deliver;
+  pending = new Map;
+  waiters = new Map;
+  answered = new Map;
+  log = [];
+  constructor(options = {}) {
+    this.now = options.now ?? (() => Date.now());
+    this.newId = options.newId ?? (() => `msg:${randomUUID2().slice(0, 12)}`);
+    this.deliver = options.deliver;
+  }
+  async send(input, messageId) {
+    if (input.kind === "reply")
+      return this.reply(input);
+    const message = this.compose(input, messageId);
+    this.log.push(message);
+    const expectsAnswer = message.kind === "question" || message.kind === "escalation";
+    if (expectsAnswer) {
+      this.pending.set(message.messageId, {
+        message,
+        delivery: "pending",
+        askedAt: message.createdAt
+      });
+    }
+    const delivered = await this.attemptDelivery(message);
+    const ask = this.pending.get(message.messageId);
+    if (ask)
+      ask.delivery = delivered ? "delivered" : "pending";
+    return message;
+  }
+  async request(input) {
+    const messageId = this.newId();
+    const waited = new Promise((resolve11) => {
+      this.waiters.set(messageId, resolve11);
+    });
+    await this.send({ ...input, kind: input.kind ?? "question" }, messageId);
+    const early = this.answered.get(messageId);
+    if (early) {
+      this.waiters.delete(messageId);
+      this.answered.delete(messageId);
+      return early;
+    }
+    return waited;
+  }
+  async reply(input) {
+    const target = input.inReplyTo;
+    if (!target || !this.pending.has(target))
+      throw new UncorrelatedReplyError(target);
+    const message = this.compose(input);
+    this.log.push(message);
+    this.pending.delete(target);
+    const waiter = this.waiters.get(target);
+    if (waiter) {
+      this.waiters.delete(target);
+      waiter(message);
+    }
+    this.answered.set(target, message);
+    await this.attemptDelivery(message);
+    return message;
+  }
+  pendingAsks(participantId) {
+    const asks = [...this.pending.values()].filter((ask) => !participantId || ask.message.from === participantId || ask.message.to === participantId);
+    return asks.sort((a, b) => a.askedAt - b.askedAt);
+  }
+  attention(participantId) {
+    return [...this.pending.values()].some((ask) => ask.message.to === participantId);
+  }
+  impliedState(activationId) {
+    const asks = [...this.pending.values()].filter((a) => a.message.activationId === activationId);
+    if (asks.some((a) => a.message.kind === "escalation"))
+      return "escalated";
+    return asks.length > 0 ? "needs_reply" : undefined;
+  }
+  history() {
+    return [...this.log];
+  }
+  compose(input, messageId) {
+    return composeInteractionMessage(input, {
+      messageId: messageId ?? this.newId(),
+      createdAt: this.now()
+    });
+  }
+  async attemptDelivery(message) {
+    if (!this.deliver)
+      return false;
+    try {
+      return await this.deliver(message) === true;
+    } catch {
+      return false;
+    }
+  }
+}
+function composeInteractionMessage(input, identity2) {
+  return {
+    messageId: identity2.messageId,
+    kind: input.kind,
+    from: input.from,
+    to: input.to,
+    activationId: input.activationId,
+    attemptId: input.attemptId,
+    ...input.piSessionId ? { piSessionId: input.piSessionId } : {},
+    body: input.body,
+    ...input.inReplyTo ? { inReplyTo: input.inReplyTo } : {},
+    createdAt: identity2.createdAt
+  };
+}
+
+// src/activation/transport/pending-store.ts
+import { existsSync as existsSync15, mkdirSync as mkdirSync5, readdirSync as readdirSync2, readFileSync as readFileSync9, renameSync as renameSync2, unlinkSync, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join13 } from "node:path";
+var KINDS_AWAITING_REPLY = new Set(["question", "escalation"]);
+function createsPendingAsk(kind) {
+  return KINDS_AWAITING_REPLY.has(kind);
+}
+function interactionsRoot(repoRoot) {
+  return join13(repoRoot, ".specialists", "interactions");
+}
+function recordPath(repoRoot, activationId, messageId) {
+  return join13(interactionsRoot(repoRoot), activationId, `${messageId}.json`);
+}
+function replyPath(repoRoot, activationId, messageId) {
+  return join13(interactionsRoot(repoRoot), activationId, `${messageId}.reply.json`);
+}
+function writeAtomic(path, value, exclusive = false) {
+  if (exclusive && existsSync15(path)) {
+    throw new Error(`interaction record already exists: ${path}`);
+  }
+  const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync4(tmp, `${JSON.stringify(value, null, 2)}
+`, { mode: 384 });
+  try {
+    renameSync2(tmp, path);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {}
+    throw err;
+  }
+}
+function readJson(path) {
+  if (!existsSync15(path))
+    return;
+  try {
+    return JSON.parse(readFileSync9(path, "utf-8"));
+  } catch {
+    return;
+  }
+}
+function create(repoRoot, input) {
+  const record = {
+    messageId: input.messageId,
+    activationId: input.activationId,
+    kind: input.kind,
+    createdAtMs: input.createdAtMs ?? Date.now(),
+    message: input.message,
+    delivery: { state: "pending", attempts: [] }
+  };
+  mkdirSync5(join13(interactionsRoot(repoRoot), input.activationId), { recursive: true, mode: 448 });
+  writeAtomic(recordPath(repoRoot, input.activationId, input.messageId), record, true);
+  return record;
+}
+function read(repoRoot, activationId, messageId) {
+  return readJson(recordPath(repoRoot, activationId, messageId));
+}
+function readReply(repoRoot, activationId, messageId) {
+  return readJson(replyPath(repoRoot, activationId, messageId));
+}
+function recordAttempt(repoRoot, activationId, messageId, attempt) {
+  const record = read(repoRoot, activationId, messageId);
+  if (!record)
+    throw new Error(`no interaction record for ${activationId}/${messageId}`);
+  record.delivery.attempts.push(attempt);
+  if (record.delivery.state !== "delivered") {
+    record.delivery.state = attempt.outcome;
+  }
+  writeAtomic(recordPath(repoRoot, activationId, messageId), record);
+  return record;
+}
+function recordReceipt(repoRoot, activationId, messageId, receipt) {
+  const record = read(repoRoot, activationId, messageId);
+  if (!record)
+    throw new Error(`no interaction record for ${activationId}/${messageId}`);
+  if (receipt.origMsgId !== messageId) {
+    throw new Error(`receipt orig_msg_id ${receipt.origMsgId} does not match ${messageId}`);
+  }
+  record.delivery.state = "delivered";
+  record.delivery.receiptMsgId = receipt.receiptMsgId;
+  record.delivery.deliveredAtMs = receipt.atMs ?? Date.now();
+  writeAtomic(recordPath(repoRoot, activationId, messageId), record);
+  return record;
+}
+function isConfirmable(kind) {
+  return createsPendingAsk(kind);
+}
+function recordReplyDelivery(repoRoot, activationId, messageId, reply) {
+  const record = read(repoRoot, activationId, messageId);
+  if (!record)
+    throw new Error(`no interaction record for ${activationId}/${messageId}`);
+  if (reply.inReplyTo !== messageId) {
+    throw new Error(`reply inReplyTo ${String(reply.inReplyTo)} does not match ${messageId}`);
+  }
+  if (!isConfirmable(record.kind))
+    return record;
+  if (record.delivery.state !== "sent_unconfirmed")
+    return record;
+  record.delivery.state = "delivered";
+  record.delivery.deliveredAtMs = reply.atMs ?? Date.now();
+  writeAtomic(recordPath(repoRoot, activationId, messageId), record);
+  return record;
+}
+
+// src/activation/peer-bridge.ts
+var DEFAULT_REPLY_TIMEOUT_MS = 60 * 60 * 1000;
+var DEFAULT_POLL_INTERVAL_MS = 500;
+function createPeerDelivery(options) {
+  const {
+    transport,
+    adapter,
+    repoRoot,
+    coordinatorSessionId,
+    replyTimeoutMs = DEFAULT_REPLY_TIMEOUT_MS,
+    pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+    onPush,
+    onReplyRouted
+  } = options;
+  const watched = new Set;
+  const watchForReply = (message) => {
+    if (watched.has(message.messageId))
+      return;
+    watched.add(message.messageId);
+    const deadline = Date.now() + replyTimeoutMs;
+    const tick = async () => {
+      if (Date.now() > deadline) {
+        watched.delete(message.messageId);
+        return;
+      }
+      const stored = readReply(repoRoot, message.activationId, message.messageId);
+      if (!stored) {
+        setTimeout(() => void tick(), pollIntervalMs).unref?.();
+        return;
+      }
+      watched.delete(message.messageId);
+      try {
+        const reply = await transport().send({
+          kind: "reply",
+          from: message.to,
+          to: message.from,
+          activationId: message.activationId,
+          attemptId: message.attemptId,
+          body: bodyOf(stored.body),
+          inReplyTo: message.messageId
+        });
+        onReplyRouted?.(message, reply);
+      } catch {}
+    };
+    setTimeout(() => void tick(), pollIntervalMs).unref?.();
+  };
+  return async (message) => {
+    const result = await adapter.push({
+      messageId: message.messageId,
+      activationId: message.activationId,
+      kind: message.kind,
+      message,
+      body: message.body,
+      coordinatorSessionId
+    });
+    onPush?.(message, result);
+    if (message.kind === "question" || message.kind === "escalation")
+      watchForReply(message);
+    return result.outcome === "delivered";
+  };
+}
+function bodyOf(payload) {
+  if (typeof payload === "string")
+    return payload;
+  if (payload && typeof payload === "object") {
+    const body = payload.body;
+    if (typeof body === "string")
+      return body;
+  }
+  return String(payload ?? "");
+}
+
+// src/activation/transport/polling.ts
+async function awaitReply(repoRoot, activationId, messageId, options) {
+  const intervalMs = options.intervalMs ?? 500;
+  const deadline = Date.now() + options.timeoutMs;
+  for (;; ) {
+    const reply = readReply(repoRoot, activationId, messageId);
+    if (reply)
+      return reply;
+    if (options.signal?.aborted)
+      return;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0)
+      return;
+    await sleep(Math.min(intervalMs, remaining), options.signal);
+  }
+}
+function sleep(ms, signal) {
+  return new Promise((resolve11) => {
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve11();
+    }
+  });
+}
+
+// src/activation/transport/peer-transport.ts
+import { connect, createServer } from "node:net";
+
+// src/activation/transport/roster.ts
+import { existsSync as existsSync16, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "node:fs";
+import { homedir as homedir7 } from "node:os";
+import { join as join14 } from "node:path";
+var SUPPORTED_PEER_PROTOCOL = 1;
+function defaultRosterDir() {
+  return join14(homedir7(), ".claude", "sessions");
+}
+function procProbe() {
+  let bootSeconds;
+  const ticksPerSecond = 100;
+  return {
+    startOf(pid) {
+      try {
+        if (bootSeconds === undefined) {
+          const match = /^btime (\d+)$/m.exec(readFileSync10("/proc/stat", "utf-8"));
+          if (!match)
+            return;
+          bootSeconds = Number(match[1]);
+        }
+        const stat2 = readFileSync10(`/proc/${pid}/stat`, "utf-8");
+        const afterComm = stat2.slice(stat2.lastIndexOf(")") + 2).trim().split(/\s+/);
+        const ticksSinceBoot = Number(afterComm[19]);
+        if (!Number.isFinite(ticksSinceBoot))
+          return;
+        return { ticksSinceBoot, epochSeconds: bootSeconds + ticksSinceBoot / ticksPerSecond };
+      } catch {
+        return;
+      }
+    }
+  };
+}
+var PROC_START_TOLERANCE_SECONDS = 2;
+function procStartMatches(claim, actual) {
+  if (typeof claim === "number")
+    return claim === actual.ticksSinceBoot;
+  const asNumber2 = Number(claim);
+  if (claim.trim() !== "" && Number.isFinite(asNumber2))
+    return asNumber2 === actual.ticksSinceBoot;
+  const claimedMs = Date.parse(claim);
+  if (!Number.isFinite(claimedMs))
+    return false;
+  return Math.abs(actual.epochSeconds - claimedMs / 1000) <= PROC_START_TOLERANCE_SECONDS;
+}
+function evaluateRegistration(registration, probe) {
+  if (registration.peerProtocol !== SUPPORTED_PEER_PROTOCOL) {
+    return { reason: "unsupported_peer_protocol" };
+  }
+  if (!registration.messagingSocketPath) {
+    return { reason: "no_socket_path" };
+  }
+  if (registration.procStart === undefined || registration.procStart === null || registration.procStart === "") {
+    return { reason: "missing_proc_start" };
+  }
+  const actualStart = probe.startOf(registration.pid);
+  if (actualStart === undefined) {
+    return { reason: "no_proc_entry" };
+  }
+  if (!procStartMatches(registration.procStart, actualStart)) {
+    return { reason: "proc_start_mismatch" };
+  }
+  return {
+    route: {
+      routeRef: `pid:${registration.pid}/session:${registration.sessionId}`,
+      pid: registration.pid,
+      sessionId: registration.sessionId,
+      socketPath: registration.messagingSocketPath,
+      cwd: registration.cwd,
+      name: registration.name,
+      reportedStatus: registration.status
+    }
+  };
+}
+function scanRoster(options = {}) {
+  const dir = options.dir ?? defaultRosterDir();
+  const probe = options.probe ?? procProbe();
+  const live = [];
+  const rejected = [];
+  if (!existsSync16(dir))
+    return { live, rejected };
+  for (const file of readdirSync3(dir)) {
+    if (!file.endsWith(".json"))
+      continue;
+    let registration;
+    try {
+      registration = JSON.parse(readFileSync10(join14(dir, file), "utf-8"));
+    } catch {
+      rejected.push({ file, reason: "unparsable" });
+      continue;
+    }
+    const verdict = evaluateRegistration(registration, probe);
+    if ("route" in verdict)
+      live.push(verdict.route);
+    else
+      rejected.push({ file, pid: registration.pid, reason: verdict.reason });
+  }
+  return { live, rejected };
+}
+function selectRoute(coordinatorSessionId, options = {}) {
+  return scanRoster(options).live.find((route) => route.sessionId === coordinatorSessionId);
+}
+
+// src/activation/transport/peer-transport.ts
+var MAX_LINE_BYTES = 1024 * 1024;
+var ENVELOPE_TAG = "cross-session-message";
+var escapeBody = (body) => body.replace(new RegExp(`</(?=${ENVELOPE_TAG}(?:[>\\s/]|$))`, "gi"), "<\\/");
+function buildEnvelope(input) {
+  const attrs = [];
+  if (input.from)
+    attrs.push(`from="${input.from}"`);
+  if (input.fromName)
+    attrs.push(`from-name="${input.fromName.replace(/["<>]/g, "")}"`);
+  const prefix = attrs.length ? ` ${attrs.join(" ")}` : "";
+  return `<${ENVELOPE_TAG}${prefix}>
+${escapeBody(input.body)}
+</${ENVELOPE_TAG}>`;
+}
+function buildUserFrame(input) {
+  return {
+    msgV: 1,
+    msg_id: input.msgId,
+    type: "user",
+    priority: input.priority ?? "next",
+    ...input.from ? { from: input.from } : {},
+    ...input.sessionId ? { session_id: input.sessionId } : {},
+    message: { role: "user", content: input.content }
+  };
+}
+function sendFrame(socketPath, frame, timeoutMs = 5000) {
+  return new Promise((resolve11, reject) => {
+    const payload = `${JSON.stringify(frame)}
+`;
+    if (Buffer.byteLength(payload) > MAX_LINE_BYTES) {
+      reject(new Error(`frame exceeds ${MAX_LINE_BYTES} bytes; the peer would drop the connection`));
+      return;
+    }
+    const socket = connect({ path: socketPath });
+    socket.setTimeout(timeoutMs, () => {
+      socket.destroy();
+      reject(new Error(`timed out writing to ${socketPath}`));
+    });
+    socket.on("error", reject);
+    socket.on("connect", () => socket.end(payload, () => resolve11()));
+  });
+}
+
+// src/activation/transport/peer-adapter.ts
+class PeerAdapter {
+  options;
+  constructor(options) {
+    this.options = options;
+  }
+  async push(request) {
+    const { repoRoot, emit } = this.options;
+    const existing = read(repoRoot, request.activationId, request.messageId);
+    const record = existing ?? create(repoRoot, {
+      messageId: request.messageId,
+      activationId: request.activationId,
+      kind: request.kind,
+      message: request.message
+    });
+    const route = selectRoute(request.coordinatorSessionId, {
+      dir: this.options.rosterDir,
+      probe: this.options.probe
+    });
+    if (!route) {
+      emit?.({ event: "peer.route_absent", activationId: request.activationId, messageId: request.messageId });
+      return {
+        outcome: "no_route",
+        record: recordAttempt(repoRoot, request.activationId, request.messageId, {
+          atMs: Date.now(),
+          route: `session:${request.coordinatorSessionId}`,
+          outcome: "undeliverable",
+          detail: "no live registration matched this coordinator session"
+        })
+      };
+    }
+    emit?.({
+      event: "peer.route_selected",
+      activationId: request.activationId,
+      messageId: request.messageId,
+      routeRef: route.routeRef
+    });
+    const receiptTimeoutMs = this.options.receiptTimeoutMs ?? 1e4;
+    const pendingReceipt = this.options.receipts?.waitForReceipt(request.messageId, receiptTimeoutMs);
+    const frame = buildUserFrame({
+      msgId: request.messageId,
+      content: buildEnvelope({
+        from: this.options.selfAddress,
+        fromName: this.options.selfName,
+        body: request.body
+      }),
+      from: this.options.selfAddress
+    });
+    try {
+      await sendFrame(route.socketPath, frame);
+    } catch (err) {
+      emit?.({
+        event: "peer.send_attempted",
+        activationId: request.activationId,
+        messageId: request.messageId,
+        routeRef: route.routeRef,
+        detail: String(err)
+      });
+      return {
+        outcome: "send_failed",
+        route,
+        record: recordAttempt(repoRoot, request.activationId, request.messageId, {
+          atMs: Date.now(),
+          route: route.routeRef,
+          outcome: "undeliverable",
+          detail: err instanceof Error ? err.message : String(err)
+        })
+      };
+    }
+    recordAttempt(repoRoot, request.activationId, request.messageId, {
+      atMs: Date.now(),
+      route: route.routeRef,
+      outcome: "sent_unconfirmed"
+    });
+    const receipt = await pendingReceipt;
+    if (!receipt) {
+      emit?.({
+        event: "peer.no_receipt",
+        activationId: request.activationId,
+        messageId: request.messageId,
+        routeRef: route.routeRef
+      });
+      return { outcome: "no_receipt", route, record: read(repoRoot, request.activationId, request.messageId) };
+    }
+    emit?.({
+      event: "peer.receipt",
+      activationId: request.activationId,
+      messageId: request.messageId,
+      routeRef: route.routeRef,
+      detail: receipt.status
+    });
+    if (!isDeliveredStatus(receipt.status)) {
+      return {
+        outcome: "refused",
+        route,
+        reason: receipt.reason ?? receipt.status,
+        record: recordAttempt(repoRoot, request.activationId, request.messageId, {
+          atMs: Date.now(),
+          route: route.routeRef,
+          outcome: "refused",
+          detail: receipt.reason ?? receipt.status
+        })
+      };
+    }
+    return {
+      outcome: "delivered",
+      route,
+      record: recordReceipt(repoRoot, request.activationId, request.messageId, {
+        origMsgId: request.messageId,
+        receiptMsgId: receipt.msg_id
+      })
+    };
+  }
+  async ask(request, wait) {
+    const push = await this.push(request);
+    const reply = await awaitReply(this.options.repoRoot, request.activationId, request.messageId, wait);
+    if (!reply)
+      return { push };
+    const inReplyTo = replyCorrelation(reply.body) ?? request.messageId;
+    const record = recordReplyDelivery(this.options.repoRoot, request.activationId, request.messageId, {
+      inReplyTo,
+      atMs: reply.repliedAtMs
+    });
+    return { push: { ...push, record, outcome: outcomeAfterReply(push.outcome, record) }, reply: reply.body };
+  }
+}
+function replyCorrelation(body) {
+  if (typeof body !== "object" || body === null)
+    return;
+  const value = body.inReplyTo;
+  return typeof value === "string" ? value : undefined;
+}
+function outcomeAfterReply(current, record) {
+  return record.delivery.state === "delivered" && current !== "refused" ? "delivered" : current;
+}
+function isDeliveredStatus(status) {
+  return status === "delivered" || status === "approved" || status === "released";
+}
+
+// src/activation/workspace-lease.ts
+import { createHash as createHash5 } from "node:crypto";
+import { existsSync as existsSync17, linkSync, mkdirSync as mkdirSync6, readFileSync as readFileSync11, realpathSync as realpathSync3, renameSync as renameSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join15 } from "node:path";
+
+// src/activation/types.ts
+class DispatchRejectedError extends Error {
+  reason;
+  detail;
+  constructor(reason, detail = {}) {
+    const lines = [
+      "SPECIALIST_DISPATCH_REJECTED",
+      "",
+      ...detail.activationId ? [`activation:
+  ${detail.activationId}`, ""] : [],
+      ...detail.beadId ? [`bead:
+  ${detail.beadId}`, ""] : [],
+      ...detail.specialist ? [`specialist:
+  ${detail.specialist}`, ""] : [],
+      ...detail.note ? [`note:
+  ${detail.note}`, ""] : [],
+      `reason:
+  ${reason}`,
+      ...detail.missing?.length ? ["", `missing:
+${detail.missing.map((m) => `  - ${m}`).join(`
+`)}`] : [],
+      ...detail.requestedModel ? ["", `requested model:
+  ${detail.requestedModel}`] : [],
+      ...detail.workspace ? ["", `workspace:
+  ${detail.workspace}`] : [],
+      ...detail.holder ? ["", `holder:
+  ${detail.holder}`] : [],
+      "",
+      `AgentSession:
+  not created`
+    ];
+    super(lines.join(`
+`));
+    this.reason = reason;
+    this.detail = detail;
+    this.name = "DispatchRejectedError";
+  }
+}
+
+// src/activation/workspace-lease.ts
+function procLeaseProbe() {
+  return {
+    canVerify: () => existsSync17("/proc/self/stat"),
+    startTicks(pid) {
+      try {
+        const stat2 = readFileSync11(`/proc/${pid}/stat`, "utf-8");
+        const afterComm = stat2.slice(stat2.lastIndexOf(")") + 2).trim().split(/\s+/);
+        const ticks = Number(afterComm[19]);
+        return Number.isFinite(ticks) ? ticks : undefined;
+      } catch {
+        return;
+      }
+    }
+  };
+}
+function selfHolder(probe = procLeaseProbe()) {
+  const startTicks = probe.startTicks(process.pid);
+  if (startTicks === undefined) {
+    throw new Error("cannot read this process start time; a lease cannot be acquired without the PID-reuse guard");
+  }
+  return { pid: process.pid, startTicks };
+}
+function workspaceKey(workspace) {
+  let resolved = workspace.worktreePath;
+  try {
+    resolved = realpathSync3(workspace.worktreePath);
+  } catch {}
+  return createHash5("sha256").update(resolved).digest("hex").slice(0, 16);
+}
+function leaseDir(workspace) {
+  return join15(workspace.gitCommonDir ?? workspace.repositoryRoot, ".specialists", "leases");
+}
+function leasePath(workspace) {
+  return join15(leaseDir(workspace), `${workspaceKey(workspace)}.json`);
+}
+function inspect(workspace, probe = procLeaseProbe()) {
+  const path = leasePath(workspace);
+  if (!existsSync17(path))
+    return { state: "free" };
+  let lease;
+  try {
+    lease = JSON.parse(readFileSync11(path, "utf-8"));
+    if (typeof lease?.holder?.pid !== "number")
+      throw new Error("missing holder");
+  } catch {
+    return { state: "uncertain", uncertainReason: "unreadable_record" };
+  }
+  if (!probe.canVerify()) {
+    return { state: "uncertain", lease, uncertainReason: "liveness_unverifiable" };
+  }
+  const actual = probe.startTicks(lease.holder.pid);
+  if (actual === undefined) {
+    return { state: "uncertain", lease, uncertainReason: "holder_process_gone" };
+  }
+  if (actual !== lease.holder.startTicks) {
+    return { state: "uncertain", lease, uncertainReason: "holder_start_mismatch" };
+  }
+  return { state: "held", lease };
+}
+function acquire(request, probe = procLeaseProbe()) {
+  const { workspace, activationId, attemptId } = request;
+  const path = leasePath(workspace);
+  const status = inspect(workspace, probe);
+  if (status.state === "held" && status.lease) {
+    if (status.lease.activationId === activationId) {
+      return rewrite(workspace, { ...status.lease, attemptId });
+    }
+    throw refusal("workspace_held_by_another_writer", request, status);
+  }
+  if (status.state === "uncertain") {
+    throw refusal("workspace_lease_uncertain", request, status);
+  }
+  const lease = {
+    workspaceKey: workspaceKey(workspace),
+    worktreePath: workspace.worktreePath,
+    activationId,
+    attemptId,
+    specialist: request.specialist,
+    holder: selfHolder(probe),
+    acquiredAtMs: Date.now()
+  };
+  mkdirSync6(leaseDir(workspace), { recursive: true, mode: 448 });
+  const staging = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync5(staging, `${JSON.stringify(lease, null, 2)}
+`, { mode: 384 });
+  try {
+    linkSync(staging, path);
+  } catch (err) {
+    if (err.code === "EEXIST") {
+      throw refusal("workspace_held_by_another_writer", request, inspect(workspace, probe));
+    }
+    throw err;
+  } finally {
+    try {
+      unlinkSync2(staging);
+    } catch {}
+  }
+  return lease;
+}
+function rewrite(workspace, lease) {
+  const path = leasePath(workspace);
+  const staging = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync5(staging, `${JSON.stringify(lease, null, 2)}
+`, { mode: 384 });
+  renameSync3(staging, path);
+  return lease;
+}
+function release(workspace, activationId, probe = procLeaseProbe()) {
+  const status = inspect(workspace, probe);
+  if (status.state === "free")
+    return;
+  if (status.state === "uncertain") {
+    throw new DispatchRejectedError("workspace_lease_uncertain", {
+      activationId,
+      workspace: workspace.worktreePath,
+      holder: describeHolder(status),
+      note: "refusing to release a lease whose holder liveness is unknown; recovery is PRD Phase 9"
+    });
+  }
+  if (status.lease && status.lease.activationId !== activationId) {
+    throw new DispatchRejectedError("workspace_lease_not_held_by_caller", {
+      activationId,
+      workspace: workspace.worktreePath,
+      holder: describeHolder(status)
+    });
+  }
+  try {
+    unlinkSync2(leasePath(workspace));
+  } catch (err) {
+    if (err.code !== "ENOENT")
+      throw err;
+  }
+}
+function describeHolder(status) {
+  if (!status.lease)
+    return status.uncertainReason ?? "unknown";
+  const { activationId, specialist, holder } = status.lease;
+  const who = specialist ? `${specialist} ` : "";
+  const why = status.uncertainReason ? ` (${status.uncertainReason})` : "";
+  return `${who}${activationId} pid ${holder.pid}${why}`;
+}
+function refusal(reason, request, status) {
+  return new DispatchRejectedError(reason, {
+    activationId: request.activationId,
+    specialist: request.specialist,
+    workspace: request.workspace.worktreePath,
+    holder: describeHolder(status),
+    note: status.state === "uncertain" ? "the previous holder's liveness could not be established; the lease is uncertain, not free" : "exactly one writer holds a mutable workspace at a time"
+  });
+}
+var NON_MUTATING_TOOLS = new Set([
+  "read",
+  "grep",
+  "glob",
+  "ls",
+  "list",
+  "search",
+  "view",
+  "todowrite",
+  "websearch",
+  "webfetch"
+]);
+function isMutatingTool(toolName) {
+  return !NON_MUTATING_TOOLS.has(toolName.trim().toLowerCase());
+}
+function admitCoordinatorToolCall(input, probe = procLeaseProbe()) {
+  if (!isMutatingTool(input.toolName))
+    return { allow: true };
+  const status = inspect(input.workspace, probe);
+  if (status.state === "held") {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} is held by ${describeHolder(status)}; ` + `${input.toolName} would mutate a workspace a Specialist is currently writing`
+    };
+  }
+  if (status.state === "uncertain") {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} lease is uncertain (${status.uncertainReason}); ` + "mutation is refused until recovery resolves the previous holder"
+    };
+  }
+  return { allow: true };
+}
+function admitToolCall(input, probe = procLeaseProbe()) {
+  if (!isMutatingTool(input.toolName))
+    return { allow: true };
+  const status = inspect(input.workspace, probe);
+  if (status.state === "held" && status.lease?.activationId === input.activationId) {
+    return { allow: true };
+  }
+  if (status.state === "held") {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} is held by ${describeHolder(status)}; ` + `${input.toolName} would mutate a workspace this activation does not hold`
+    };
+  }
+  if (status.state === "uncertain") {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} lease is uncertain (${status.uncertainReason}); ` + "mutation is refused until recovery resolves the previous holder"
+    };
+  }
+  return {
+    allow: false,
+    reason: `workspace ${input.workspace.worktreePath} is not leased by this activation; ` + `${input.toolName} may not mutate it`
+  };
+}
+
+// src/activation/guarded-tools.ts
+var FACTORY_NAMES = {
+  edit: "createEditTool",
+  write: "createWriteTool",
+  bash: "createBashTool",
+  powershell: "createPowerShellTool"
+};
+function createGuardedTools(sdk, input) {
+  const sdkAny = sdk;
+  const tools = [];
+  const guarded = [];
+  const unguardable = [];
+  for (const name of input.toolNames) {
+    const key = name.trim().toLowerCase();
+    const factoryName = FACTORY_NAMES[key];
+    if (!factoryName)
+      continue;
+    const factory = sdkAny[factoryName];
+    if (!factory) {
+      unguardable.push(name);
+      continue;
+    }
+    const original = factory(input.cwd);
+    const originalExecute = original.execute.bind(original);
+    tools.push({
+      ...original,
+      execute: async (...args) => {
+        const verdict = input.admit(name);
+        if (verdict.allow)
+          return originalExecute(...args);
+        const refusal2 = {
+          content: [{
+            type: "text",
+            text: `Refused: ${verdict.reason ?? `${name} is not admitted against this workspace`}`
+          }],
+          details: { blocked: true, tool: name }
+        };
+        return refusal2;
+      }
+    });
+    guarded.push(name);
+  }
+  return { tools, guarded, unguardable };
+}
+
+// src/activation/ask-tool.ts
+var ASK_TOOL = "ask_coordinator";
+var ESCALATE_TOOL = "escalate_to_coordinator";
+var toolText = (text) => ({
+  content: [{ type: "text", text }],
+  details: {}
+});
+function createAskTools(sdk, ctx) {
+  const ask = async (kind, body) => {
+    if (!body?.trim()) {
+      return toolText("Refused: an empty question cannot be answered. State the question.");
+    }
+    ctx.onAsk?.(kind, body);
+    const reply = await ctx.transport.request({
+      kind,
+      from: ctx.self,
+      to: ctx.parent,
+      activationId: ctx.activationId,
+      attemptId: ctx.currentAttemptId(),
+      body
+    });
+    ctx.onAnswered?.(kind);
+    return toolText(reply.body);
+  };
+  return [
+    sdk.defineTool({
+      name: ASK_TOOL,
+      description: "Ask the coordinator a clarifying question and WAIT for the answer. Use when the " + "task is ambiguous and guessing would produce work that has to be redone. Your " + "session stays alive while you wait and the answer is returned to you here.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The question. Be specific and self-contained." }
+        },
+        required: ["question"]
+      },
+      execute: async (_toolCallId, args) => ask("question", args.question)
+    }),
+    sdk.defineTool({
+      name: ESCALATE_TOOL,
+      description: "Escalate a blocker that you cannot resolve and that the coordinator may not be " + "able to resolve either — a missing permission, a contradiction in the contract, " + "a decision that is not yours to make. You stay alive and resume when it is resolved.",
+      parameters: {
+        type: "object",
+        properties: {
+          blocker: { type: "string", description: "What is blocking you and what decision is needed." }
+        },
+        required: ["blocker"]
+      },
+      execute: async (_toolCallId, args) => ask("escalation", args.blocker)
+    })
+  ];
+}
+
+// src/activation/pi-sdk.ts
+import { existsSync as existsSync18 } from "node:fs";
+import { join as join16 } from "node:path";
+import { pathToFileURL } from "node:url";
+var PI_SDK_PACKAGE = "@earendil-works/pi-coding-agent";
+var REQUIRED_EXPORTS = [
+  "createAgentSession",
+  "ModelRuntime",
+  "resolveModelScopeWithDiagnostics",
+  "defineTool"
+];
+
+class PiSdkUnavailableError extends Error {
+  attempted;
+  constructor(attempted, cause) {
+    super(`Native Specialist activation requires ${PI_SDK_PACKAGE}, which could not be resolved.
+` + `Tried:
+${attempted.map((p) => `  • ${p}`).join(`
+`)}
+` + `Install pi (npm i -g ${PI_SDK_PACKAGE}) or add it as a dependency. ` + `The legacy 'sp run' path does not require it.`);
+    this.attempted = attempted;
+    this.name = "PiSdkUnavailableError";
+    if (cause !== undefined)
+      this.cause = cause;
+  }
+}
+var cached4;
+function piSdkCandidates() {
+  const candidates = [PI_SDK_PACKAGE];
+  const globalDir = resolveGlobalNodeModulesDir2();
+  if (globalDir) {
+    const entry = join16(globalDir, PI_SDK_PACKAGE, "dist", "index.js");
+    if (existsSync18(entry))
+      candidates.push(pathToFileURL(entry).href);
+  }
+  return candidates;
+}
+async function loadPiSdk() {
+  if (cached4)
+    return cached4;
+  const attempted = piSdkCandidates();
+  let lastError;
+  for (const specifier of attempted) {
+    try {
+      const mod = await import(specifier);
+      const missing = REQUIRED_EXPORTS.filter((name) => typeof mod[name] === "undefined");
+      if (missing.length > 0) {
+        lastError = new Error(`${specifier} is missing exports: ${missing.join(", ")}`);
+        continue;
+      }
+      cached4 = mod;
+      return cached4;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new PiSdkUnavailableError(attempted, lastError);
+}
+
+// src/activation/model-gate.ts
+async function createGateModelRuntime(sdk) {
+  return sdk.ModelRuntime.create({ allowModelNetwork: false });
+}
+async function validateModelAvailable(sdk, modelRuntime, requested) {
+  let scope;
+  try {
+    scope = await sdk.resolveModelScopeWithDiagnostics([requested], modelRuntime);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `model resolution failed: ${error instanceof Error ? error.message : String(error)}`,
+      diagnostics: []
+    };
+  }
+  const diagnostics = scope.diagnostics ?? [];
+  const noMatch = diagnostics.find((d) => d.code === "no-match");
+  if (noMatch) {
+    return {
+      ok: false,
+      reason: noMatch.message || `no model matches "${requested}"`,
+      diagnostics
+    };
+  }
+  const first = scope.scopedModels?.[0]?.model;
+  if (!first) {
+    return { ok: false, reason: `no model resolved for "${requested}"`, diagnostics };
+  }
+  const provider = first.provider;
+  if (!provider) {
+    return { ok: false, reason: `resolved model for "${requested}" has no provider`, diagnostics };
+  }
+  const authed = await modelRuntime.hasConfiguredAuth(provider);
+  if (!authed) {
+    return {
+      ok: false,
+      reason: `provider "${provider}" has no configured auth for "${requested}"`,
+      provider,
+      diagnostics
+    };
+  }
+  return {
+    ok: true,
+    model: first,
+    resolvedModel: first.id ? `${provider}/${first.id}`.replace(`${provider}/${provider}/`, `${provider}/`) : requested,
+    provider,
+    diagnostics
+  };
+}
+
+// src/activation/registry.ts
+class FleetRegistry {
+  records = new Map;
+  register(record) {
+    this.records.set(record.snapshot.activationId, record);
+  }
+  get(activationId) {
+    return this.records.get(activationId);
+  }
+  remove(activationId) {
+    this.records.delete(activationId);
+  }
+  list() {
+    return [...this.records.values()].map((r) => r.snapshot);
+  }
+  projection(activationId) {
+    return this.records.get(activationId)?.snapshot;
+  }
+}
+function nextAttemptId(current) {
+  const match = /^(.*):(\d+)$/.exec(current);
+  if (!match)
+    return `${current}:2`;
+  const [, prefix, count] = match;
+  return `${prefix}:${Number(count) + 1}`;
+}
+var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
+
+// src/activation/native-host.ts
+var WRITE_TIERS = new Set(["MEDIUM", "HIGH"]);
+var NULL_FORENSIC_SINK = { emit: () => {} };
+
+class NativeActivationHost {
+  loader;
+  beadsClient;
+  forensics;
+  loadSdk;
+  beadGate;
+  cwd;
+  now;
+  registry = new FleetRegistry;
+  interactions;
+  constructor(deps = {}) {
+    this.cwd = deps.cwd ?? process.cwd();
+    this.interactions = new InteractionTransport(deps.peer ? { deliver: this.wirePeerDelivery(deps.peer) } : {});
+    this.loader = deps.loader ?? new SpecialistLoader({ projectDir: this.cwd });
+    this.beadsClient = deps.beadsClient ?? new BeadsClient;
+    this.forensics = deps.forensics ?? NULL_FORENSIC_SINK;
+    this.loadSdk = deps.loadSdk ?? loadPiSdk;
+    this.beadGate = deps.beadGate ?? {};
+    this.now = deps.now ?? (() => Date.now());
+  }
+  async start(request) {
+    const activationId = `act:${randomUUID3().slice(0, 12)}`;
+    const attemptId = `att:${activationId.slice(4)}:1`;
+    const participantId = `specialist::${request.specialist}`;
+    const emit = (name, payload) => this.forensics.emit({
+      activationId,
+      attemptId,
+      participantId,
+      specialist: request.specialist,
+      beadId: request.beadId,
+      name,
+      payload
+    });
+    emit("activation_requested", {
+      requested_by: request.requestedByParticipantId,
+      model_override: request.modelOverride ?? null
+    });
+    const reject = (reason, detail = {}) => {
+      emit("activation_rejected", { reason, ...detail });
+      throw new DispatchRejectedError(reason, {
+        specialist: request.specialist,
+        beadId: request.beadId,
+        ...detail
+      });
+    };
+    const specialist = await this.loader.get(request.specialist).catch((error) => {
+      return reject("unknown_specialist", {
+        note: error instanceof Error ? error.message : String(error)
+      });
+    });
+    if (!specialist)
+      return reject("unknown_specialist");
+    const execution = specialist.specialist.execution;
+    const tier = execution.permission_required ?? "READ_ONLY";
+    const access = WRITE_TIERS.has(tier) ? "write" : "read";
+    const bead = this.beadsClient.readBead(request.beadId);
+    if (!bead)
+      return reject("bead_unreadable");
+    const readiness = evaluateBeadReadiness(bead, this.beadGate);
+    if (!readiness.ok) {
+      return reject("bead_contract_incomplete", {
+        note: readiness.reason,
+        ...readiness.missing.length > 0 ? { missing: readiness.missing } : {}
+      });
+    }
+    const toolContract = resolveRuntimeToolContract({
+      level: tier,
+      specialistName: request.specialist,
+      specialistPermissions: specialist.specialist.permissions,
+      cwd: this.cwd
+    });
+    if (!toolContract || toolContract.toolsList.length === 0) {
+      return reject("empty_tool_contract", { tier });
+    }
+    try {
+      validateBeforeRun(specialist, tier, toolContract);
+    } catch (error) {
+      return reject("preflight_failed", {
+        note: error instanceof Error ? error.message : String(error)
+      });
+    }
+    const sdk = await this.loadSdk();
+    const configuredModel = resolveModelChain(execution)[0];
+    const requestedModel = request.modelOverride ?? configuredModel;
+    if (!requestedModel)
+      return reject("no_model_configured");
+    const modelRuntime = await createGateModelRuntime(sdk);
+    const modelCheck = await validateModelAvailable(sdk, modelRuntime, requestedModel);
+    if (!modelCheck.ok) {
+      return reject("model_unavailable", {
+        requestedModel,
+        note: modelCheck.reason
+      });
+    }
+    const resolvedModel = modelCheck.resolvedModel ?? requestedModel;
+    if (!modelCheck.model)
+      return reject("model_unresolved", { requestedModel });
+    const workspace = request.workspaceHint ?? {
+      repositoryRoot: this.cwd,
+      worktreePath: this.cwd
+    };
+    if (access === "write") {
+      try {
+        acquire({ workspace, activationId, attemptId, specialist: request.specialist });
+      } catch (error) {
+        if (error instanceof DispatchRejectedError) {
+          emit("lease_denied", {
+            workspace: workspace.worktreePath,
+            reason: error.reason,
+            note: error.detail.holder
+          });
+        }
+        emit("activation_rejected", { reason: "workspace_lease_unavailable" });
+        throw error;
+      }
+      emit("lease_acquired", { workspace: workspace.worktreePath });
+    }
+    const stepContract = compileStepContract({
+      bead,
+      specialist: specialist.specialist.metadata.name,
+      responseFormat: execution.response_format,
+      now: this.now
+    });
+    emit("step_contract_compiled", {
+      root_work_ref: stepContract.rootWorkRef,
+      inputs: stepContract.inputs.length,
+      outputs: stepContract.outputs.length,
+      non_goals: stepContract.nonGoals.length,
+      constraints: stepContract.constraints?.length ?? 0,
+      validation: stepContract.validation?.length ?? 0,
+      source_bead_revision: stepContract.provenance.sourceBeadRevision ?? null
+    });
+    emit("activation_admitted", {
+      tier,
+      access,
+      configured_model: configuredModel ?? null,
+      requested_model: requestedModel,
+      resolved_model: resolvedModel,
+      model_override: Boolean(request.modelOverride),
+      workspace: workspace.worktreePath,
+      tools: toolContract.toolsList.join(","),
+      custom_tools: `${ASK_TOOL},${ESCALATE_TOOL}`
+    });
+    const rendered = renderTaskPrompt({
+      specialist: specialist.specialist,
+      cwd: this.cwd,
+      beadId: request.beadId,
+      bead
+    });
+    const systemPrompt = buildSystemPrompt({
+      systemPromptTemplate: specialist.specialist.prompt.system ?? "",
+      templateVariables: rendered.beadTemplateVariables ?? {},
+      bare: execution.bare ?? false,
+      runCwd: this.cwd,
+      specialistName: specialist.specialist.metadata.name,
+      inputBeadId: request.beadId,
+      responseFormat: execution.response_format ?? "text",
+      outputType: execution.output_type ?? "custom",
+      outputContractSchema: undefined,
+      beadContextText: rendered.beadContextText ?? "",
+      readBeadForMemory: (id) => this.beadsClient.readBead(id)
+    });
+    emit("activation_starting", { pi_session_id: null });
+    const askTools = createAskTools(sdk, {
+      transport: this.interactions,
+      activationId,
+      currentAttemptId: () => this.registry.get(activationId)?.snapshot.attemptId ?? attemptId,
+      self: participantId,
+      parent: request.requestedByParticipantId,
+      onAsk: (kind, body) => {
+        const record = this.registry.get(activationId);
+        if (record)
+          record.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
+        emit(kind === "escalation" ? "escalation_raised" : "clarification_requested", { body });
+      },
+      onAnswered: (kind) => {
+        const record = this.registry.get(activationId);
+        if (record)
+          record.snapshot.state = "running";
+        emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
+      }
+    });
+    const guardedTools = createGuardedTools(sdk, {
+      toolNames: toolContract.toolsList,
+      cwd: workspace.worktreePath,
+      admit: (toolName) => admitToolCall({ toolName, workspace, activationId })
+    });
+    if (guardedTools.unguardable.length > 0) {
+      emit("lease_denied", {
+        workspace: workspace.worktreePath,
+        note: `cannot guard mutating tools: ${guardedTools.unguardable.join(", ")}`
+      });
+      return reject("unguardable_mutating_tools", {
+        note: `these tools mutate and cannot be fenced by the workspace lease on this runtime: ${guardedTools.unguardable.join(", ")}`
+      });
+    }
+    const { session } = await sdk.createAgentSession({
+      customTools: [...askTools, ...guardedTools.tools],
+      cwd: workspace.worktreePath,
+      model: modelCheck.model,
+      ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      noTools: "builtin",
+      tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
+      systemPrompt: systemPrompt.text
+    });
+    const startedAt = this.now();
+    const snapshot = {
+      activationId,
+      participantId,
+      attemptId,
+      specialist: request.specialist,
+      beadId: request.beadId,
+      state: "starting",
+      access,
+      workspace,
+      piSessionId: session.sessionId,
+      configuredModel,
+      requestedModel,
+      resolvedModel,
+      modelOverride: Boolean(request.modelOverride),
+      startedAt,
+      lastActivityAt: startedAt
+    };
+    emit("activation_started", { pi_session_id: session.sessionId });
+    const unsubscribe = session.subscribe((event) => this.onSessionEvent(snapshot, event, emit));
+    const result = this.runToSettled(snapshot, session, rendered.initial_prompt, emit);
+    this.registry.register({ snapshot, session, unsubscribe, result, stepContract });
+    return {
+      activationId,
+      participantId,
+      attemptId,
+      specialist: request.specialist,
+      beadId: request.beadId,
+      access,
+      workspace,
+      resolvedModel,
+      stepContract,
+      result
+    };
+  }
+  onSessionEvent(snapshot, event, emit) {
+    snapshot.lastActivityAt = this.now();
+    this.forensics.sessionEvent?.({
+      activationId: snapshot.activationId,
+      attemptId: snapshot.attemptId,
+      participantId: snapshot.participantId,
+      specialist: snapshot.specialist,
+      beadId: snapshot.beadId,
+      piSessionId: snapshot.piSessionId ?? "",
+      workspacePath: snapshot.workspace.worktreePath,
+      event
+    });
+    switch (event.type) {
+      case "agent_start":
+        snapshot.state = "running";
+        emit("turn_started");
+        break;
+      case "agent_end":
+        emit("turn_completed", { will_retry: Boolean(event.willRetry) });
+        break;
+      case "agent_settled":
+        snapshot.state = "settled";
+        emit("activation_settled");
+        this.releaseIfWriter(snapshot, "settled");
+        break;
+      case "auto_retry_start":
+        emit("retry_started", { attempt: event.attempt, max_attempts: event.maxAttempts });
+        break;
+      case "auto_retry_end":
+        emit("retry_completed", { success: event.success, attempt: event.attempt });
+        break;
+      case "compaction_start":
+        emit("compaction_started", { reason: event.reason });
+        break;
+      case "compaction_end":
+        emit("compaction_completed", { reason: event.reason, aborted: event.aborted });
+        break;
+      default:
+        break;
+    }
+  }
+  async runToSettled(snapshot, session, initialPrompt, emit) {
+    try {
+      await session.prompt(initialPrompt);
+      await session.waitForIdle();
+      const last = lastAssistantMessage(session.messages);
+      if (last && (last.stopReason === "error" || last.stopReason === "aborted")) {
+        const detail = last.errorMessage ?? `turn ended with stopReason "${last.stopReason}"`;
+        snapshot.state = "failed";
+        emit("activation_failed", { error: detail, stop_reason: last.stopReason });
+        return {
+          activationId: snapshot.activationId,
+          participantId: snapshot.participantId,
+          attemptId: snapshot.attemptId,
+          beadId: snapshot.beadId,
+          status: "failed",
+          output: undefined,
+          validation: { valid: false, errors: [detail] },
+          piSessionId: session.sessionId,
+          configuredModel: snapshot.configuredModel,
+          requestedModel: snapshot.requestedModel,
+          resolvedModel: snapshot.resolvedModel,
+          modelOverride: snapshot.modelOverride,
+          fallbackUsed: false,
+          completedAt: this.now()
+        };
+      }
+      const output = textOf(last);
+      emit("output_validation_started");
+      const validation = { valid: true };
+      emit("output_validation_passed");
+      snapshot.state = "settled";
+      emit("activation_completed", { pi_session_id: session.sessionId });
+      this.releaseIfWriter(snapshot, "completed");
+      return {
+        activationId: snapshot.activationId,
+        participantId: snapshot.participantId,
+        attemptId: snapshot.attemptId,
+        beadId: snapshot.beadId,
+        status: "completed",
+        output,
+        validation,
+        piSessionId: session.sessionId,
+        configuredModel: snapshot.configuredModel,
+        requestedModel: snapshot.requestedModel,
+        resolvedModel: snapshot.resolvedModel,
+        modelOverride: snapshot.modelOverride,
+        fallbackUsed: false,
+        completedAt: this.now()
+      };
+    } catch (error) {
+      snapshot.state = "failed";
+      const message = error instanceof Error ? error.message : String(error);
+      emit("activation_failed", { error: message });
+      return {
+        activationId: snapshot.activationId,
+        participantId: snapshot.participantId,
+        attemptId: snapshot.attemptId,
+        beadId: snapshot.beadId,
+        status: "failed",
+        output: undefined,
+        validation: { valid: false, errors: [message] },
+        piSessionId: session.sessionId,
+        configuredModel: snapshot.configuredModel,
+        requestedModel: snapshot.requestedModel,
+        resolvedModel: snapshot.resolvedModel,
+        modelOverride: snapshot.modelOverride,
+        fallbackUsed: false,
+        completedAt: this.now()
+      };
+    }
+  }
+  async answer(messageId, body) {
+    const ask = this.interactions.pendingAsks().find((a) => a.message.messageId === messageId);
+    if (!ask)
+      return;
+    return this.interactions.send({
+      kind: "reply",
+      from: ask.message.to,
+      to: ask.message.from,
+      activationId: ask.message.activationId,
+      attemptId: ask.message.attemptId,
+      body,
+      inReplyTo: messageId
+    });
+  }
+  releaseIfWriter(snapshot, reason) {
+    if (snapshot.access !== "write")
+      return;
+    try {
+      release(snapshot.workspace, snapshot.activationId);
+      this.forensics.emit({
+        activationId: snapshot.activationId,
+        attemptId: snapshot.attemptId,
+        participantId: snapshot.participantId,
+        specialist: snapshot.specialist,
+        beadId: snapshot.beadId,
+        name: "lease_released",
+        payload: { workspace: snapshot.workspace.worktreePath, reason }
+      });
+    } catch (error) {
+      this.forensics.emit({
+        activationId: snapshot.activationId,
+        attemptId: snapshot.attemptId,
+        participantId: snapshot.participantId,
+        specialist: snapshot.specialist,
+        beadId: snapshot.beadId,
+        name: "lease_uncertain",
+        payload: {
+          workspace: snapshot.workspace.worktreePath,
+          note: error instanceof Error ? error.message : String(error)
+        }
+      });
+    }
+  }
+  admitToolCall(activationId, toolName) {
+    const record = this.registry.get(activationId);
+    if (!record)
+      return { allow: false, reason: `unknown activation ${activationId}` };
+    const verdict = admitToolCall({
+      toolName,
+      workspace: record.snapshot.workspace,
+      activationId
+    });
+    if (!verdict.allow) {
+      this.forensics.emit({
+        activationId,
+        attemptId: record.snapshot.attemptId,
+        participantId: record.snapshot.participantId,
+        specialist: record.snapshot.specialist,
+        beadId: record.snapshot.beadId,
+        name: "tool_blocked",
+        payload: { tool: toolName, note: verdict.reason }
+      });
+    }
+    return verdict;
+  }
+  pendingAsks() {
+    return this.interactions.pendingAsks();
+  }
+  inspect(activationId) {
+    return this.registry.projection(activationId);
+  }
+  wirePeerDelivery(peer) {
+    const repoRoot = peer.repoRoot ?? this.cwd;
+    return createPeerDelivery({
+      transport: () => this.interactions,
+      adapter: peer.adapter ?? new PeerAdapter({
+        repoRoot,
+        emit: (event) => this.forensics.peerTransportEvent?.(event)
+      }),
+      repoRoot,
+      coordinatorSessionId: peer.coordinatorSessionId,
+      ...peer.replyTimeoutMs !== undefined ? { replyTimeoutMs: peer.replyTimeoutMs } : {},
+      ...peer.pollIntervalMs !== undefined ? { pollIntervalMs: peer.pollIntervalMs } : {}
+    });
+  }
+  list() {
+    return this.registry.list();
+  }
+  async stop(activationId, reason = "operator request") {
+    const record = this.registry.get(activationId);
+    if (!record)
+      return;
+    record.snapshot.state = "stopping";
+    try {
+      await record.session.abort();
+    } finally {
+      record.unsubscribe();
+      record.session.dispose();
+      record.snapshot.state = "stopped";
+      this.releaseIfWriter(record.snapshot, reason);
+      this.forensics.emit({
+        activationId,
+        attemptId: record.snapshot.attemptId,
+        participantId: record.snapshot.participantId,
+        specialist: record.snapshot.specialist,
+        beadId: record.snapshot.beadId,
+        name: "activation_disposed",
+        payload: { reason }
+      });
+      this.registry.remove(activationId);
+    }
+  }
+  attach(activationId, listener) {
+    const record = this.registry.get(activationId);
+    if (!record)
+      return;
+    return { snapshot: record.snapshot, detach: record.session.subscribe(listener) };
+  }
+  return(attachment) {
+    attachment.detach();
+  }
+  async resume(activationId, prompt) {
+    const record = this.registry.get(activationId);
+    if (!record) {
+      throw new DispatchRejectedError("unknown_activation", { activationId });
+    }
+    if (!RESUMABLE_STATES.has(record.snapshot.state)) {
+      throw new DispatchRejectedError("not_resumable", {
+        activationId,
+        note: `state is "${record.snapshot.state}"`
+      });
+    }
+    const attemptId = nextAttemptId(record.snapshot.attemptId);
+    if (record.snapshot.access === "write") {
+      try {
+        acquire({
+          workspace: record.snapshot.workspace,
+          activationId,
+          attemptId,
+          specialist: record.snapshot.specialist
+        });
+      } catch (error) {
+        if (error instanceof DispatchRejectedError) {
+          this.forensics.emit({
+            activationId,
+            attemptId,
+            participantId: record.snapshot.participantId,
+            specialist: record.snapshot.specialist,
+            beadId: record.snapshot.beadId,
+            name: "lease_denied",
+            payload: { reason: error.reason, note: error.detail.holder, on: "resume" }
+          });
+        }
+        throw error;
+      }
+    }
+    record.snapshot.attemptId = attemptId;
+    record.snapshot.state = "starting";
+    const emit = (name, payload) => this.forensics.emit({
+      activationId,
+      attemptId,
+      participantId: record.snapshot.participantId,
+      specialist: record.snapshot.specialist,
+      beadId: record.snapshot.beadId,
+      name,
+      payload
+    });
+    emit("activation_resumed", {
+      requested_model: record.snapshot.requestedModel,
+      resolved_model: record.snapshot.resolvedModel,
+      model_override: record.snapshot.modelOverride
+    });
+    record.unsubscribe();
+    record.unsubscribe = record.session.subscribe((event) => this.onSessionEvent(record.snapshot, event, emit));
+    const result = this.runToSettled(record.snapshot, record.session, prompt, emit);
+    record.result = result;
+    return {
+      activationId,
+      participantId: record.snapshot.participantId,
+      attemptId,
+      specialist: record.snapshot.specialist,
+      beadId: record.snapshot.beadId,
+      access: record.snapshot.access,
+      workspace: record.snapshot.workspace,
+      resolvedModel: record.snapshot.resolvedModel,
+      stepContract: record.stepContract,
+      result
+    };
+  }
+}
+function lastAssistantMessage(messages) {
+  for (let i = messages.length - 1;i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role === "assistant")
+      return message;
+  }
+  return;
+}
+function textOf(message) {
+  const content = message?.content;
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return "";
+  return content.filter((part) => typeof part === "object" && part !== null && part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
+}
+// src/tools/specialist/activation.tool.ts
+function toActivationView(snapshot) {
+  return {
+    activation_id: snapshot.activationId,
+    participant_id: snapshot.participantId,
+    attempt_id: snapshot.attemptId,
+    specialist: snapshot.specialist,
+    bead_id: snapshot.beadId,
+    state: snapshot.state,
+    access: snapshot.access,
+    worktree_path: snapshot.workspace.worktreePath,
+    ...snapshot.workspace.branch ? { branch: snapshot.workspace.branch } : {},
+    ...snapshot.piSessionId ? { pi_session_id: snapshot.piSessionId } : {},
+    ...snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {},
+    resolved_model: snapshot.resolvedModel,
+    model_override: snapshot.modelOverride
+  };
+}
+function toPendingAskView(ask) {
+  return {
+    message_id: ask.message.messageId,
+    kind: ask.message.kind,
+    activation_id: ask.message.activationId,
+    attempt_id: ask.message.attemptId,
+    from: ask.message.from,
+    to: ask.message.to,
+    body: ask.message.body,
+    delivery: ask.delivery,
+    asked_at: ask.askedAt
+  };
+}
+function toActivationResultView(result) {
+  return {
+    activation_id: result.activationId,
+    participant_id: result.participantId,
+    attempt_id: result.attemptId,
+    bead_id: result.beadId,
+    status: result.status,
+    output: result.output ?? null,
+    validation: result.validation,
+    ...result.piSessionId ? { pi_session_id: result.piSessionId } : {},
+    ...result.configuredModel ? { configured_model: result.configuredModel } : {},
+    ...result.requestedModel ? { requested_model: result.requestedModel } : {},
+    resolved_model: result.resolvedModel,
+    model_override: result.modelOverride,
+    fallback_used: result.fallbackUsed,
+    completed_at: result.completedAt
+  };
+}
+var specialistDispatchSchema = objectType({
+  specialist: stringType().describe("Specialist name, e.g. codebase-explorer"),
+  bead_id: stringType().describe("The Bead that is this activation's task contract — a COMPLETE 7-section contract " + "(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY " + "level, which must be exactly one of LOW, MEDIUM, HIGH or CRITICAL. That is EIGHT " + "required parts, not seven; SCRUTINY is the one most often left out. Write each section " + "as a heading: either the section name on its own line with its body beneath, or " + "`PROBLEM: the body` on one line. Both forms are accepted. " + "A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill)."),
+  model_override: stringType().optional().describe("Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced."),
+  requested_by: stringType().optional().describe("ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant."),
+  coordinator_session_id: stringType().optional().describe("MCP session id, for lineage.")
+});
+var specialistReplySchema = objectType({
+  message_id: stringType().describe('The message_id of the outstanding ask, from specialist_status.pending_asks. Correlation is by message id and nothing else — there is no "answer the latest ask", because with two asks outstanding that is a coin flip.'),
+  body: stringType().describe("The answer. Returned to the Specialist as its tool result.")
+});
+var specialistStopSchema = objectType({
+  activation_id: stringType().describe("Activation to stop and dispose."),
+  reason: stringType().optional().describe("Recorded forensically with the disposal.")
+});
+// src/activation/async-events.ts
+import { randomUUID as randomUUID4 } from "node:crypto";
+class ResultNotValidatedError extends Error {
+  activationId;
+  constructor(activationId) {
+    super(`activation "${activationId}" has no validated result — a completion notification is a ` + "projection of ActivationResult and cannot be pushed before one exists");
+    this.activationId = activationId;
+    this.name = "ResultNotValidatedError";
+  }
+}
+
+class RuntimeEventPusher {
+  adapter;
+  now;
+  newMessageId;
+  onPush;
+  routes = new Map;
+  results = new Map;
+  constructor(options) {
+    this.adapter = options.adapter;
+    this.now = options.now ?? (() => Date.now());
+    this.newMessageId = options.newMessageId ?? (() => `msg:${randomUUID4().slice(0, 12)}`);
+    this.onPush = options.onPush;
+  }
+  track(activationId, route) {
+    this.routes.set(activationId, route);
+  }
+  settle(result) {
+    this.results.set(result.activationId, result);
+  }
+  result(activationId) {
+    return this.results.get(activationId);
+  }
+  allResults() {
+    return [...this.results.values()];
+  }
+  async pushCompletion(activationId) {
+    const result = this.results.get(activationId);
+    if (!result)
+      throw new ResultNotValidatedError(activationId);
+    const route = this.routes.get(activationId);
+    const message = composeInteractionMessage({
+      kind: "completion",
+      from: result.participantId,
+      to: route?.coordinatorParticipantId ?? "adapter::specialists-mcp",
+      activationId: result.activationId,
+      attemptId: result.attemptId,
+      ...result.piSessionId ? { piSessionId: result.piSessionId } : {},
+      body: completionBody(result)
+    }, { messageId: this.newMessageId(), createdAt: this.now() });
+    const push = await this.adapter.push({
+      messageId: message.messageId,
+      activationId: message.activationId,
+      kind: message.kind,
+      message,
+      body: message.body,
+      coordinatorSessionId: route?.coordinatorSessionId ?? ""
+    });
+    this.onPush?.(message, push);
+    return push;
+  }
+}
+function completionBody(result) {
+  return JSON.stringify(result);
+}
+function parseCompletionBody(body) {
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.activationId !== "string" || typeof parsed?.status !== "string")
+      return;
+    return parsed;
+  } catch {
+    return;
+  }
+}
+// src/specialist/native-activation-observability.ts
+var NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
+  activation_requested: "Dispatch intent precedes the legacy run_start boundary and has no timeline event.",
+  step_contract_compiled: "Step-contract compilation has no legacy AgentSession event.",
+  activation_admitted: "Admission metadata has no legacy timeline event; identity is projected on specialist_jobs.",
+  activation_starting: "Session construction has no legacy timeline event; run_start follows once construction succeeds.",
+  activation_resumed: "Resume-from-record has no legacy counterpart; the resumed run re-enters the shared stream at turn_start.",
+  output_validation_started: "Native result validation has no legacy timeline event kind.",
+  output_validation_passed: "Native result validation has no legacy timeline event kind.",
+  output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.",
+  activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.",
+  lease_released: "Workspace-lease teardown has no legacy timeline event.",
+  lease_reconciled: "Lease reconciliation has no legacy timeline event.",
+  clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_resolved: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  turn_started: "Suppressed compatibility alias; the raw Pi turn_start event is canonical.",
+  turn_completed: "Suppressed compatibility alias; the raw Pi turn_end event is canonical.",
+  retry_started: "Suppressed compatibility alias; the raw Pi auto_retry_start event is canonical.",
+  retry_completed: "Suppressed compatibility alias; the raw Pi auto_retry_end event is canonical.",
+  compaction_started: "Suppressed compatibility alias; the raw Pi compaction_start event is canonical.",
+  compaction_completed: "Suppressed compatibility alias; the raw Pi compaction_end event is canonical."
+});
+var NATIVE_SESSION_OBSERVABILITY_GAPS = Object.freeze({
+  agent_start: "turn_start is the canonical turn boundary.",
+  agent_end: "run_complete is emitted by the activation lifecycle; agent_end is not a run boundary.",
+  agent_settled: "The lifecycle activation_settled signal projects the waiting status.",
+  message_update: "Only thinking deltas are projected; text is persisted once at assistant message_end.",
+  message_user: "User and custom-message boundaries are not persisted by the legacy timeline mapper.",
+  queue_update: "The legacy runner does not persist Pi prompt-queue state.",
+  entry_appended: "Session transcript persistence is not a timeline event.",
+  session_info_changed: "Session display-name changes are not a timeline event.",
+  thinking_level_changed: "The legacy runner does not persist thinking-level changes.",
+  summarization_retry_scheduled: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_attempt_start: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_finished: "The legacy runner has no summarization-retry timeline event.",
+  bash_execution_update: "The legacy runner does not persist streaming bash deltas."
+});
+function at(event, t) {
+  return { ...event, t };
+}
+function record(value) {
+  return value !== null && typeof value === "object" ? value : undefined;
+}
+function stringField2(value) {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+function numberField2(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+function booleanField2(value) {
+  return typeof value === "boolean" ? value : undefined;
+}
+function messageRole(event) {
+  return stringField2(record(event.message)?.role);
+}
+function assistantMessage(event) {
+  const message = record(event.message);
+  return message?.role === "assistant" ? message : undefined;
+}
+function assistantText(event) {
+  const message = assistantMessage(event);
+  if (!message)
+    return;
+  const content = message.content;
+  if (typeof content === "string")
+    return content.trim().length > 0 ? content : undefined;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    const part = record(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join("");
+  return text.trim().length > 0 ? text : undefined;
+}
+function tokenUsage(event) {
+  const usage = record(assistantMessage(event)?.usage);
+  if (!usage)
+    return;
+  const projected = {
+    input_tokens: numberField2(usage.input),
+    output_tokens: numberField2(usage.output),
+    cache_creation_tokens: numberField2(usage.cacheWrite),
+    cache_read_tokens: numberField2(usage.cacheRead),
+    reasoning_tokens: numberField2(usage.reasoning),
+    total_tokens: numberField2(usage.totalTokens),
+    usage_source: "provider_usage"
+  };
+  return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
+}
+function resultContent(result) {
+  if (typeof result === "string")
+    return result;
+  const resultRecord = record(result);
+  const content = resultRecord?.content;
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    if (typeof item === "string")
+      return item;
+    const part = record(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join(`
+`);
+  return text.trim().length > 0 ? text : undefined;
+}
+function nativeAttemptNo(attemptId) {
+  const match = /:(\d+)$/.exec(attemptId);
+  if (!match)
+    return 1;
+  const parsed = Number(match[1]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+function nativeAttemptIdForNo(initialAttemptId, attemptNo) {
+  const safeAttemptNo = Number.isSafeInteger(attemptNo) && attemptNo > 0 ? attemptNo : 1;
+  return /:\d+$/.test(initialAttemptId) ? initialAttemptId.replace(/:\d+$/, `:${safeAttemptNo}`) : `${initialAttemptId}:${safeAttemptNo}`;
+}
+function mapNativeLifecycleEvent(event, context, t = Date.now()) {
+  switch (event.name) {
+    case "activation_started":
+      return at(createRunStartEvent(event.specialist, event.beadId, {
+        job_id: event.activationId,
+        specialist_name: event.specialist,
+        bead_id: event.beadId,
+        worktree_path: context.workspacePath
+      }), t);
+    case "activation_settled":
+      return at(createStatusChangeEvent("waiting", "running"), t);
+    case "activation_completed":
+      return at(createRunCompleteEvent("COMPLETE", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true,
+        metrics: {
+          token_usage: context.tokenUsage,
+          finish_reason: context.finishReason,
+          turns: context.turns,
+          tool_calls: context.toolCalls?.length,
+          tool_call_names: context.toolCalls,
+          auto_retries: context.autoRetries,
+          auto_compactions: context.autoCompactions
+        }
+      }), t);
+    case "lease_acquired":
+    case "lease_denied":
+    case "lease_uncertain":
+    case "tool_blocked":
+      return at(createControlSignalEvent(event.name, {
+        bead_id: event.beadId,
+        ...event.payload ?? {}
+      }), t);
+    case "activation_failed":
+    case "activation_rejected":
+      return at(createRunCompleteEvent("ERROR", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        error: stringField2(event.payload?.error) ?? stringField2(event.payload?.reason),
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true
+      }), t);
+    default:
+      return null;
+  }
+}
+function mapNativeSessionEvent(event, t = Date.now(), turnIndex = 0) {
+  const mapped = [];
+  const add = (timeline) => {
+    if (timeline)
+      mapped.push(at(timeline, t));
+  };
+  switch (event.type) {
+    case "turn_start":
+      add(mapCallbackEventToTimelineEvent("turn_start", {}));
+      break;
+    case "turn_end":
+      add(mapCallbackEventToTimelineEvent("turn_end", {}));
+      break;
+    case "message_start": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const message = assistantMessage(event);
+        const model = stringField2(message?.model);
+        const provider = stringField2(message?.provider);
+        if (model || provider)
+          mapped.push(at(createMetaEvent(model ?? "unknown", provider ?? "unknown"), t));
+        add(mapCallbackEventToTimelineEvent("message_start_assistant", {}));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_start_tool_result", {}));
+      break;
+    }
+    case "message_end": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const text = assistantText(event);
+        const usage = tokenUsage(event);
+        const finishReason = stringField2(assistantMessage(event)?.stopReason);
+        if (text)
+          mapped.push({ t, type: TIMELINE_EVENT_TYPES.TEXT, char_count: text.length, content: text });
+        add(mapCallbackEventToTimelineEvent("message_end_assistant", {}));
+        if (usage)
+          mapped.push(at(createTokenUsageEvent(usage, "message_done"), t));
+        if (finishReason)
+          mapped.push(at(createFinishReasonEvent(finishReason, "message_done"), t));
+        mapped.push(at(createTurnSummaryEvent(turnIndex, usage, finishReason, text), t));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_end_tool_result", {}));
+      break;
+    }
+    case "message_update": {
+      const update = record(event.assistantMessageEvent);
+      if (update?.type === "thinking_delta") {
+        add(mapCallbackEventToTimelineEvent("thinking", { charCount: stringField2(update.delta)?.length }));
+      }
+      break;
+    }
+    case "tool_execution_start":
+      add(mapCallbackEventToTimelineEvent("tool_execution_start", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        args: record(event.args)
+      }));
+      break;
+    case "tool_execution_update":
+      add(mapCallbackEventToTimelineEvent("tool_execution_update", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId)
+      }));
+      break;
+    case "tool_execution_end":
+      add(mapCallbackEventToTimelineEvent("tool_execution_end", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        isError: booleanField2(event.isError),
+        resultContent: resultContent(event.result)
+      }));
+      break;
+    case "compaction_start":
+      add(mapCallbackEventToTimelineEvent("auto_compaction_start", {}));
+      break;
+    case "compaction_end": {
+      const result = record(event.result);
+      add(mapCallbackEventToTimelineEvent("auto_compaction_end", {
+        compaction: {
+          tokensBefore: numberField2(result?.tokensBefore),
+          summary: stringField2(result?.summary),
+          firstKeptEntryId: stringField2(result?.firstKeptEntryId)
+        }
+      }));
+      break;
+    }
+    case "auto_retry_start":
+      add(mapCallbackEventToTimelineEvent("auto_retry_start", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          maxAttempts: numberField2(event.maxAttempts),
+          delayMs: numberField2(event.delayMs),
+          errorMessage: stringField2(event.errorMessage)
+        }
+      }));
+      break;
+    case "auto_retry_end":
+      add(mapCallbackEventToTimelineEvent("auto_retry_end", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          errorMessage: stringField2(event.finalError)
+        }
+      }));
+      break;
+    default:
+      break;
+  }
+  return mapped;
+}
+
+// src/activation/forensic-sink.ts
+function stringValue(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+function statusForLifecycle(name, current) {
+  switch (name) {
+    case "activation_requested":
+    case "activation_admitted":
+    case "activation_starting":
+      return "starting";
+    case "activation_started":
+    case "activation_resumed":
+    case "turn_started":
+      return "running";
+    case "activation_settled":
+      return "waiting";
+    case "activation_completed":
+      return "done";
+    case "activation_failed":
+    case "activation_rejected":
+    case "output_validation_failed":
+      return "error";
+    default:
+      return current;
+  }
+}
+function statusForSessionEvent(type, current) {
+  if (type === "agent_start" || type === "turn_start")
+    return "running";
+  if (type === "agent_settled")
+    return "waiting";
+  return current;
+}
+function identityOf(state) {
+  return { attemptId: state.attemptId, attemptNo: state.attemptNo };
+}
+function statusOf(activationId, state, currentEvent, error) {
+  const elapsedMs = Math.max(0, state.lastEventAtMs - state.startedAtMs);
+  return {
+    id: activationId,
+    specialist: state.specialist,
+    status: state.status,
+    current_event: currentEvent,
+    model: state.resolvedModel,
+    backend: state.resolvedModel?.split("/")[0],
+    started_at_ms: state.startedAtMs,
+    elapsed_s: elapsedMs / 1000,
+    last_event_at_ms: state.lastEventAtMs,
+    bead_id: state.beadId,
+    session_id: state.piSessionId,
+    worktree_path: state.workspacePath,
+    metrics: {
+      token_usage: state.tokenUsage,
+      finish_reason: state.finishReason,
+      turns: state.turns,
+      tool_calls: state.toolCalls.length,
+      tool_call_names: state.toolCalls,
+      auto_compactions: state.autoCompactions,
+      auto_retries: state.autoRetries
+    },
+    error
+  };
+}
+function newProjectionState(input) {
+  return {
+    initialAttemptId: input.attemptId,
+    attemptId: input.attemptId,
+    attemptNo: nativeAttemptNo(input.attemptId),
+    specialist: input.specialist,
+    beadId: input.beadId,
+    startedAtMs: input.startedAtMs,
+    lastEventAtMs: input.startedAtMs,
+    status: "starting",
+    toolCalls: [],
+    turns: 0,
+    autoRetries: 0,
+    autoCompactions: 0
+  };
+}
+function createActivationForensicSink(observability) {
+  if (!observability)
+    return { emit: () => {}, sessionEvent: () => {} };
+  const states = new Map;
+  const writeProjection = (activationId, state, currentEvent, timelineEvents, error) => {
+    const status = statusOf(activationId, state, currentEvent, error);
+    if (timelineEvents.length > 0) {
+      observability.upsertStatusWithEvents(status, timelineEvents, identityOf(state));
+    } else {
+      observability.upsertStatus(status, identityOf(state));
+    }
+  };
+  return {
+    emit(event) {
+      try {
+        const now = Date.now();
+        const existing = states.get(event.activationId);
+        const state = existing ?? newProjectionState({
+          attemptId: event.attemptId,
+          specialist: event.specialist,
+          beadId: event.beadId,
+          startedAtMs: now
+        });
+        state.lastEventAtMs = now;
+        state.status = statusForLifecycle(event.name, state.status);
+        state.workspacePath = stringValue(event.payload?.workspace) ?? state.workspacePath;
+        state.piSessionId = stringValue(event.payload?.pi_session_id) ?? state.piSessionId;
+        state.resolvedModel = stringValue(event.payload?.resolved_model) ?? state.resolvedModel;
+        states.set(event.activationId, state);
+        const error = stringValue(event.payload?.error) ?? stringValue(event.payload?.reason);
+        const timelineEvent = mapNativeLifecycleEvent(event, {
+          startedAtMs: state.startedAtMs,
+          workspacePath: state.workspacePath,
+          resolvedModel: state.resolvedModel,
+          output: state.latestOutput,
+          tokenUsage: state.tokenUsage,
+          finishReason: state.finishReason,
+          toolCalls: state.toolCalls,
+          turns: state.turns,
+          autoRetries: state.autoRetries,
+          autoCompactions: state.autoCompactions
+        }, now);
+        writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error);
+        if (event.name === "activation_disposed")
+          states.delete(event.activationId);
+      } catch {}
+    },
+    sessionEvent(input) {
+      try {
+        const now = Date.now();
+        const existing = states.get(input.activationId);
+        const state = existing ?? newProjectionState({
+          attemptId: input.attemptId,
+          specialist: input.specialist,
+          beadId: input.beadId,
+          startedAtMs: now
+        });
+        if (input.event.type === "auto_retry_start") {
+          state.attemptNo += 1;
+          state.attemptId = nativeAttemptIdForNo(state.initialAttemptId, state.attemptNo);
+          state.autoRetries += 1;
+        }
+        if (input.event.type === "turn_start")
+          state.turns += 1;
+        if (input.event.type === "compaction_start")
+          state.autoCompactions += 1;
+        state.lastEventAtMs = now;
+        state.status = statusForSessionEvent(input.event.type, state.status);
+        if (stringValue(input.piSessionId))
+          state.piSessionId = input.piSessionId;
+        state.workspacePath = input.workspacePath;
+        states.set(input.activationId, state);
+        const timelineEvents = mapNativeSessionEvent(input.event, now, state.turns);
+        for (const timelineEvent of timelineEvents) {
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TEXT && typeof timelineEvent.content === "string") {
+            state.latestOutput = timelineEvent.content;
+          }
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOKEN_USAGE)
+            state.tokenUsage = timelineEvent.token_usage;
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.FINISH_REASON)
+            state.finishReason = timelineEvent.finish_reason;
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOOL && timelineEvent.phase === "end") {
+            state.toolCalls.push(timelineEvent.tool);
+          }
+        }
+        writeProjection(input.activationId, state, timelineEvents.at(-1)?.type, timelineEvents);
+      } catch {}
+    }
+  };
 }
 // src/specialist/launch-outcome.ts
 var LAUNCH_OUTCOME_SCHEMA_VERSION = "xtrm.command-outcome.v1";
@@ -19049,7 +22417,7 @@ function projectLaunchOutcome(outcome) {
 }
 // src/specialist/citation-evidence.ts
 import { realpath, readFile as readFile2 } from "node:fs/promises";
-import { isAbsolute as isAbsolute4, relative as relative3, resolve as resolve8 } from "node:path";
+import { isAbsolute as isAbsolute4, relative as relative3, resolve as resolve11 } from "node:path";
 function positiveInteger(value, fallback, name) {
   const resolved = value ?? fallback;
   if (!Number.isInteger(resolved) || resolved < 1) {
@@ -19068,9 +22436,9 @@ async function safeCitationPath(path, trustedRoot = process.cwd()) {
     throw new TypeError("path must remain within trusted root");
   }
   const canonicalRoot = await realpath(trustedRoot);
-  const canonicalPath = await realpath(resolve8(canonicalRoot, path));
+  const canonicalPath = await realpath(resolve11(canonicalRoot, path));
   const pathFromRoot = relative3(canonicalRoot, canonicalPath);
-  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve8("/").slice(0, 1)}`) || isAbsolute4(pathFromRoot)) {
+  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve11("/").slice(0, 1)}`) || isAbsolute4(pathFromRoot)) {
     throw new TypeError("path must remain within trusted root");
   }
   return canonicalPath;
@@ -19145,14 +22513,49 @@ async function verifyExactLineCitation(evidence, claim) {
     text: claim.text
   };
 }
+// src/activation/workspace-reconcile.ts
+import { join as join17 } from "node:path";
+var PERMITTED = {
+  holder_process_gone: new Set(["safe_free", "superseded", "manual_attention_required"]),
+  holder_start_mismatch: new Set(["safe_free", "superseded", "manual_attention_required"]),
+  unreadable_record: new Set(["superseded", "manual_attention_required"]),
+  liveness_unverifiable: new Set(["manual_attention_required"])
+};
+function leaseScopeFor(cwd) {
+  const commonRoot = resolveCommonGitRoot(cwd);
+  return {
+    repositoryRoot: commonRoot ?? cwd,
+    worktreePath: cwd,
+    gitCommonDir: commonRoot ? join17(commonRoot, ".git") : undefined
+  };
+}
 export {
   verifyExactLineCitation,
   validateLaunchOutcome,
+  validateBeforeRun,
+  toPendingAskView,
+  toActivationView,
+  toActivationResultView,
   runScriptSpecialist as runScript,
+  resolveRuntimeToolContract,
+  resolveObservabilityDbLocation,
+  resolveModelChain,
   readVerifiedCitationWindow,
   projectLaunchOutcome,
   parseLaunchOutcome,
+  parseCompletionBody,
+  leaseScopeFor,
+  extractSections,
+  evaluateBeadReadiness,
+  createObservabilitySqliteClientAtPath,
+  createActivationForensicSink,
+  completionBody,
+  admitCoordinatorToolCall,
   SpecialistLoader,
+  RuntimeEventPusher,
+  ResultNotValidatedError,
+  NativeActivationHost,
   LaunchOutcomeError,
-  LAUNCH_OUTCOME_SCHEMA_VERSION
+  LAUNCH_OUTCOME_SCHEMA_VERSION,
+  DispatchRejectedError
 };

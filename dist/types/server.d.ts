@@ -15,6 +15,23 @@ export declare class SpecialistsServer {
     private tools;
     private observability;
     private mcpSessionId;
+    /**
+     * The native runtime, one instance for the life of the server process.
+     *
+     * This must NOT be per-call or per-turn. The FleetRegistry inside it is the seam that
+     * survives a turn boundary: a Specialist that reaches `settled` is waiting and
+     * resumable, and a host rebuilt per call would lose every live AgentSession and answer
+     * `specialist_status` with an empty Fleet while children were still running.
+     */
+    private activationHost;
+    /**
+     * Asynchronous runtime events toward the dispatching coordinator (PRD Phase 14).
+     *
+     * Process-lifetime for the same reason the host is: the coordinator turn that reads a
+     * completion is rarely the turn that dispatched it, and a per-call pusher would forget
+     * every result it had recorded.
+     */
+    private eventPusher;
     constructor();
     private toolSchemas;
     private setupHandlers;

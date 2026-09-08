@@ -1,10 +1,10 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join, sep } from 'node:path';
+import { join, sep, resolve as resolvePath } from 'node:path';
 
 const OBSERVABILITY_DB_FILENAME = 'observability.db';
 const DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = ['.specialists', 'db'] as const;
-export const OBSERVABILITY_SCHEMA_VERSION = 14;
+export const OBSERVABILITY_SCHEMA_VERSION = 15;
 
 export interface ObservabilityDbLocation {
   gitRoot: string;
@@ -53,14 +53,39 @@ function resolveDbDirectory(gitRoot: string): { directory: string; source: Obser
   };
 }
 
+/**
+ * Test-only relocation of the repository's own store.
+ *
+ * When `SPECIALISTS_FORBID_DB_DIR` names a directory and resolution lands on it, the
+ * location is moved to `SPECIALISTS_FALLBACK_DB_DIR` instead. This exists because a test
+ * run once migrated the repository's authoritative forensic store in place
+ * (unitAI-rrdnt.16): the git-root fallback is correct for production and catastrophic for
+ * a test that happens to run with the repository as its cwd.
+ *
+ * Relocation is targeted, never global. Forcing XDG_DATA_HOME for the whole suite was
+ * tried first and is wrong — tests that build their own temp repository expect git-root
+ * resolution INSIDE it, so a global override puts the writer and the reader of one test on
+ * different databases. Redirecting only the forbidden directory leaves every legitimate
+ * pattern untouched, and both halves of a test still resolve identically.
+ *
+ * Production sets neither variable, so its behaviour is unchanged.
+ */
+function relocateIfForbidden(directory: string): string {
+  const forbidden = process.env.SPECIALISTS_FORBID_DB_DIR?.trim();
+  const fallback = process.env.SPECIALISTS_FALLBACK_DB_DIR?.trim();
+  if (!forbidden || !fallback) return directory;
+  return resolvePath(directory) === resolvePath(forbidden) ? fallback : directory;
+}
+
 export function resolveObservabilityDbLocation(cwd: string = process.cwd()): ObservabilityDbLocation {
   const gitRoot = resolveGitRootFrom(cwd);
   const resolved = resolveDbDirectory(gitRoot);
-  const dbPath = join(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  const directory = relocateIfForbidden(resolved.directory);
+  const dbPath = join(directory, OBSERVABILITY_DB_FILENAME);
 
   return {
     gitRoot,
-    dbDirectory: resolved.directory,
+    dbDirectory: directory,
     dbPath,
     dbWalPath: `${dbPath}-wal`,
     dbShmPath: `${dbPath}-shm`,

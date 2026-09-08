@@ -421,14 +421,10 @@ export function renderTabs(
 export interface MetersInput {
   active: number;
   activeTotal: number;
-  leases: number;
-  leaseCapacity: number;
-  budgetPct: number;
 }
 
 export function renderMeters(input: MetersInput, width: number): string {
-  const text = `active ${input.active}/${input.activeTotal}    leases ${input.leases}/${input.leaseCapacity}    budget ${input.budgetPct}%`;
-  return paint(truncateToWidth(text, width), 'dim');
+  return paint(truncateToWidth(`active ${input.active}/${input.activeTotal}`, width), 'dim');
 }
 
 export function renderViewtag(

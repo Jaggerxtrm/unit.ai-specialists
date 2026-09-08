@@ -297,14 +297,12 @@ export class ConsoleApp implements Component {
         active += snap.runningJobs;
         activeTotal += snap.totalJobs;
       }
-      return { active, activeTotal, leases: 1, leaseCapacity: 4, budgetPct: 61 };
+      return { active, activeTotal };
     }
     const snap = this.state.snapshot;
     const active = snap ? snap.runningJobs : 0;
     const activeTotal = snap ? snap.totalJobs : 0;
-    // leases + budget read from ~/.config/specialists/user.json in Phase 6;
-    // Phase 1 normative stub per bead NOTES.
-    return { active, activeTotal, leases: 1, leaseCapacity: 4, budgetPct: 61 };
+    return { active, activeTotal };
   }
 
   private async loadRepos(): Promise<void> {

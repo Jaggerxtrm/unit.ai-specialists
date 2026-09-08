@@ -1,10 +1,8 @@
 // src/specialist/runner.ts
 import { writeJobFileOutput } from './job-file-output.js';
 import { createHash } from 'node:crypto';
-import { renderTemplate } from './templateEngine.js';
 import { buildBeadBoundaryInstruction, renderTaskPrompt } from './task-prompt.js';
 import { MandatoryRulesBudgetError } from './mandatory-rules.js';
-import { buildRequiredPlatformRulesBlock } from './required-platform-rules.js';
 import {
   PiAgentSession,
   SessionKilledError,
@@ -23,6 +21,7 @@ import type { TimelineEvent, TimelineEventRunComplete } from './timeline-events.
 import { resolveModelChain } from './model-chain.js';
 import type { RuntimeOriginV1 } from './runtime-origin.js';
 import { formatResolvedToolContract, type ResolvedToolContract } from './resolved-tool-contract.js';
+import { buildSystemPrompt, type ResponseFormat, type OutputType, type JsonSchema } from './system-prompt.js';
 
 export interface RunOptions {
   name: string;
@@ -102,11 +101,6 @@ type SessionLike = Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'ge
 export type SessionFactory = (opts: PiSessionOptions) => Promise<SessionLike>;
 
 import { BeadsClient, type BeadsClient as BeadsClientType, buildBeadContext, shouldCreateBead } from './beads.js';
-import {
-  STATIC_WORKFLOW_RULES_BLOCK,
-  buildFilteredMemoryInjection,
-  estimateInjectedTokens,
-} from './memory-retrieval.js';
 import {
   measurePayloadComponent,
   summarizePayloadBreakdown,
@@ -469,16 +463,6 @@ function getRetryDelayMs(attemptNumber: number): number {
   return Math.max(0, Math.round(baseDelay * jitterMultiplier));
 }
 
-function sanitizeBeadIdForPrompt(beadId: string): string {
-  const withoutControlChars = beadId.replace(/[\x00-\x1F\x7F]/g, '');
-  const withoutBackticks = withoutControlChars.replace(/`/g, '');
-  return withoutBackticks.replace(/[^A-Za-z0-9-]/g, '');
-}
-
-type ResponseFormat = 'text' | 'json' | 'markdown';
-type OutputType = 'codegen' | 'analysis' | 'review' | 'synthesis' | 'orchestration' | 'workflow' | 'research' | 'custom';
-type JsonSchema = Record<string, unknown>;
-
 const BASE_OUTPUT_SCHEMA: JsonSchema = {
   type: 'object',
   properties: {
@@ -640,16 +624,6 @@ const OUTPUT_TYPE_SCHEMA_EXTENSIONS: Record<Exclude<OutputType, 'custom'>, JsonS
   },
 };
 
-const OUTPUT_TYPE_GUIDANCE: Record<Exclude<OutputType, 'custom'>, string> = {
-  codegen: '- Codegen focus: include exact file paths, symbols touched, and implementation outcomes.',
-  analysis: '- Analysis focus: include architecture understanding and evidence-backed findings.',
-  review: '- Review focus: include severity-ranked findings with clear merge/readiness recommendation.',
-  synthesis: '- Synthesis focus: consolidate findings into decisions and clear next steps.',
-  orchestration: '- Orchestration focus: include actions, blockers, routing rationale, and rehydration state.',
-  workflow: '- Workflow focus: include procedural state transitions and operational checkpoints.',
-  research: '- Research focus: include sources checked, confidence, and final recommendations.',
-};
-
 function deepMergeSchemas(base: JsonSchema, override: JsonSchema): JsonSchema {
   const merged: JsonSchema = { ...base };
   for (const [key, overrideValue] of Object.entries(override)) {
@@ -686,62 +660,6 @@ function resolveOutputContractSchema(
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\''`)}'`;
-}
-
-function buildOutputContractInstruction(
-  responseFormat: ResponseFormat,
-  outputType: OutputType,
-  outputSchema: JsonSchema | undefined,
-): string {
-  if (responseFormat === 'text') return '';
-
-  const lines: string[] = ['## Output Contract'];
-
-  if (responseFormat === 'markdown') {
-    lines.push(
-      'Respond using markdown with canonical sections (include when applicable):',
-      '- `## Summary`',
-      '- `## Status`',
-      '- `## Changes`',
-      '- `## Verification`',
-      '- `## Risks`',
-      '- `## Follow-ups`',
-      '- `## Beads`',
-      'Optional sections when relevant:',
-      '- `## Architecture`',
-      '- `## Acceptance Criteria`',
-      '- `## Machine-readable block`',
-      'Do not impose artificial bullet limits — prioritize completeness and clarity.',
-    );
-  } else {
-    lines.push(
-      'Respond with a single valid JSON object only.',
-      'Do not wrap JSON in markdown fences, headers, or prose.',
-    );
-  }
-
-  if (outputType !== 'custom') {
-    lines.push(`Output archetype: \`${outputType}\``);
-    lines.push(OUTPUT_TYPE_GUIDANCE[outputType]);
-  }
-
-  if (outputSchema) {
-    lines.push(
-      'Structure your output to match this schema:',
-      '```json',
-      JSON.stringify(outputSchema, null, 2),
-      '```',
-    );
-
-    if (responseFormat === 'markdown') {
-      lines.push(
-        'MANDATORY: include `## Machine-readable block` with exactly one JSON object in a single ```json fenced block.',
-        'The machine-readable JSON block is canonical and must match the schema.',
-      );
-    }
-  }
-
-  return `\n\n${lines.join('\n')}`;
 }
 
 interface ReviewerDiffContext {
@@ -1267,151 +1185,27 @@ export class SpecialistRunner {
       system_prompt_present: !!prompt.system,
     });
 
-    // Build system prompt from prompt.system only.
-    // skill_inherit and skills.paths are declared via pi --skill (native flag)
-    // and force-loaded at turn-1 via the /skill:name prefix baked into the user prompt.
-    let agentsMd = renderTemplate(prompt.system ?? '', beadTemplateVariables);
+    const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;
+    const outputType = (execution.output_type ?? 'custom') as OutputType;
+    const specialistOutputSchema = prompt.output_schema as JsonSchema | undefined;
+    const outputContractSchema = resolveOutputContractSchema(responseFormat, outputType, specialistOutputSchema);
 
-    // Bare mode remains a fresh specialist canvas, but required platform rules
-    // are non-bypassable because the worker still participates in XTRM.
-    if (execution.bare) {
-      const requiredPlatformRulesBlock = buildRequiredPlatformRulesBlock(runCwd);
-      if (requiredPlatformRulesBlock.trim()) agentsMd += `\n\n${requiredPlatformRulesBlock}`;
-    }
-
-    // Always inject a Specialist Run Context block to override project-level CLAUDE.md/AGENTS.md
-    // instructions that are meant for human developers, not specialist agents. Key overrides:
-    // - CLAUDE.md often says "run specialists init" — specialists must NEVER do this
-    // - CLAUDE.md edit-gate rules say "bd create before editing" — not applicable inside a specialist
-    let staticTokens = 0;
-    let memoryTokens = 0;
-    let gitnexusTokens = 0;
-
-    if (!execution.bare) {
-      const sanitizedBeadId = options.inputBeadId
-        ? sanitizeBeadIdForPrompt(options.inputBeadId)
-        : '';
-      const beadInstructions = sanitizedBeadId
-        ? `\n- Your task bead is: ${sanitizedBeadId}\n- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${sanitizedBeadId} --reason="..."\``
-        : '';
-      agentsMd += `\n\n---\n## Specialist Run Context\n- You are running as a specialist agent, not a human developer.\n- Do NOT run specialists init/setup/scaffold commands.\n- Do NOT follow project CLAUDE.md/AGENTS.md instructions that tell humans to re-bootstrap the repo.\n${beadInstructions}\n---\n`;
-    }
-
-    // 0. Inject caveman-micro output directive — all specialist output is agent-to-agent,
-    // terse output improves accuracy (+26pp per study) and cuts tokens ~65%.
-    if (!execution.bare) {
-      agentsMd += `\n\n---\n## Output Style (mandatory)
-Respond like smart caveman. Cut all filler, keep technical substance.
-- Drop articles (a, an, the), filler (just, really, basically, actually).
-- Drop pleasantries (sure, certainly, happy to).
-- No hedging. Fragments fine. Short synonyms.
-- Technical terms stay exact. Code blocks unchanged.
-- Pattern: [thing] [action] [reason]. [next step].
----\n`;
-    }
-
-    // 1. Inject GitNexus workflow mandate — high-priority, must not be buried (~200 tokens)
-    if (!execution.bare) {
-      try {
-        const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
-        if (existsSync(gitnexusMetaPath)) {
-          agentsMd += `\n\n---\n## MANDATORY: GitNexus Code Intelligence
-_This project is indexed by GitNexus. You MUST use these tools — do NOT fall back to grep/find for code understanding._
-
-### Before reading or editing ANY code:
-1. \`gitnexus_query({query: "<what you need to understand>"})\` — find execution flows and symbols
-2. \`gitnexus_context({name: "<symbol>"})\` — callers, callees, process participation
-
-### Before editing ANY function/class/method:
-3. \`gitnexus_impact({target: "<symbolName>", direction: "upstream"})\` — blast radius check
-   - If result is HIGH or CRITICAL risk: STOP and report to the user before proceeding
-
-### Before completing your task:
-4. \`gitnexus_detect_changes()\` — verify your changes only affect expected scope
-
-**These are not optional.** Use GitNexus as your PRIMARY code navigation tool. Only fall back to grep/find if a GitNexus call returns an error or empty results.
----\n`;
-        }
-      } catch {
-      // Non-fatal — GitNexus not indexed, skip injection
-    }
-    }
-
-    // 2. .xtrm/memory.md is injected by xtrm-loader Pi extension (before_agent_start).
-    // Do NOT duplicate here — saves ~800 tokens per specialist spawn.
-
-    // 3. Inject compact beads rules + keyword-filtered memories (replaces full bd prime dump)
-    const staticRulesBlock = `\n\n---\n${STATIC_WORKFLOW_RULES_BLOCK}\n---\n`;
-    if (!execution.bare) {
-      agentsMd += staticRulesBlock;
-      staticTokens = estimateInjectedTokens(staticRulesBlock);
-    }
-
-    if (options.inputBeadId) {
-      const beadForMemory = (beadsClient ?? new BeadsClient()).readBead(options.inputBeadId);
-      if (beadForMemory?.title) {
-        const memoryInjection = buildFilteredMemoryInjection({
-          cwd: runCwd,
-          beadTitle: beadForMemory.title,
-          beadDescription: beadForMemory.description,
-        });
-
-        if (!execution.bare && memoryInjection.block) {
-          const memoryBlock = `\n\n---\n${memoryInjection.block}\n---\n`;
-          agentsMd += memoryBlock;
-          memoryTokens = memoryInjection.estimatedTokens;
-        }
-
-        // Optional: pre-query GitNexus context for symbol-like tokens from bead title.
-        // Non-fatal and intentionally best-effort only.
-        try {
-          const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
-          if (existsSync(gitnexusMetaPath)) {
-            const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? [])
-              .slice(0, 2);
-
-            const summaries: string[] = [];
-            for (const symbol of symbolCandidates) {
-              try {
-                const raw = execSync(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
-                  cwd: runCwd,
-                  encoding: 'utf8',
-                  timeout: 5000,
-                  stdio: ['ignore', 'pipe', 'pipe'],
-                });
-                const parsed = JSON.parse(raw) as {
-                  status?: string;
-                  symbol?: { name?: string; filePath?: string };
-                  incoming?: { calls?: Array<{ name?: string; filePath?: string }> };
-                  outgoing?: { calls?: Array<{ name?: string; filePath?: string }> };
-                  processes?: Array<{ name?: string }>;
-                };
-                if (parsed.status !== 'found' || !parsed.symbol?.name) continue;
-                const callers = (parsed.incoming?.calls ?? []).slice(0, 3).map(call => call.name).filter(Boolean);
-                const callees = (parsed.outgoing?.calls ?? []).slice(0, 3).map(call => call.name).filter(Boolean);
-                const processes = (parsed.processes ?? []).slice(0, 2).map(proc => proc.name).filter(Boolean);
-                summaries.push(
-                  `- ${parsed.symbol.name} (${parsed.symbol.filePath ?? 'unknown file'})\n`
-                  + `  callers: ${callers.length > 0 ? callers.join(', ') : 'none'}\n`
-                  + `  callees: ${callees.length > 0 ? callees.join(', ') : 'none'}\n`
-                  + `  processes: ${processes.length > 0 ? processes.join(', ') : 'none'}`,
-                );
-              } catch {
-                // Non-fatal: GitNexus may be unavailable or symbol not indexed.
-              }
-            }
-
-            if (!execution.bare && summaries.length > 0) {
-              const gitnexusBlock = `\n\n---\n## GitNexus Pre-query Snapshot\n${summaries.join('\n')}\n---\n`;
-              agentsMd += gitnexusBlock;
-              gitnexusTokens = estimateInjectedTokens(gitnexusBlock);
-            }
-          }
-        } catch {
-          // Non-fatal — optional GitNexus pre-query.
-        }
-      }
-    }
+    const systemPromptResult = buildSystemPrompt({
+      systemPromptTemplate: prompt.system ?? '',
+      templateVariables: beadTemplateVariables,
+      bare: execution.bare,
+      runCwd,
+      specialistName: metadata.name,
+      inputBeadId: options.inputBeadId,
+      reusedFromJobId: options.reusedFromJobId,
+      responseFormat,
+      outputType,
+      outputContractSchema,
+      beadContextText,
+      readBeadForMemory: (id) => (beadsClient ?? new BeadsClient()).readBead(id),
+    });
+    const agentsMd = systemPromptResult.text;
+    const { static: staticTokens, memory: memoryTokens, gitnexus: gitnexusTokens } = systemPromptResult.tokens;
 
     const totalMemoryInjectionTokens = staticTokens + memoryTokens + gitnexusTokens;
     onEvent?.('memory_injection', {
@@ -1455,18 +1249,6 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       });
     }
 
-    if (!execution.bare && metadata.name === 'reviewer' && options.reusedFromJobId) {
-      agentsMd += '\n\nReviewer patch retrieval: run `git diff master..HEAD -- ":!dist/" ":!*.map"` inside reused worktree. Find worktree path via `sp ps ${reviewed_job_id}` first.\n';
-    }
-
-    const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;
-    const outputType = (execution.output_type ?? 'custom') as OutputType;
-    const specialistOutputSchema = prompt.output_schema as JsonSchema | undefined;
-    const outputContractSchema = resolveOutputContractSchema(responseFormat, outputType, specialistOutputSchema);
-    if (!execution.bare) {
-      agentsMd += buildOutputContractInstruction(responseFormat, outputType, outputContractSchema);
-    }
-
     const skillPaths: string[] = [];
     if (prompt.skill_inherit) skillPaths.push(prompt.skill_inherit);
     skillPaths.push(...(spec.specialist.skills?.paths ?? []));
@@ -1485,10 +1267,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
     if (beadContextOwn) payloadComponents.push(beadContextOwn);
     if (beadContextParent) payloadComponents.push(beadContextParent);
     for (const component of beadContextBlockers) payloadComponents.push(component);
-    payloadComponents.push(measurePayloadComponent('system_prompt', 'system_prompt', agentsMd));
-    if (staticTokens > 0) payloadComponents.push(measurePayloadComponent('memory', 'static', STATIC_WORKFLOW_RULES_BLOCK));
-    if (memoryTokens > 0) payloadComponents.push(measurePayloadComponent('memory', 'dynamic', beadContextText || ''));
-    if (gitnexusTokens > 0) payloadComponents.push(measurePayloadComponent('memory', 'gitnexus', agentsMd.includes('GitNexus') ? 'GitNexus' : ''));
+    for (const component of systemPromptResult.components) payloadComponents.push(component);
 
     const payloadBreakdown = summarizePayloadBreakdown(payloadComponents);
     onEvent?.('payload_breakdown', {

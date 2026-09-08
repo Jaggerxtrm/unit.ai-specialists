@@ -80,7 +80,9 @@ describe('skills-v4 default specialist wiring', () => {
     expect(injection.block).toContain('core-session-boundary');
     expect(injection.block).not.toContain('git-workflow-safe');
     expect(injection.block).not.toContain('workflow-quick-rules');
-    for (const path of ['src/specialist/runner.ts', 'src/specialist/script-runner.ts']) {
+    // runner.ts delegates system-prompt assembly (incl. bare mode) to system-prompt.ts
+    // (unitAI-rrdnt.3) — that's where buildRequiredPlatformRulesBlock is now wired.
+    for (const path of ['src/specialist/system-prompt.ts', 'src/specialist/script-runner.ts']) {
       expect(readFileSync(join(repoRoot, path), 'utf8')).toContain('buildRequiredPlatformRulesBlock');
     }
   });

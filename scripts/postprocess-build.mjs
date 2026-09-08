@@ -96,6 +96,62 @@ async function walkDeclarations(distTypesRootPath, currentPath = distTypesRootPa
   }
 }
 
+/**
+ * Bundles are emitted into `dist/`, so a comment naming `../node_modules/...` resolves to this
+ * repo's own dependencies and is fine. TWO OR MORE levels up escapes the repo entirely — which
+ * is what happens when a build runs inside an .xtrm worktree whose node_modules is incomplete:
+ * bun silently resolves the missing packages from the parent checkout and bakes their paths in.
+ */
+const ESCAPED_DEPENDENCY_PATH = /(?:\.\.\/){2,}node_modules\/((?:@[^/\s'"`]+\/)?[^/\s'"`]+)/g;
+
+/**
+ * Fail the build when the bundle was assembled from more than one node_modules tree.
+ *
+ * unitAI-rrdnt.41: this corruption produced NO error. The only signal was
+ * tests/integration/release-attestation.test.ts failing, which reads as a defect in the changed
+ * code until you diff dist against HEAD. Every lane in this epic rebuilds dist, so every lane
+ * could hit it, and the lane that hit it committed the result.
+ *
+ * This throws rather than stripping the comments deliberately. A bundle assembled from two
+ * different dependency trees is not cosmetically wrong — the packages it linked against are not
+ * the ones declared here. Rewriting the paths would hide that instead of fixing it.
+ */
+async function assertBundleUsesOneDependencyTree(distRootPath) {
+  const leaked = new Map();
+
+  for (const bundleName of ['index.js', 'lib.js']) {
+    const bundlePath = path.join(distRootPath, bundleName);
+    let source;
+    try {
+      const { candidateRealPath } = await resolveContainedRegularFile(distRootPath, bundlePath);
+      source = await readFile(candidateRealPath, 'utf8');
+    } catch {
+      continue; // not every build emits every bundle
+    }
+    for (const match of source.matchAll(ESCAPED_DEPENDENCY_PATH)) {
+      const packageName = match[1];
+      leaked.set(packageName, (leaked.get(packageName) ?? 0) + 1);
+    }
+  }
+
+  if (leaked.size === 0) return;
+
+  const named = [...leaked.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([packageName, count]) => `  ${packageName} (${count} reference${count === 1 ? '' : 's'})`)
+    .join('\n');
+
+  throw new Error(
+    'build aborted: the bundle was linked against dependencies from OUTSIDE this checkout.\n\n'
+    + 'These packages resolved to a parent node_modules tree:\n' + named + '\n\n'
+    + 'This happens when building inside a worktree whose dependencies were never installed —\n'
+    + 'bun resolves what is missing from the parent checkout and bakes those paths into dist.\n'
+    + 'The bundle is wrong, not just untidy: it links against versions this checkout does not declare.\n\n'
+    + 'Fix: run `bun install` in THIS directory, then build again.\n'
+    + '(unitAI-rrdnt.41)',
+  );
+}
+
 export async function postprocessBuild(projectRootPath = process.cwd()) {
   const rootRealPath = await realpath(projectRootPath);
   const distLexicalPath = path.join(rootRealPath, 'dist');
@@ -106,6 +162,7 @@ export async function postprocessBuild(projectRootPath = process.cwd()) {
     rootRealPath,
     distRealPath,
   );
+  await assertBundleUsesOneDependencyTree(distRealPath);
   await rewriteCliShebang(distRealPath);
   await walkDeclarations(distTypesRealPath);
 }

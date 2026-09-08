@@ -49,11 +49,10 @@ const ExecutionSchema = z.object({
    *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
    *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
   extensions: z.record(z.string(), ExtensionToggleSchema).optional(),
-  /** Required JSON keys the assistant output must contain. Triggers a required-keys
-   *  check independent of `response_format`. Use for specs that ship their JSON
-   *  contract inline in `task_template` and run with `response_format: text` so the
-   *  consumer parses — without this, hallucinated key sets pass through as success.
-   *  On miss the runtime returns `error_type: 'invalid_json'`. */
+  /** Script-surface required JSON keys, independent of `response_format`.
+   *  `sp script` and other `runScriptSpecialist` callers fail closed with
+   *  `error_type: 'invalid_json'` when a key is missing. `sp run` is inert: its
+   *  `SpecialistRunner.run` path does not read this field. */
   expected_output_keys: z.array(z.string()).optional(),
 }).passthrough();
 

@@ -2,6 +2,7 @@
 import * as z from 'zod';
 import type { SpecialistRunner } from '../../specialist/runner.js';
 import { BeadsClient, buildBeadContext } from '../../specialist/beads.js';
+import { evaluateBeadReadiness } from '../../activation/bead-gate.js';
 
 export const useSpecialistSchema = z.object({
   name: z.string().describe('Specialist identifier (e.g. codebase-explorer)'),
@@ -28,11 +29,14 @@ export function createUseSpecialistTool(runner: SpecialistRunner) {
       'If beadId is present, use `bd update <beadId> --notes` to attach findings or ' +
       '`bd remember` to persist key discoveries for future sessions. ' +
       'When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. ' +
-      'Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too).',
+      'Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too). '+
+      'A bead_id that specialist_dispatch would REFUSE (draft, closed, or missing a contract section) still runs here, but the result carries a readiness_warning naming what is missing. '+
+      'That divergence is deprecated: prefer specialist_dispatch for contract-gated work.',
     inputSchema: useSpecialistSchema,
     async execute(input: z.infer<typeof useSpecialistSchema>, onProgress?: (msg: string) => void) {
       let prompt = input.prompt?.trim() ?? '';
       let variables = input.variables;
+      let readinessWarning: string | undefined;
 
       if (input.bead_id) {
         const beadsClient = new BeadsClient();
@@ -43,6 +47,17 @@ export function createUseSpecialistTool(runner: SpecialistRunner) {
             error: `Unable to read bead '${input.bead_id}' via bd show --json`,
           };
         }
+        // Same gate specialist_dispatch runs, same function — a second readiness check would
+        // let the two surfaces disagree about admission, which is the defect, not the fix.
+        const readiness = evaluateBeadReadiness(bead);
+        if (!readiness.ok) {
+          readinessWarning =
+            `bead '${input.bead_id}' would be REFUSED by specialist_dispatch: ${readiness.reason}`
+            + (readiness.missing.length > 0 ? ` (missing: ${readiness.missing.join(', ')})` : '')
+            + '. use_specialist ran it anyway because it predates the bead gate. This divergence is'
+            + ' deprecated — promote the bead and use specialist_dispatch.';
+        }
+
         const beadContext = buildBeadContext(bead);
         prompt = beadContext;
         variables = {
@@ -52,7 +67,7 @@ export function createUseSpecialistTool(runner: SpecialistRunner) {
         };
       }
 
-      return runner.run({
+      const result = await runner.run({
         name: input.name,
         prompt,
         variables,
@@ -62,6 +77,13 @@ export function createUseSpecialistTool(runner: SpecialistRunner) {
         specialistPermissions: undefined,
         inputBeadId: input.bead_id,
       }, onProgress);
+
+      // WARN, do not refuse (unitAI-rrdnt.42). specialist_dispatch refuses a Bead this gate
+      // rejects; this tool predates the gate and is in active use, so refusing outright would
+      // break callers whose Beads were never written to the contract. The warning rides the
+      // RESULT rather than a log, because the whole defect being fixed is that an operator
+      // took the ungated path without any indication they had taken it.
+      return readinessWarning ? { ...result, readiness_warning: readinessWarning } : result;
     },
   };
 }

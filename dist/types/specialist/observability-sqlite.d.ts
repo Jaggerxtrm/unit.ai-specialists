@@ -1,3 +1,19 @@
+/**
+ * The sqlite driver, resolved at first use — `bun:sqlite` when running under bun, and
+ * `node:sqlite` otherwise, behind a shim that presents bun's surface.
+ *
+ * The node path is not a convenience. `pi` ships with `#!/usr/bin/env node`, so every
+ * in-process activation — including the Pi extension, which the PRD calls the PRIMARY
+ * coordinator surface — runs under node. With bun-only loading, `require('bun:sqlite')`
+ * threw MODULE_NOT_FOUND, the client came back null, the sink degraded to a no-op, and
+ * every such activation wrote ZERO forensic rows while appearing to succeed. Measured in
+ * an interactive TUI run and independently noticed by the operator as "job progress is not
+ * being persisted" (unitAI-rrdnt.37.1.1).
+ *
+ * Both drivers write the same file, which the bun CLI reads. Returning null remains a
+ * supported outcome — an older node without `node:sqlite` degrades to the no-op sink
+ * exactly as before, because a forensics failure must never fail an activation.
+ */
 type BunDb = any;
 import type { TimelineEvent, TimelineEventTool } from './timeline-events.js';
 import { type ForensicEvent } from './forensic-events.js';
@@ -106,6 +122,7 @@ export interface ForensicEventRecord {
     participant_kind: string | null;
     participant_role: string | null;
     participant_id: string | null;
+    attempt_id?: string | null;
     redaction_status: string;
     event_json: string;
 }
@@ -239,14 +256,20 @@ export interface BranchIntegrationEventRecord {
     t: number;
     event: BranchIntegrationEvent;
 }
+export interface ObservabilityIdentityProjection {
+    /** Runtime-owned attempt identity. Omit on legacy writes to retain automatic sequencing. */
+    attemptId: string;
+    attemptNo: number;
+}
 export interface ObservabilitySqliteClient {
-    upsertStatus(status: SupervisorStatus): void;
+    upsertStatus(status: SupervisorStatus, identity?: ObservabilityIdentityProjection): void;
     markSpecialistJobCancelled(jobId: string, reason: string): void;
     upsertEpicRun(epic: EpicRunRecord): void;
     upsertEpicChainMembership(chain: EpicChainRecord): void;
     upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void;
+    upsertStatusWithEvents(status: SupervisorStatus, events: readonly TimelineEvent[], identity?: ObservabilityIdentityProjection): void;
     upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
-    appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
+    appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent, identity?: ObservabilityIdentityProjection): void;
     appendForensicEvent(jobId: string, specialist: string, beadId: string | undefined, forensicEvent: ForensicEvent): void;
     recordBranchIntegration(event: BranchIntegrationEvent): void;
     listBranchIntegrations(filters?: ListBranchIntegrationFilters): BranchIntegrationEventRecord[];

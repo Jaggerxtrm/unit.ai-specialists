@@ -62,7 +62,7 @@ import { loadEpicReadinessSummary, syncEpicStateFromReadiness } from './epic-rea
 import { derivePersistedChainIdentity } from './chain-identity.js';
 import { isTmuxSessionAlive } from '../cli/tmux-utils.js';
 import { parsePorcelainStatus } from './porcelain-parser.js';
-import { createForensicEvent } from './forensic-events.js';
+import { createForensicEvent, deploymentEnvironment } from './forensic-events.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
 const PARENT_NOTIFICATION_MAX_BYTES = 4 * 1024;
@@ -244,7 +244,7 @@ export function emitParentNotification(statusSnapshot: SupervisorStatus, activeS
         service_namespace: 'xtrm',
         service_name: 'specialists',
         service_component: 'supervisor',
-        deployment_environment: 'local',
+        deployment_environment: deploymentEnvironment(),
         repo: 'specialists',
         participant_kind: 'specialist',
         participant_role: statusSnapshot.specialist,

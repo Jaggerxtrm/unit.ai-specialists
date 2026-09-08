@@ -537,7 +537,7 @@ class LocalRuntimeClient implements RuntimeClient {
       kvRow('state', `${job.status}${job.is_dead ? ' dead' : ''}`),
       kvRow('role', job.chain_kind ?? '--'),
       kvRow('worktree', [job.branch, job.worktree_path].filter(Boolean).join(' ') || '--'),
-      kvRow('lease', job.worktree_owner_job_id ?? job.chain_id ?? '--'),
+      kvRow('owner', job.worktree_owner_job_id ?? job.chain_id ?? '--'),
       kvRow('ctx', job.context_pct === undefined ? '--' : `${Math.round(job.context_pct)}%${job.context_health ? ` ${job.context_health}` : ''}`),
       kvRow('deps', job.chain_root_bead_id ?? '--'),
       kvRow('current', job.current_tool ?? '--'),

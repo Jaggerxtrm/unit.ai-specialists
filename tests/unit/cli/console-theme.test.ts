@@ -7,6 +7,7 @@ import {
   paint,
   renderGroupRow,
   renderJobRow,
+  renderMeters,
   renderRail,
   renderSectionTitle,
   renderStatsLine,
@@ -87,6 +88,14 @@ describe('theme.visibleLength()', () => {
   it('strips SGR and counts only visible chars', () => {
     expect(visibleLength(paint('hello', 'dim'))).toBe(5);
     expect(visibleLength(paint('a', 'dim') + ' · ' + paint('b', 'dim'))).toBe(5);
+  });
+});
+
+describe('renderMeters()', () => {
+  it('renders measured activity without fabricated lease or budget counters', () => {
+    const line = strip(renderMeters({ active: 2, activeTotal: 5 }, 80));
+    expect(line).toBe('active 2/5');
+    expect(line).not.toMatch(/lease|budget/i);
   });
 });
 

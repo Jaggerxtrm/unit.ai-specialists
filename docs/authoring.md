@@ -79,7 +79,7 @@ This guide is the user-facing reference for authoring `.specialist.json` files. 
 | `interactive` | boolean | `false` | keep-alive by default for multi-turn specialists; override layers may also set it |
 | `stdout_limit_bytes` | number | `33554432` | per-run stdout cap for script-class runtime; env `SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES` overrides default, spec value overrides env |
 | `response_format` | `"text" \| "json" \| "markdown"` | `"text"` | output contract hint |
-| `expected_output_keys` | `string[]` | unset | required JSON keys the assistant output must contain; triggers required-keys check independent of `response_format` (use for text-format specs that ship a JSON contract inline in `task_template`); on miss returns `error_type: "invalid_json"` |
+| `expected_output_keys` | `string[]` | unset | script-surface required JSON keys, independent of `response_format`; `sp script`/`runScriptSpecialist` fail closed with `error_type: "invalid_json"` on miss; inert on `sp run` |
 | `output_type` | enum | `"custom"` | semantic archetype: `"codegen"`, `"analysis"`, `"review"`, `"synthesis"`, `"orchestration"`, `"workflow"`, `"research"`, `"custom"` |
 | `permission_required` | `"READ_ONLY" \| "LOW" \| "MEDIUM" \| "HIGH"` | `"READ_ONLY"` | tool-access tier |
 | `thinking_level` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | unset | forwarded to thinking-capable models |
@@ -661,11 +661,11 @@ Without enabled extension sources, script and service execution resolves the req
 
 `prompt.output_schema.required` is checked against `parsed_json` when `response_format: "json"`. Missing keys produce `error_type: "invalid_json"` with a message naming the field. Nested schema is currently warn-only; tracked in `unitAI-xutg2` (passthrough) and the deferred-strict-mode discussion in `docs/design/specialists-service-evaluation.md` §29.
 
-#### `execution.expected_output_keys` — text-format with JSON contract
+#### `execution.expected_output_keys` — script-surface JSON contract
 
-Many specs ship their JSON contract inline in `task_template` and run with `response_format: "text"` so the consumer parses the body itself. Without an explicit required-keys check, hallucinated key sets (e.g. `{command, tables}` instead of the contracted `{summary, tags}`) pass through as `success: true` and the consumer happily saves corrupt rows.
+Script-class specs can ship a JSON contract inline in their script template while using any `response_format`. Without an explicit required-keys check, hallucinated key sets (e.g. `{command, tables}` instead of the contracted `{summary, tags}`) can pass through as `success: true` and the consumer can save corrupt rows.
 
-`execution.expected_output_keys: string[]` triggers a required-keys check independent of `response_format`. Set it to the keys your prompt requests:
+`execution.expected_output_keys: string[]` triggers a required-keys check independent of `response_format` only on surfaces that call `runScriptSpecialist`, including `sp script` and `sp serve`. `SpecialistRunner.run` (`sp run`) does not read this field. Set it to the keys your script-surface prompt requests:
 
 ```json
 {
@@ -681,12 +681,13 @@ Many specs ship their JSON contract inline in `task_template` and run with `resp
 }
 ```
 
-Behavior:
+Script-surface behavior:
 
-- The runtime parses the assistant text as JSON (`stripMarkdownFences` first), then verifies every listed key is present.
-- On miss, returns `error_type: "invalid_json"` with a message naming the missing key — the same error consumers already handle for `response_format: "json"` specs.
+- `runScriptSpecialist` extracts a JSON payload with `extractJsonPayload`, parses it, then verifies every listed key is present.
+- On miss, it fails closed with `error_type: "invalid_json"` and a message naming the missing key — the same error consumers already handle for `response_format: "json"` specs.
 - If `response_format === "json"` is also set, the keys are unioned with `prompt.output_schema.required`.
 - This is intentionally **not** auto-derived from `output_schema`: the cost of mistakenly validating the wrong key set is silent corruption, so authors declare expectations explicitly.
+- `sp run` is unchanged and does not enforce or warn on `expected_output_keys`; use `prompt.output_schema` for its advisory output-contract validation.
 
 ### Reference example
 
