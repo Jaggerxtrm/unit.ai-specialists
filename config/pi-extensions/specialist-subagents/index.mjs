@@ -262,6 +262,20 @@ export async function dispatchability(spec) {
 }
 
 /** Scope/layer provenance of a resolved specialist (repo + user overrides). */
+/**
+ * First sentence or 120 characters of a refusal reason, whichever is shorter.
+ *
+ * Compact mode is for scanning. A reader deciding WHICH specialist to use needs to know that
+ * one is unavailable and roughly why; the full text is one `name=` call away.
+ */
+function shortReason(reason) {
+  const text = String(reason ?? '').trim();
+  if (!text) return text;
+  const firstSentence = text.split(/(?<=[.!?])\s/)[0];
+  const chosen = firstSentence.length > 0 && firstSentence.length <= 120 ? firstSentence : text;
+  return chosen.length <= 120 ? chosen : `${chosen.slice(0, 117)}...`;
+}
+
 function specialistSummaryView(summary) {
   return {
     name: summary.name,
@@ -880,7 +894,13 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         // bug — and dispatchability is the one thing this tool exists to report. Only the
         // `reason` is conditional, because there is no reason when nothing is wrong.
         dispatchable: r.dispatchable !== false,
-        ...(r.dispatchable === false ? { reason: r.reason } : {}),
+        // The reason is TRUNCATED here and complete under `name=`. In an environment where
+        // most specialists are undispatchable — CI, or a checkout with no model config —
+        // untruncated reasons dominate the compact payload and undo the disclosure: measured
+        // at 7,561 bytes compact against 16,283 full, versus 1,204 against 16,161 locally.
+        // The first clause is what a scanner needs; the rest is drill-down like everything
+        // else this tool now defers.
+        ...(r.dispatchable === false ? { reason: shortReason(r.reason) } : {}),
       }));
       const undispatchable = compact.filter((r) => r.dispatchable === false).length;
       return resultOf({

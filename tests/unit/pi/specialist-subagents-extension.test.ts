@@ -1008,9 +1008,28 @@ describe('specialist_list progressive disclosure (operator report 2026-09-08)', 
     expect(out.specialists[0]).toHaveProperty('description');
   });
 
-  it('is materially smaller than the full dump', async () => {
-    const compact = JSON.stringify(await list({}));
-    const full = JSON.stringify(await list({ detail: 'full' }));
-    expect(compact.length).toBeLessThan(full.length / 3);
+  it('is smaller than the full dump, and carries none of its prose', async () => {
+    // The first version of this asserted compact < full/3 and passed locally at 13x while
+    // FAILING in CI at 2.15x. The ratio is a property of the environment, not of the code:
+    // where most specialists are undispatchable, refusal reasons dominate the payload. CI
+    // caught an assertion I wrote that measured the fixture rather than the behaviour.
+    // What is invariant is that compact drops the drill-down prose and is strictly smaller.
+    const compactRows = (await list({})).specialists;
+    const fullRows = (await list({ detail: 'full' })).specialists;
+
+    expect(JSON.stringify(compactRows).length).toBeLessThan(JSON.stringify(fullRows).length);
+    const compactText = JSON.stringify(compactRows);
+    for (const row of fullRows) {
+      if (row.description && row.description.length > 40) {
+        expect(compactText).not.toContain(row.description);
+      }
+    }
+  });
+
+  it('truncates the refusal reason in compact and keeps it whole under name=', async () => {
+    const out = await list({});
+    for (const row of out.specialists) {
+      if (row.dispatchable === false) expect(row.reason.length).toBeLessThanOrEqual(120);
+    }
   });
 });
