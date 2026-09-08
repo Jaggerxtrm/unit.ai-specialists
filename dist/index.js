@@ -78196,9 +78196,19 @@ class NativeActivationHost {
   }
   onSessionEvent(snapshot, event, emit) {
     snapshot.lastActivityAt = this.now();
-    const usage = extractTokenUsage(event);
-    if (usage)
-      snapshot.tokenUsage = { ...snapshot.tokenUsage, ...usage };
+    if (event.type === "message_end") {
+      const usage = extractTokenUsage(event);
+      if (usage) {
+        const prev = snapshot.tokenUsage ?? {};
+        const merged = { ...prev };
+        for (const [key, value] of Object.entries(usage)) {
+          if (value === undefined)
+            continue;
+          merged[key] = (prev[key] ?? 0) + value;
+        }
+        snapshot.tokenUsage = merged;
+      }
+    }
     this.forensics.sessionEvent?.({
       activationId: snapshot.activationId,
       attemptId: snapshot.attemptId,
