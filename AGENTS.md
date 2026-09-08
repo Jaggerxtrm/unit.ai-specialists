@@ -67,7 +67,8 @@ bd search <text>                       # Full-text search across issues
 
 # Claiming & updating
 bd update <id> --claim                 # Claim (sets you as owner, status→in_progress)
-bd update <id> --notes "..."           # Append notes inline
+bd update <id> --append-notes "..."     # Append to existing notes
+bd update <id> --notes "..."           # Replace notes (use --append-notes to append)
 bd update <id> --status=blocked        # Mark blocked
 bd update                              # Update last-touched issue (no ID needed)
 

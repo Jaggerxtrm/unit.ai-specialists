@@ -190,6 +190,13 @@ export function createActivationForensicSink(
         state.workspacePath = stringValue(event.payload?.workspace) ?? state.workspacePath;
         state.piSessionId = stringValue(event.payload?.pi_session_id) ?? state.piSessionId;
         state.resolvedModel = stringValue(event.payload?.resolved_model) ?? state.resolvedModel;
+        // The host's activation_completed payload carries the authoritative settle output
+        // (textOf the last assistant message). It overwrites latestOutput even when empty:
+        // an empty final message means empty output, not the previous turn's text.
+        const completedOutput = event.name === 'activation_completed' && typeof event.payload?.output === 'string'
+          ? event.payload.output as string
+          : undefined;
+        if (completedOutput !== undefined) state.latestOutput = completedOutput;
         states.set(event.activationId, state);
 
         const error = stringValue(event.payload?.error) ?? stringValue(event.payload?.reason);
@@ -205,13 +212,33 @@ export function createActivationForensicSink(
           autoRetries: state.autoRetries,
           autoCompactions: state.autoCompactions,
         }, now);
-        writeProjection(
-          event.activationId,
-          state,
-          timelineEvent?.type,
-          timelineEvent ? [timelineEvent] : [],
-          error,
-        );
+        if (event.name === 'activation_completed' && timelineEvent && state.latestOutput !== undefined) {
+          // Forensic durability, not display: persist the settle output to
+          // specialist_jobs.last_output + specialist_results, mirroring the legacy
+          // supervisor's upsertStatusWithEventAndResult:complete path. The forensic
+          // row still goes through the redacting writer, so event_json redaction is unchanged.
+          const status = statusOf(event.activationId, state, timelineEvent.type, error);
+          const withResult = (observability as Partial<Pick<ObservabilitySqliteClient, 'upsertStatusWithEventAndResult' | 'upsertResult'>>).upsertStatusWithEventAndResult;
+          if (typeof withResult === 'function') {
+            withResult.call(observability, status, timelineEvent, state.latestOutput, identityOf(state));
+          } else {
+            writeProjection(
+              event.activationId,
+              state,
+              timelineEvent?.type,
+              timelineEvent ? [timelineEvent] : [],
+              error,
+            );
+          }
+        } else {
+          writeProjection(
+            event.activationId,
+            state,
+            timelineEvent?.type,
+            timelineEvent ? [timelineEvent] : [],
+            error,
+          );
+        }
 
         if (event.name === 'activation_disposed') states.delete(event.activationId);
       } catch {

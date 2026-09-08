@@ -12754,11 +12754,11 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEvents");
   }
-  upsertStatusWithEventAndResult(status, event, output) {
+  upsertStatusWithEventAndResult(status, event, output, identity) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status, output);
-        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+        this.writeStatusRow(status, output, identity);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event, identity);
         this.writeResultRow(status.id, output);
       });
       transaction();
@@ -22678,7 +22678,7 @@ var init_memory_retrieval = __esm(() => {
   STATIC_WORKFLOW_RULES_BLOCK = `
 ## Beads Workflow Quick Rules
 - Claim work: \`bd update <id> --claim\`
-- Append progress notes: \`bd update <id> --notes "..."\`
+- Append progress notes: \`bd update <id> --append-notes "..."\`
 - Store reusable insight: \`bd remember "insight"\`
 - Close completed issue: \`bd close <id> --reason "done"\`
 
@@ -57571,7 +57571,7 @@ class NodeSupervisor {
     if (!this.opts.sourceBeadId)
       return;
     const notes = this.buildCompletionSummary(options2);
-    const result = spawnSync21("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
+    const result = spawnSync21("bd", ["update", this.opts.sourceBeadId, "--append-notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -57636,7 +57636,7 @@ class NodeSupervisor {
       for (const dependency of action.depends_on ?? []) {
         this.runCommand("bd", ["dep", "add", createdBeadId, dependency]);
       }
-      this.runCommand("bd", ["update", createdBeadId, "--notes", `node_id:${this.opts.nodeId} (created via Wave 2B autonomy action)`]);
+      this.runCommand("bd", ["update", createdBeadId, "--append-notes", `node_id:${this.opts.nodeId} (created via Wave 2B autonomy action)`]);
       this.persistNodeEvent("executeCreateBeadAction.bead_created", "bead_created", {
         node_id: this.opts.nodeId,
         action_id: sourceActionId,
@@ -75995,6 +75995,19 @@ function extractSections(description) {
   flush();
   return sections;
 }
+var PURPOSE_EXCERPT_MAX = 60;
+function extractPurposeExcerpt(description) {
+  const sections = extractSections(description ?? "");
+  for (const name of ["SCOPE", "SUCCESS"]) {
+    const line = (sections.get(name) ?? "").split(`
+`).map((s) => s.trim()).find(Boolean);
+    if (!line)
+      continue;
+    const flat = line.replace(/\s+/g, " ");
+    return flat.length <= PURPOSE_EXCERPT_MAX ? flat : `${flat.slice(0, PURPOSE_EXCERPT_MAX - 1)}\u2026`;
+  }
+  return;
+}
 function scrutinyLevel(description) {
   const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-\u2014]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
   return match?.[1]?.toUpperCase();
@@ -76048,7 +76061,7 @@ var useSpecialistSchema = objectType({
 function createUseSpecialistTool(runner) {
   return {
     name: "use_specialist",
-    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load \u2192 agents.md \u2192 pi session \u2192 output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto \u2014 creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. " + "Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too). " + "A bead_id that specialist_dispatch would REFUSE (draft, closed, or missing a contract section) still runs here, but the result carries a readiness_warning naming what is missing. " + "That divergence is deprecated: prefer specialist_dispatch for contract-gated work.",
+    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load \u2192 agents.md \u2192 pi session \u2192 output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto \u2014 creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --append-notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. " + "Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too). " + "A bead_id that specialist_dispatch would REFUSE (draft, closed, or missing a contract section) still runs here, but the result carries a readiness_warning naming what is missing. " + "That divergence is deprecated: prefer specialist_dispatch for contract-gated work.",
     inputSchema: useSpecialistSchema,
     async execute(input, onProgress) {
       let prompt = input.prompt?.trim() ?? "";
@@ -76618,6 +76631,7 @@ function toActivationView(snapshot, nowMs = Date.now()) {
     elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
     ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {},
     ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+    ...snapshot.purpose ? { purpose: snapshot.purpose } : {},
     last_activity_at: snapshot.lastActivityAt
   };
 }
@@ -78142,6 +78156,7 @@ class NativeActivationHost {
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
     });
+    const purpose = extractPurposeExcerpt(bead.description ?? "");
     const startedAt = this.now();
     const snapshot = {
       activationId,
@@ -78158,6 +78173,7 @@ class NativeActivationHost {
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
       ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...purpose ? { purpose } : {},
       startedAt,
       lastActivityAt: startedAt
     };
@@ -78253,7 +78269,7 @@ class NativeActivationHost {
       const validation = { valid: true };
       emit("output_validation_passed");
       snapshot.state = "settled";
-      emit("activation_completed", { pi_session_id: session.sessionId });
+      emit("activation_completed", { pi_session_id: session.sessionId, output });
       this.releaseIfWriter(snapshot, "completed");
       return {
         activationId: snapshot.activationId,
@@ -78686,6 +78702,9 @@ function createActivationForensicSink(observability) {
         state.workspacePath = stringValue(event.payload?.workspace) ?? state.workspacePath;
         state.piSessionId = stringValue(event.payload?.pi_session_id) ?? state.piSessionId;
         state.resolvedModel = stringValue(event.payload?.resolved_model) ?? state.resolvedModel;
+        const completedOutput = event.name === "activation_completed" && typeof event.payload?.output === "string" ? event.payload.output : undefined;
+        if (completedOutput !== undefined)
+          state.latestOutput = completedOutput;
         states.set(event.activationId, state);
         const error2 = stringValue(event.payload?.error) ?? stringValue(event.payload?.reason);
         const timelineEvent = mapNativeLifecycleEvent(event, {
@@ -78700,7 +78719,17 @@ function createActivationForensicSink(observability) {
           autoRetries: state.autoRetries,
           autoCompactions: state.autoCompactions
         }, now);
-        writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error2);
+        if (event.name === "activation_completed" && timelineEvent && state.latestOutput !== undefined) {
+          const status = statusOf(event.activationId, state, timelineEvent.type, error2);
+          const withResult = observability.upsertStatusWithEventAndResult;
+          if (typeof withResult === "function") {
+            withResult.call(observability, status, timelineEvent, state.latestOutput, identityOf(state));
+          } else {
+            writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error2);
+          }
+        } else {
+          writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error2);
+        }
         if (event.name === "activation_disposed")
           states.delete(event.activationId);
       } catch {}

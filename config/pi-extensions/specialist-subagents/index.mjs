@@ -107,11 +107,16 @@ export function fleetSummaryOf({ activations, asks }) {
 }
 
 export function formatElapsedShort(elapsedS) {
-  const s = Math.max(0, Math.floor(elapsedS ?? 0));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h${m % 60 ? `${m % 60}m` : ''}`;
+  return `${Math.max(0, Math.floor(elapsedS ?? 0))}s`;
+}
+
+/** Row-budget purpose excerpt: single line, whitespace-collapsed, bounded. */
+export const PURPOSE_ROW_MAX = 60;
+
+export function formatPurposeShort(purpose) {
+  const flat = String(purpose ?? '').replace(/\s+/g, ' ').trim();
+  if (!flat) return '';
+  return flat.length <= PURPOSE_ROW_MAX ? flat : `${flat.slice(0, PURPOSE_ROW_MAX - 1)}…`;
 }
 
 // Spend counts only. Window-context % is coordinator-owned and out of scope;
@@ -130,13 +135,16 @@ export function formatSpendShort(tokenUsage) {
   return `${Math.round(total / 1000)}k`;
 }
 
-/** Collapsed line. Needs-reply outranks idle: always shown when nonzero. */
+/** Collapsed line. Needs-reply outranks idle: always shown when nonzero.
+ * Names only triggers that work (unitAI-4n9of): arrow keys cannot reach a
+ * passive pi extension, so no arrow promise of any kind. */
 export function renderCollapsedLine({ activations, asks }) {
   const { active, waiting, needsReply, total } = fleetSummaryOf({ activations, asks });
-  if (total === 0 && needsReply === 0) return 'SPECIALISTS · idle · ↓/← inspect';
+  if (total === 0 && needsReply === 0) return '  └ specialists · idle · /specialists inspect';
   const parts = [`${active} active`, `${waiting} waiting`];
   if (needsReply > 0) parts.push(`${needsReply} need reply`);
-  return `SPECIALISTS · ${parts.join(' · ')} · ↓/← inspect`;
+  const hint = needsReply > 0 ? '/specialists inspect · /specialists:reply' : '/specialists inspect';
+  return `  └ specialists · ${parts.join(' · ')} · ${hint}`;
 }
 
 /** One row per specialist. Forensic IDs never appear here. An activation with a
@@ -148,10 +156,11 @@ export function renderFleetRowLine(view, asks = []) {
   const ask = (asks ?? []).find((a) => a.activation_id === view.activation_id);
   if (ask) {
     const waiting = formatElapsedShort(Date.now() / 1000 - (ask.asked_at ?? Date.now() / 1000));
-    return `! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`;
+    return `    ! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`;
   }
   const elapsed = formatElapsedShort(view.elapsed_s);
   const tokens = formatSpendShort(view.token_usage);
+  const purpose = formatPurposeShort(view.purpose);
   const idleS = view.last_activity_at != null
     ? Math.max(0, Math.floor(Date.now() / 1000) - view.last_activity_at)
     : null;
@@ -159,8 +168,10 @@ export function renderFleetRowLine(view, asks = []) {
     ? (idleS != null && idleS > 30 ? `idle ${formatElapsedShort(idleS)}` : 'working')
     : view.state;
   // Zero/absent tokens render as nothing: no "0", no "spent" word (unitAI-d99hb).
+  // Spend renders for every state, not only running: final spend stays visible after settle.
   const spend = tokens ? ` · ${tokens}` : '';
-  return `● ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · ${view.state} ${elapsed}${spend} · ${activity}`;
+  const why = purpose ? ` · ${purpose}` : '';
+  return `    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
@@ -173,9 +184,9 @@ export function renderSectionLines({ activations, asks }, { expanded = true } = 
     (a, b) => Number(askIds.has(b.activation_id)) - Number(askIds.has(a.activation_id)),
   );
   const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks));
-  lines.push(...rows.map((r) => `  ${r}`));
+  lines.push(...rows);
   const overflow = (activations ?? []).length - rows.length;
-  if (overflow > 0) lines.push(`  +${overflow} more`);
+  if (overflow > 0) lines.push(`    +${overflow} more`);
   return lines;
 }
 
@@ -1307,7 +1318,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   const FLEET_WIDGET_KEY = 'specialist-fleet';
   const FLEET_POLL_MS = 1000;
 
-  /** Operator-facing toggle. The widget is shown by default; `/fleet hide` opts out. */
+  /** Operator-facing toggle. The widget is shown by default; `/specialists hide` opts out. */
   let fleetVisible = true;
   let fleetTimer = null;
 
@@ -1330,7 +1341,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
 
   // Operational fleet: the footer section below the statusline repaints on its
   // own cycle. Rows render expanded one row per specialist by default;
-  // /fleet collapse opts out to the single line. No inspector: /fleet inspect
+  // /specialists collapse opts out to the single line. No inspector: /specialists inspect
   // prints the same expanded text report (the ui.custom path hard-locked the
   // TUI in this pi version, unitAI-nmxhg — the interactive inspector stays
   // deferred with UI-4 and the footer repaints on its own cycle). The section
@@ -1372,7 +1383,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   };
   const paintFleet = () => { if (!fleetUnregister) paintFleetFallback(); };
 
-  // Inspector deferred with UI-4 (unitAI-nmxhg): /fleet inspect prints the
+  // Inspector deferred with UI-4 (unitAI-nmxhg): /specialists inspect prints the
   // expanded text report instead of mounting a ui.custom pane.
   const openFleetInspector = async (ctx) => {
     report(ctx ?? { hasUI: false }, renderFleetSection(readFleet(), { expanded: true }).join('\n'));
@@ -1400,9 +1411,23 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     else console.log(message);
   };
 
-  pi.registerCommand('fleet', {
-    description: 'Show the Specialist Fleet and any pending asks. Usage: /fleet [show|hide|inspect|expand|collapse]',
-    getArgumentCompletions: (prefix) => {
+  const specialistsHandler = async (args, ctx) => {
+      const action = args.trim().split(/\s+/, 1)[0] ?? '';
+      if (action === 'hide') fleetVisible = false;
+      else if (action === 'show') fleetVisible = true;
+      else if (action === 'expand') fleetExpanded = true;
+      else if (action === 'collapse') fleetExpanded = false;
+      else if (action === 'inspect') { await openFleetInspector(ctx); return; }
+      else if (action !== '') {
+        report(ctx, 'Usage: /specialists [show|hide|inspect|expand|collapse]', 'warning');
+        return;
+      }
+      // The panel is only half the answer: in json/print mode there is no
+      // widget at all, so the command always reports the Fleet in text too.
+      report(ctx, renderFleetSection(readFleet(), { expanded: fleetExpanded }).join('\n'));
+      paintFleet();
+    };
+  const specialistsCompletions = (prefix) => {
       const normalized = prefix.trim().toLowerCase();
       const items = ['show', 'hide', 'inspect', 'expand', 'collapse']
         .filter((value) => value.startsWith(normalized))
@@ -1412,29 +1437,22 @@ export default function specialistSubagentsExtension(pi, options = {}) {
           description: value === 'show' ? 'Show the Fleet panel.' : value === 'hide' ? 'Hide the Fleet panel.' : value === 'inspect' ? 'Print the expanded Fleet report.' : value === 'expand' ? 'Expand rows in the footer section.' : 'Collapse to one line.',
         }));
       return items.length > 0 ? items : null;
-    },
-    handler: async (args, ctx) => {
-      const action = args.trim().split(/\s+/, 1)[0] ?? '';
-      if (action === 'hide') fleetVisible = false;
-      else if (action === 'show') fleetVisible = true;
-      else if (action === 'expand') fleetExpanded = true;
-      else if (action === 'collapse') fleetExpanded = false;
-      else if (action === 'inspect') { await openFleetInspector(ctx); return; }
-      else if (action !== '') {
-        report(ctx, 'Usage: /fleet [show|hide|inspect|expand|collapse]', 'warning');
-        return;
-      }
-      // The panel is only half the answer: in json/print mode there is no
-      // widget at all, so the command always reports the Fleet in text too.
-      report(ctx, renderFleetSection(readFleet(), { expanded: fleetExpanded }).join('\n'));
-      paintFleet();
-    },
+  };
+  pi.registerCommand('specialists', {
+    description: 'Show the Specialist Fleet and any pending asks. Usage: /specialists [show|hide|inspect|expand|collapse]',
+    getArgumentCompletions: specialistsCompletions,
+    handler: specialistsHandler,
+  });
+  pi.registerCommand('fleet', {
+    description: 'Compat alias for /specialists. Usage: /specialists [show|hide|inspect|expand|collapse]',
+    getArgumentCompletions: specialistsCompletions,
+    handler: specialistsHandler,
   });
 
-  pi.registerCommand('fleet:reply', {
+  pi.registerCommand('specialists:reply', {
     description:
       'Answer an outstanding Specialist question or escalation. ' +
-      'Usage: /fleet:reply <message_id> <answer>',
+      'Usage: /specialists:reply <message_id> <answer>',
     getArgumentCompletions: (prefix) => {
       // Completing the message id is the whole point — an operator cannot be
       // expected to retype one off the panel.
@@ -1453,13 +1471,13 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       const trimmed = args.trim();
       const split = trimmed.indexOf(' ');
       if (split === -1) {
-        report(ctx, 'Usage: /fleet:reply <message_id> <answer>', 'warning');
+        report(ctx, 'Usage: /specialists:reply <message_id> <answer>', 'warning');
         return;
       }
       const messageId = trimmed.slice(0, split);
       const body = trimmed.slice(split + 1).trim();
       if (!body) {
-        report(ctx, 'Usage: /fleet:reply <message_id> <answer>', 'warning');
+        report(ctx, 'Usage: /specialists:reply <message_id> <answer>', 'warning');
         return;
       }
       const message = await getHost().answer(messageId, body);
@@ -1476,25 +1494,30 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       paintFleetFallback();
     },
   });
+  pi.registerCommand('fleet:reply', {
+    description:
+      'Compat alias for /specialists:reply. ' +
+      'Usage: /specialists:reply <message_id> <answer>',
+    getArgumentCompletions: (prefix) => pi.commands.find((c) => c.name === 'specialists:reply')?.getArgumentCompletions?.(prefix) ?? null,
+    handler: (args, ctx) => pi.commands.find((c) => c.name === 'specialists:reply').handler(args, ctx),
+  });
 
-  pi.registerCommand('fleet:stop', {
-    description: 'Stop and dispose a native activation. Usage: /fleet:stop <activation_id> [reason]',
-    getArgumentCompletions: (prefix) => {
-      const normalized = prefix.trim();
-      if (normalized.includes(' ')) return null;
-      const items = readFleet().activations
-        .filter((view) => view.activation_id.startsWith(normalized))
-        .map((view) => ({
-          value: view.activation_id,
-          label: view.activation_id,
-          description: `${view.specialist} · ${view.state}`,
-        }));
-      return items.length > 0 ? items : null;
-    },
-    handler: async (args, ctx) => {
+  const activationCompletions = (prefix) => {
+    const normalized = prefix.trim();
+    if (normalized.includes(' ')) return null;
+    const items = readFleet().activations
+      .filter((view) => view.activation_id.startsWith(normalized))
+      .map((view) => ({
+        value: view.activation_id,
+        label: view.activation_id,
+        description: `${view.specialist} · ${view.state}`,
+      }));
+    return items.length > 0 ? items : null;
+  };
+  const stopHandler = async (args, ctx) => {
       const trimmed = args.trim();
       if (!trimmed) {
-        report(ctx, 'Usage: /fleet:stop <activation_id> [reason]', 'warning');
+        report(ctx, 'Usage: /specialists:stop <activation_id> [reason]', 'warning');
         return;
       }
       const split = trimmed.indexOf(' ');
@@ -1507,8 +1530,52 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       await disposeActivation(activationId, reason || 'pi operator request');
       report(ctx, `Stopped ${activationId}.`);
       paintFleetFallback();
-
-    },
+  };
+  const resumeHandler = async (args, ctx) => {
+    const trimmed = args.trim();
+    const split = trimmed.indexOf(' ');
+    if (split === -1) {
+      report(ctx, 'Usage: /specialists:resume <activation_id> <prompt>', 'warning');
+      return;
+    }
+    const activationId = trimmed.slice(0, split);
+    const prompt = trimmed.slice(split + 1).trim();
+    if (!prompt) {
+      report(ctx, 'Usage: /specialists:resume <activation_id> <prompt>', 'warning');
+      return;
+    }
+    if (!getHost().inspect(activationId)) {
+      report(ctx, `Unknown activation: ${activationId}`, 'warning');
+      return;
+    }
+    try {
+      await getHost().resume(activationId, prompt);
+    } catch (err) {
+      report(ctx, `Resume refused for ${activationId}: ${err?.message ?? err}`, 'warning');
+      return;
+    }
+    report(ctx, `Resumed ${activationId}.`);
+    paintFleetFallback();
+  };
+  pi.registerCommand('specialists:stop', {
+    description: 'Stop and dispose a native activation. Usage: /specialists:stop <activation_id> [reason]',
+    getArgumentCompletions: activationCompletions,
+    handler: stopHandler,
+  });
+  pi.registerCommand('fleet:stop', {
+    description: 'Compat alias for /specialists:stop. Usage: /specialists:stop <activation_id> [reason]',
+    getArgumentCompletions: activationCompletions,
+    handler: stopHandler,
+  });
+  pi.registerCommand('specialists:resume', {
+    description: 'Resume a settled or waiting activation with a new prompt. Usage: /specialists:resume <activation_id> <prompt>',
+    getArgumentCompletions: activationCompletions,
+    handler: resumeHandler,
+  });
+  pi.registerCommand('fleet:resume', {
+    description: 'Compat alias for /specialists:resume. Usage: /specialists:resume <activation_id> <prompt>',
+    getArgumentCompletions: activationCompletions,
+    handler: resumeHandler,
   });
 
   // A child must never outlive the coordinator process. Best-effort: stop and

@@ -164,7 +164,7 @@ describe('system prompt assembly (golden, byte-identical)', () => {
         ---
         ## Beads Workflow Quick Rules
         - Claim work: \`bd update <id> --claim\`
-        - Append progress notes: \`bd update <id> --notes "..."\`
+        - Append progress notes: \`bd update <id> --append-notes "..."\`
         - Store reusable insight: \`bd remember "insight"\`
         - Close completed issue: \`bd close <id> --reason "done"\`
 
@@ -256,7 +256,7 @@ describe('system prompt assembly (golden, byte-identical)', () => {
         ---
         ## Beads Workflow Quick Rules
         - Claim work: \`bd update <id> --claim\`
-        - Append progress notes: \`bd update <id> --notes "..."\`
+        - Append progress notes: \`bd update <id> --append-notes "..."\`
         - Store reusable insight: \`bd remember "insight"\`
         - Close completed issue: \`bd close <id> --reason "done"\`
 

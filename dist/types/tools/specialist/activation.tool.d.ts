@@ -33,6 +33,8 @@ export interface ActivationView {
     token_usage?: ActivationTokenUsage;
     /** Thinking level from session creation. Omitted when unset (never fabricated). */
     thinking_level?: string;
+    /** One-line purpose excerpt captured at dispatch. Omitted when absent (never fabricated). */
+    purpose?: string;
     /** Last session-event time. Per-tool "doing X now" inference is out of scope. */
     last_activity_at: number;
 }
@@ -172,6 +174,8 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
         token_usage?: ActivationTokenUsage;
         /** Thinking level from session creation. Omitted when unset (never fabricated). */
         thinking_level?: string;
+        /** One-line purpose excerpt captured at dispatch. Omitted when absent (never fabricated). */
+        purpose?: string;
         /** Last session-event time. Per-tool "doing X now" inference is out of scope. */
         last_activity_at: number;
         status: "dispatched";

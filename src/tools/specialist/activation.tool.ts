@@ -69,6 +69,8 @@ export interface ActivationView {
   token_usage?: ActivationTokenUsage;
   /** Thinking level from session creation. Omitted when unset (never fabricated). */
   thinking_level?: string;
+  /** One-line purpose excerpt captured at dispatch. Omitted when absent (never fabricated). */
+  purpose?: string;
   /** Last session-event time. Per-tool "doing X now" inference is out of scope. */
   last_activity_at: number;
 }
@@ -91,6 +93,7 @@ export function toActivationView(snapshot: ActivationSnapshot, nowMs: number = D
     elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
     ...(snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {}),
     ...(snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {}),
+    ...(snapshot.purpose ? { purpose: snapshot.purpose } : {}),
     last_activity_at: snapshot.lastActivityAt,
   };
 }

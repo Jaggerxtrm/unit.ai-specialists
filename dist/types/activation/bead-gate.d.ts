@@ -47,6 +47,17 @@ export declare function readContractState(beadId: string): string | undefined;
  * from "declared but empty".
  */
 export declare function extractSections(description: string): Map<string, string>;
+/** Max chars of a purpose excerpt carried on a fleet row. Single line, whitespace-collapsed. */
+export declare const PURPOSE_EXCERPT_MAX = 60;
+/**
+ * One-line purpose excerpt for a fleet row, from an already-validated contract.
+ *
+ * First meaningful line of SCOPE, falling back to SUCCESS. Cheap and bounded:
+ * whitespace-collapsed, single line, truncated to PURPOSE_EXCERPT_MAX chars.
+ * Returns undefined when neither section yields text — the field is omitted,
+ * never fabricated.
+ */
+export declare function extractPurposeExcerpt(description: string): string | undefined;
 /**
  * Decide whether a Bead is a dispatchable task contract.
  *

@@ -14515,11 +14515,11 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEvents");
   }
-  upsertStatusWithEventAndResult(status, event, output) {
+  upsertStatusWithEventAndResult(status, event, output, identity) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status, output);
-        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+        this.writeStatusRow(status, output, identity);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event, identity);
         this.writeResultRow(status.id, output);
       });
       transaction();
@@ -15884,7 +15884,7 @@ var CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 var STATIC_WORKFLOW_RULES_BLOCK = `
 ## Beads Workflow Quick Rules
 - Claim work: \`bd update <id> --claim\`
-- Append progress notes: \`bd update <id> --notes "..."\`
+- Append progress notes: \`bd update <id> --append-notes "..."\`
 - Store reusable insight: \`bd remember "insight"\`
 - Close completed issue: \`bd close <id> --reason "done"\`
 
@@ -19864,6 +19864,19 @@ function extractSections(description) {
   flush();
   return sections;
 }
+var PURPOSE_EXCERPT_MAX = 60;
+function extractPurposeExcerpt(description) {
+  const sections = extractSections(description ?? "");
+  for (const name of ["SCOPE", "SUCCESS"]) {
+    const line = (sections.get(name) ?? "").split(`
+`).map((s) => s.trim()).find(Boolean);
+    if (!line)
+      continue;
+    const flat = line.replace(/\s+/g, " ");
+    return flat.length <= PURPOSE_EXCERPT_MAX ? flat : `${flat.slice(0, PURPOSE_EXCERPT_MAX - 1)}…`;
+  }
+  return;
+}
 function scrutinyLevel(description) {
   const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-—]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
   return match?.[1]?.toUpperCase();
@@ -21574,6 +21587,7 @@ class NativeActivationHost {
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
     });
+    const purpose = extractPurposeExcerpt(bead.description ?? "");
     const startedAt = this.now();
     const snapshot = {
       activationId,
@@ -21590,6 +21604,7 @@ class NativeActivationHost {
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
       ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...purpose ? { purpose } : {},
       startedAt,
       lastActivityAt: startedAt
     };
@@ -21685,7 +21700,7 @@ class NativeActivationHost {
       const validation = { valid: true };
       emit("output_validation_passed");
       snapshot.state = "settled";
-      emit("activation_completed", { pi_session_id: session.sessionId });
+      emit("activation_completed", { pi_session_id: session.sessionId, output });
       this.releaseIfWriter(snapshot, "completed");
       return {
         activationId: snapshot.activationId,
@@ -21962,6 +21977,7 @@ function toActivationView(snapshot, nowMs = Date.now()) {
     elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
     ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {},
     ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+    ...snapshot.purpose ? { purpose: snapshot.purpose } : {},
     last_activity_at: snapshot.lastActivityAt
   };
 }
@@ -22193,6 +22209,9 @@ function createActivationForensicSink(observability) {
         state.workspacePath = stringValue(event.payload?.workspace) ?? state.workspacePath;
         state.piSessionId = stringValue(event.payload?.pi_session_id) ?? state.piSessionId;
         state.resolvedModel = stringValue(event.payload?.resolved_model) ?? state.resolvedModel;
+        const completedOutput = event.name === "activation_completed" && typeof event.payload?.output === "string" ? event.payload.output : undefined;
+        if (completedOutput !== undefined)
+          state.latestOutput = completedOutput;
         states.set(event.activationId, state);
         const error = stringValue(event.payload?.error) ?? stringValue(event.payload?.reason);
         const timelineEvent = mapNativeLifecycleEvent(event, {
@@ -22207,7 +22226,17 @@ function createActivationForensicSink(observability) {
           autoRetries: state.autoRetries,
           autoCompactions: state.autoCompactions
         }, now);
-        writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error);
+        if (event.name === "activation_completed" && timelineEvent && state.latestOutput !== undefined) {
+          const status = statusOf(event.activationId, state, timelineEvent.type, error);
+          const withResult = observability.upsertStatusWithEventAndResult;
+          if (typeof withResult === "function") {
+            withResult.call(observability, status, timelineEvent, state.latestOutput, identityOf(state));
+          } else {
+            writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error);
+          }
+        } else {
+          writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error);
+        }
         if (event.name === "activation_disposed")
           states.delete(event.activationId);
       } catch {}
