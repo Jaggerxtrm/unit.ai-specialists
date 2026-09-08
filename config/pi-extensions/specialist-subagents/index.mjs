@@ -44,6 +44,7 @@ import {
   resolveObservabilityDbLocation,
   resolveRuntimeToolContract,
   SpecialistLoader,
+  toActivationResultView,
   toActivationView,
   toPendingAskView,
   validateBeforeRun,
@@ -168,32 +169,15 @@ export function formatAskWake(ask) {
   ].join('\n');
 }
 
-// ── Pi-surface result projection ─────────────────────────────────────────────
-
-/**
- * Projection of the validated `ActivationResult` (PRD §37).
- *
- * This is what answers acceptance AU for the Pi coordinator: when a Specialist
- * settles, the coordinator RECEIVES its validated result here — status, output,
- * validation record, and the resolved model — rather than a bare "done" message.
- * `toActivationView` and `toPendingAskView` are IMPORTED from the shared frontend
- * module (src/tools/specialist/activation.tool.ts) so both coordinator surfaces
- * project identically; only this result projection is Pi-surface-specific.
- */
-export function toResultView(result) {
-  return {
-    status: result.status,
-    output: result.output ?? null,
-    validation: result.validation,
-    ...(result.piSessionId ? { pi_session_id: result.piSessionId } : {}),
-    ...(result.configuredModel ? { configured_model: result.configuredModel } : {}),
-    ...(result.requestedModel ? { requested_model: result.requestedModel } : {}),
-    resolved_model: result.resolvedModel,
-    model_override: result.modelOverride,
-    fallback_used: result.fallbackUsed,
-    completed_at: result.completedAt,
-  };
-}
+// ── Result projection ────────────────────────────────────────────────────────
+//
+// There is no Pi-surface result projection any more. This file used to carry its
+// own `toResultView`, and it drifted from the shared one on `configured_model`,
+// `requested_model` and the `output ?? null` fallback — so a Pi coordinator and a
+// Claude coordinator described the same settled activation differently. Two
+// functions describing one thing is one description too many; `toActivationResultView`
+// is imported from the shared frontend module for the same reason `toActivationView`
+// and `toPendingAskView` already were (unitAI-kv8ac).
 
 /**
  * Attach a settled result to a shared `ActivationView` when one is available.
@@ -201,7 +185,7 @@ export function toResultView(result) {
  */
 function withResult(view, result) {
   if (!result) return view;
-  return { ...view, result: toResultView(result) };
+  return { ...view, result: toActivationResultView(result) };
 }
 
 /** Permission tiers that mutate the workspace (mirrors native-host.ts line 57). */
