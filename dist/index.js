@@ -12754,11 +12754,11 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEvents");
   }
-  upsertStatusWithEventAndResult(status, event, output) {
+  upsertStatusWithEventAndResult(status, event, output, identity) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status, output);
-        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+        this.writeStatusRow(status, output, identity);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event, identity);
         this.writeResultRow(status.id, output);
       });
       transaction();
@@ -77891,7 +77891,7 @@ class NativeActivationHost {
       const validation = { valid: true };
       emit("output_validation_passed");
       snapshot.state = "settled";
-      emit("activation_completed", { pi_session_id: session.sessionId });
+      emit("activation_completed", { pi_session_id: session.sessionId, output });
       this.releaseIfWriter(snapshot, "completed");
       return {
         activationId: snapshot.activationId,
@@ -78601,6 +78601,9 @@ function createActivationForensicSink(observability) {
         state.workspacePath = stringValue(event.payload?.workspace) ?? state.workspacePath;
         state.piSessionId = stringValue(event.payload?.pi_session_id) ?? state.piSessionId;
         state.resolvedModel = stringValue(event.payload?.resolved_model) ?? state.resolvedModel;
+        const completedOutput = event.name === "activation_completed" && typeof event.payload?.output === "string" ? event.payload.output : undefined;
+        if (completedOutput !== undefined)
+          state.latestOutput = completedOutput;
         states.set(event.activationId, state);
         const error2 = stringValue(event.payload?.error) ?? stringValue(event.payload?.reason);
         const timelineEvent = mapNativeLifecycleEvent(event, {
@@ -78615,7 +78618,17 @@ function createActivationForensicSink(observability) {
           autoRetries: state.autoRetries,
           autoCompactions: state.autoCompactions
         }, now);
-        writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error2);
+        if (event.name === "activation_completed" && timelineEvent && state.latestOutput !== undefined) {
+          const status = statusOf(event.activationId, state, timelineEvent.type, error2);
+          const withResult = observability.upsertStatusWithEventAndResult;
+          if (typeof withResult === "function") {
+            withResult.call(observability, status, timelineEvent, state.latestOutput, identityOf(state));
+          } else {
+            writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error2);
+          }
+        } else {
+          writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error2);
+        }
         if (event.name === "activation_disposed")
           states.delete(event.activationId);
       } catch {}
