@@ -278,6 +278,12 @@ export class InteractionTransport {
    * that ships to the Pi surface was the one configuration never exercised.
    */
   private async attemptDelivery(message: InteractionMessage): Promise<boolean> {
+    // No transport is not a receipt. Returning true here marked an ask `delivered` when
+    // there was nothing to deliver it with — the exact thing this file's own contract
+    // forbids two screens up ("Absence of an error is NOT a receipt: only `true` marks
+    // delivered"). The host wires `deliver` only when a peer exists (native-host.ts:189),
+    // so every ask raised without a peer claimed a delivery that never happened. Found by
+    // acceptance AX on the first run in which it reached this assertion (unitAI-rrdnt.52).
     if (!this.deliver) return false;
     try {
       return (await this.deliver(message)) === true;
