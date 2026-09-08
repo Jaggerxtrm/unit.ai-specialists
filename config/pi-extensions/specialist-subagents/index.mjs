@@ -1290,11 +1290,9 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   }
 
   const FLEET_WIDGET_KEY = 'specialist-fleet';
-  const FLEET_POLL_MS = 1000;
 
   /** Operator-facing toggle. The widget is shown by default; `/specialists hide` opts out. */
   let fleetVisible = true;
-  let fleetTimer = null;
 
   /** Snapshot state and pending asks together — every caller needs both. */
   const readFleet = () => {
@@ -1342,20 +1340,12 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     return null;
   };
 
-  const paintFleetFallback = () => {
-    const ctx = liveContext({ requireUI: true });
-    if (!ctx) return;
-    if (typeof ctx.ui?.setWidget !== 'function') return; // RPC/headless: silent skip
-    const fleet = readFleet();
-    const content =
-      fleetVisible && (fleet.activations.length > 0 || fleet.asks.length > 0)
-        ? renderFleetSection(fleet, { expanded: fleetExpanded })
-        : undefined;
-    try {
-      ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'belowEditor' });
-    } catch { /* a widget that cannot paint must not break the session */ }
-  };
-  const paintFleet = () => { if (!fleetUnregister) paintFleetFallback(); };
+  // Hide-until-seam (unitAI-beqby.9, operator decision): the footer-section seam
+  // is the only fleet surface. When the seam is absent the fleet stays hidden —
+  // no setWidget fallback, so no aboveEditor/belowEditor widget competes with
+  // the footer. Slash commands still report the fleet as text. The section
+  // renders on the footer's own cycle, so repaints are no-ops everywhere else.
+  const paintFleet = () => {};
 
   // Inspector deferred with UI-4 (unitAI-nmxhg): /specialists inspect prints the
   // expanded text report instead of mounting a ui.custom pane.
@@ -1372,11 +1362,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       catch { fleetUnregister = null; }
     }
     if (fleetUnregister) return; // section renders on the footer's own cycle
-    if (fleetTimer) clearInterval(fleetTimer);
-    // Fallback tick is a null check until the first dispatch creates a host.
-    fleetTimer = setInterval(paintFleetFallback, FLEET_POLL_MS);
-    fleetTimer.unref?.();
-    paintFleetFallback();
+    // No seam: the fleet stays hidden (hide-until-seam, unitAI-beqby.9).
   });
 
   /** Report to the operator on whichever surface the current mode actually has. */
@@ -1465,7 +1451,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         return;
       }
       report(ctx, `Answered ${message.messageId} on activation ${message.activationId}.`);
-      paintFleetFallback();
     },
   });
   pi.registerCommand('fleet:reply', {
@@ -1503,7 +1488,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       }
       await disposeActivation(activationId, reason || 'pi operator request');
       report(ctx, `Stopped ${activationId}.`);
-      paintFleetFallback();
   };
   const resumeHandler = async (args, ctx) => {
     const trimmed = args.trim();
@@ -1529,7 +1513,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       return;
     }
     report(ctx, `Resumed ${activationId}.`);
-    paintFleetFallback();
   };
   pi.registerCommand('specialists:stop', {
     description: 'Stop and dispose a native activation. Usage: /specialists:stop <activation_id> [reason]',
@@ -1555,10 +1538,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   // A child must never outlive the coordinator process. Best-effort: stop and
   // dispose every live activation when the pi session shuts down.
   pi.on('session_shutdown', async () => {
-    if (fleetTimer) {
-      clearInterval(fleetTimer);
-      fleetTimer = null;
-    }
     try { fleetUnregister?.(); } catch {}
     fleetUnregister = null;
     if (!host) return;

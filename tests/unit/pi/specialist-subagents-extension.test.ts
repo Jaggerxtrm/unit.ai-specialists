@@ -843,15 +843,16 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     }
   });
 
-  it('falls back to a belowEditor mirror when the seam is absent, never aboveEditor', async () => {
+  it('stays hidden when the seam is absent — never paints a widget (unitAI-beqby.9)', async () => {
     const { pi, ctx } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command_tick();
-    const lines = ctx.painted.widgets['specialist-fleet'];
-    expect(lines).toBeDefined();
-    expect(lines[0]).toContain('SPECIALISTS');
-    expect(ctx.painted.widgetOptions['specialist-fleet']).toMatchObject({ placement: 'belowEditor' });
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
     expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+    for (const options of Object.values(ctx.painted.widgetOptions)) {
+      expect(options?.placement).not.toBe('aboveEditor');
+      expect(options?.placement).not.toBe('belowEditor');
+    }
   });
 
   it('collapsed line prioritises needs-reply and row lines carry no forensic ids', async () => {
@@ -911,13 +912,15 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
   });
 
-  it('/specialists hide stops painting and /specialists show resumes it', async () => {
+  it('/specialists hide/show report text and never paint a widget without the seam', async () => {
     const { pi, ctx, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command('specialists').handler('hide', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    expect(ctx.painted.notices.at(-1)[0]).toContain('SPECIALISTS');
     await command('specialists').handler('show', ctx);
-    expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    expect(ctx.painted.notices.at(-1)[0]).toContain('SPECIALISTS');
   });
 
   it('/specialists inspect prints the expanded text report and never mounts ui.custom (unitAI-nmxhg)', async () => {
@@ -962,7 +965,9 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
   });
 
   it('specialists mapping never yields index-derived elapsed (unitAI-d99hb)', async () => {
-    const { pi, ctx, host } = await boot();
+    const sections = new Map();
+    const registerFooterSection = (key, render) => { sections.set(key, render); return () => { sections.delete(key); }; };
+    const { pi, host } = await boot(undefined, { registerFooterSection });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     const startedAt = Date.now() - 41000;
     host.list.mockReturnValue([0, 1].map((i) => ({
@@ -973,8 +978,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       lastActivityAt: Math.floor(Date.now() / 1000),
     })));
     host.pendingAsks.mockReturnValue([]);
-    await command_tick();
-    const text = (ctx.painted.widgets['specialist-fleet'] ?? []).join('\n');
+    const text = (sections.get('specialist-fleet')() ?? []).join('\n');
     // Bare `.map(toActivationView)` passed the element index as nowMs, freezing
     // every row at 0s. Both rows must show live elapsed, neither 0s.
     expect(text).toMatch(/spec-0.*4[12]s/);
@@ -1099,17 +1103,17 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.notices).toEqual([]);   // report() falls back to console
   });
 
-  it('stops painting into a context whose session was replaced', async () => {
+  it('paints nothing without the seam, even across a session switch', async () => {
     const { pi, ctx } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command_tick();
-    expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
 
     // A switchSession keeps the same ctx object but changes the session id.
-    ctx.painted.widgets['specialist-fleet'] = 'STALE';
+    // Hide-until-seam paints no widget into any context, stale or live.
     ctx.sessionManager.getSessionId = () => 'session-2';
     await command_tick();
-    expect(ctx.painted.widgets['specialist-fleet']).toBe('STALE');
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
   });
 
   it('survives a context that throws on property access during teardown', async () => {
@@ -1121,9 +1125,9 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 });
 
 /**
- * Advance one poll interval. This drives the REAL timer the extension installs
- * rather than re-firing session_start, which would re-capture the context and
- * quietly defeat every staleness assertion below.
+ * Advance one (former) poll interval. Kept so seam-absent tests assert
+ * steadiness across ticks: with hide-until-seam there is no timer, so this
+ * is a no-op that proves nothing gets painted late either.
  */
 async function command_tick() {
   await vi.advanceTimersByTimeAsync(1000);
