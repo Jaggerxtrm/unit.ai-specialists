@@ -81,6 +81,6 @@
   "snapshot_sha256": "1fe612f5adafce75ef7a088d5c60c7f05cb3599f87ab44287993cbc5d01dc32b",
   "state": "prepared",
   "transport_branch": "board-audit/pr-296",
-  "transport_head_sha": null,
+  "transport_head_sha": "56e517c0dfb40114f37def68987315a70fe802fd",
   "work_package_count": 61
 }
