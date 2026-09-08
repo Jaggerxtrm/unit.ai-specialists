@@ -1471,7 +1471,7 @@ export class NodeSupervisor {
     if (!this.opts.sourceBeadId) return;
 
     const notes = this.buildCompletionSummary(options);
-    const result = spawnSync('bd', ['update', this.opts.sourceBeadId, '--notes', notes], {
+    const result = spawnSync('bd', ['update', this.opts.sourceBeadId, '--append-notes', notes], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -1548,7 +1548,7 @@ export class NodeSupervisor {
         this.runCommand('bd', ['dep', 'add', createdBeadId, dependency]);
       }
 
-      this.runCommand('bd', ['update', createdBeadId, '--notes', `node_id:${this.opts.nodeId} (created via Wave 2B autonomy action)`]);
+      this.runCommand('bd', ['update', createdBeadId, '--append-notes', `node_id:${this.opts.nodeId} (created via Wave 2B autonomy action)`]);
 
       this.persistNodeEvent('executeCreateBeadAction.bead_created', 'bead_created', {
         node_id: this.opts.nodeId,
