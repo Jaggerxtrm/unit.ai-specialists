@@ -132,7 +132,8 @@ function assistantText(event: PiAgentSessionEvent): string | undefined {
   return text.trim().length > 0 ? text : undefined;
 }
 
-function tokenUsage(event: PiAgentSessionEvent): TimelineTokenUsage | undefined {
+/** Canonical reader for the nested message.usage short-key shape Pi session events carry. */
+export function nativeSessionTokenUsage(event: PiAgentSessionEvent): TimelineTokenUsage | undefined {
   const usage = record(assistantMessage(event)?.usage);
   if (!usage) return undefined;
   const projected: TimelineTokenUsage = {
@@ -290,7 +291,7 @@ export function mapNativeSessionEvent(
       const role = messageRole(event);
       if (role === 'assistant') {
         const text = assistantText(event);
-        const usage = tokenUsage(event);
+        const usage = nativeSessionTokenUsage(event);
         const finishReason = stringField(assistantMessage(event)?.stopReason);
         if (text) mapped.push({ t, type: TIMELINE_EVENT_TYPES.TEXT, char_count: text.length, content: text });
         add(mapCallbackEventToTimelineEvent('message_end_assistant', {}));

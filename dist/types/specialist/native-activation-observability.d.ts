@@ -70,6 +70,8 @@ export declare const NATIVE_SESSION_OBSERVABILITY_GAPS: Readonly<{
     readonly summarization_retry_finished: "The legacy runner has no summarization-retry timeline event.";
     readonly bash_execution_update: "The legacy runner does not persist streaming bash deltas.";
 }>;
+/** Canonical reader for the nested message.usage short-key shape Pi session events carry. */
+export declare function nativeSessionTokenUsage(event: PiAgentSessionEvent): TimelineTokenUsage | undefined;
 /** Parse the stable trailing sequence from `att:<activation>:N`. */
 export declare function nativeAttemptNo(attemptId: string): number;
 /** Advance a runtime-owned attempt ID without replacing its identity namespace. */

@@ -50,6 +50,7 @@ import { acquire as acquireLease, admitToolCall, release as releaseLease } from 
 import { createGuardedTools } from './guarded-tools.js';
 import { createAskTools, ASK_TOOL, ESCALATE_TOOL } from './ask-tool.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
+import { nativeSessionTokenUsage } from '../specialist/native-activation-observability.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
 import { FleetRegistry, RESUMABLE_STATES, nextAttemptId } from './registry.js';
 import {
@@ -75,8 +76,21 @@ const TOKEN_USAGE_KEYS = [
   'total_tokens',
 ] as const;
 
-/** Latest spend counts carried by a session event, if any. Accepts both snake_case and camelCase. */
+/**
+ * Latest spend counts carried by a session event, if any.
+ *
+ * Pi session events carry usage nested as event.message (role=assistant) -> message.usage
+ * with short keys; that shape is read by nativeSessionTokenUsage() in
+ * native-activation-observability.ts, which is the canonical reader — this function reuses
+ * it and only maps the result onto ActivationTokenUsage. Keep the two paired: a shape
+ * change must land in the canonical reader, never in a second reader here.
+ */
 function extractTokenUsage(event: PiAgentSessionEvent): ActivationTokenUsage | undefined {
+  const nested = nativeSessionTokenUsage(event);
+  if (nested) {
+    const { usage_source: _ignored, ...usage } = nested;
+    if (Object.keys(usage).length > 0) return usage;
+  }
   const candidates = [event.token_usage, event.tokenUsage, event.usage];
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== 'object') continue;
