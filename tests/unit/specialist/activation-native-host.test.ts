@@ -814,3 +814,60 @@ describe('ask tools reach the child', () => {
     expect(custom.map(t => t.name).sort()).toEqual(['ask_coordinator', 'escalate_to_coordinator']);
   });
 });
+
+describe('PRD acceptance Z — a resume conflict is refused (unitAI-rrdnt.36)', () => {
+  it('refuses to resume a settled writer whose workspace another writer took', async () => {
+    // Z was structurally UNREACHABLE until unitAI-rrdnt.59: while the lease was held until
+    // explicit disposal, a resuming activation still held its own lease and could never
+    // contend. The lease now releases on settle and resume() reacquires, so a settled writer
+    // CAN lose its workspace — and its resume must then be refused.
+    //
+    // The model session is faked; the LEASE IS REAL, a file store under
+    // <workspace>/.specialists/leases/. Faking it would assert the fixture, not the system.
+    const spec = readOnlySpec();
+    (spec.specialist.execution as Record<string, unknown>).permission_required = 'HIGH';
+    const shared = hostWorkspace();
+
+    const hostA = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(spec),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: collectingSink(),
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      cwd: shared,
+    });
+    const a = await hostA.start({
+      specialist: 'executor', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    await a.result.catch(() => undefined);
+    expect(a.access).toBe('write');
+
+    // B takes the freed workspace. Under hold-until-disposal this dispatch was REFUSED,
+    // which is precisely why Z could never occur.
+    const sinkB = collectingSink();
+    const hostB = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(spec),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: sinkB,
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {}, holdOpen: true })),
+      cwd: a.workspace.worktreePath,
+    });
+    const b = await hostB.start({
+      specialist: 'executor', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    expect(sinkB.names).toContain('lease_acquired');
+    expect(b.activationId).not.toBe(a.activationId);
+
+    const refusal = await hostA.resume(a.activationId, 'carry on')
+      .catch((caught: unknown) => caught as DispatchRejectedError);
+
+    expect(refusal).toBeInstanceOf(DispatchRejectedError);
+    expect((refusal as DispatchRejectedError).reason).toBe('workspace_held_by_another_writer');
+
+    // A refused resume leaves the activation exactly as it was — still settled, still
+    // resumable if the workspace frees later. A half-advanced resume is worse than a failed one.
+    expect(hostA.inspect(a.activationId)?.state).toBe('settled');
+    expect(hostA.inspect(a.activationId)?.attemptId).toBe(a.attemptId);
+  });
+});
