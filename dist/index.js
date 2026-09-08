@@ -12266,15 +12266,16 @@ class SqliteClient {
     this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
     this.db.run("PRAGMA journal_mode=WAL");
   }
-  writeStatusRow(status, lastOutput) {
+  writeStatusRow(status, lastOutput, identity) {
     const statusJson = JSON.stringify(status);
     const workspaceId = normalizeWorkspacePath(status.worktree_path);
     const piSessionId = status.session_id ?? null;
     const participantId = deriveParticipantId({ participant_role: status.specialist });
-    const attemptId = `${status.id}::attempt::1`;
+    const attemptNo = identity?.attemptNo ?? 1;
+    const attemptId = identity?.attemptId ?? `${status.id}::attempt::1`;
     this.db.run(`
       INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json, participant_id, pi_session_id, workspace_id, attempt_no, attempt_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
@@ -12291,8 +12292,10 @@ class SqliteClient {
         last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
         startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json),
         participant_id = excluded.participant_id,
-        pi_session_id = excluded.pi_session_id,
-        workspace_id = excluded.workspace_id;
+        pi_session_id = CASE WHEN ? THEN COALESCE(excluded.pi_session_id, specialist_jobs.pi_session_id) ELSE excluded.pi_session_id END,
+        workspace_id = CASE WHEN ? THEN COALESCE(excluded.workspace_id, specialist_jobs.workspace_id) ELSE excluded.workspace_id END,
+        attempt_no = CASE WHEN ? AND excluded.attempt_no >= specialist_jobs.attempt_no THEN excluded.attempt_no ELSE specialist_jobs.attempt_no END,
+        attempt_id = CASE WHEN ? AND excluded.attempt_no >= specialist_jobs.attempt_no THEN excluded.attempt_id ELSE specialist_jobs.attempt_id END;
     `, [
       status.id,
       status.specialist,
@@ -12312,7 +12315,12 @@ class SqliteClient {
       participantId,
       piSessionId,
       workspaceId,
-      attemptId
+      attemptNo,
+      attemptId,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
+      identity ? 1 : 0
     ]);
   }
   writeEpicRunRow(epic) {
@@ -12361,13 +12369,18 @@ class SqliteClient {
     const attemptNo = typeof row.attempt_no === "bigint" ? Number(row.attempt_no) : typeof row.attempt_no === "number" ? row.attempt_no : 0;
     return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === "string" ? row.attempt_id : null };
   }
-  writeEventRow(jobId, specialist, beadId, event) {
+  writeEventRow(jobId, specialist, beadId, event, identity) {
     const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
     const current = this.readJobAttempt(jobId);
     let attemptId;
-    if (isRetryStartEvent(event)) {
+    if (identity) {
+      attemptId = identity.attemptId;
+      if (current && identity.attemptNo >= current.attempt_no) {
+        this.db.run("UPDATE specialist_jobs SET attempt_no = ?, attempt_id = ?, updated_at_ms = ? WHERE job_id = ?", [identity.attemptNo, attemptId, Date.now(), jobId]);
+      }
+    } else if (isRetryStartEvent(event)) {
       const nextNo = (current?.attempt_no ?? 0) + 1;
       attemptId = buildAttemptId(jobId, nextNo);
       if (current) {
@@ -12691,9 +12704,9 @@ class SqliteClient {
       updatedAtMs
     ]);
   }
-  upsertStatus(status) {
+  upsertStatus(status, identity) {
     withRetry(() => {
-      this.writeStatusRow(status);
+      this.writeStatusRow(status, undefined, identity);
     }, "upsertStatus");
   }
   markSpecialistJobCancelled(jobId, reason) {
@@ -12730,6 +12743,17 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEvent");
   }
+  upsertStatusWithEvents(status, events, identity) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status, undefined, identity);
+        for (const event of events) {
+          this.writeEventRow(status.id, status.specialist, status.bead_id, event, identity);
+        }
+      });
+      transaction();
+    }, "upsertStatusWithEvents");
+  }
   upsertStatusWithEventAndResult(status, event, output) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
@@ -12740,9 +12764,9 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEventAndResult");
   }
-  appendEvent(jobId, specialist, beadId, event) {
+  appendEvent(jobId, specialist, beadId, event, identity) {
     withRetry(() => {
-      this.writeEventRow(jobId, specialist, beadId, event);
+      this.writeEventRow(jobId, specialist, beadId, event, identity);
     }, "appendEvent");
   }
   appendForensicEvent(jobId, specialist, beadId, forensicEvent) {
@@ -35528,7 +35552,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       },
       onThinking: (delta) => appendTimelineEvent?.({ t: Date.now(), type: "thinking", char_count: delta.length }),
       onToolStart: (tool, args, toolCallId) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent("tool_execution_start", { tool, args, toolCallId })),
-      onToolEnd: (tool, isError, toolCallId, resultContent, resultRaw) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent("tool_execution_end", { tool, isError, toolCallId, resultContent, resultRaw })),
+      onToolEnd: (tool, isError, toolCallId, resultContent2, resultRaw) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent("tool_execution_end", { tool, isError, toolCallId, resultContent: resultContent2, resultRaw })),
       onEvent: (type, details) => {
         if (type === "message_start_assistant")
           markAssistantMessageStart();
@@ -35561,7 +35585,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       },
       onMeta: (meta) => appendTimelineEvent?.(createMetaEvent(meta.model, meta.backend))
     });
-    let assistantText = "";
+    let assistantText2 = "";
     let stderr = "";
     let timedOut = false;
     let outputTooLarge = false;
@@ -35593,9 +35617,9 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       await session.start();
       await session.prompt(prompt);
       await session.waitForDone(timeoutMs);
-      assistantText = await resolveAssistantText();
+      assistantText2 = await resolveAssistantText();
       stderr = session.getStderr();
-      if (requiredJsonKeys.length > 0 && !outputSatisfiesJsonContract(assistantText, requiredJsonKeys)) {
+      if (requiredJsonKeys.length > 0 && !outputSatisfiesJsonContract(assistantText2, requiredJsonKeys)) {
         const repairPrompt = [
           "Return FINAL answer now as JSON only.",
           `Required top-level keys: ${requiredJsonKeys.join(", ")}.`,
@@ -35604,16 +35628,16 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
         ].join(" ");
         markAssistantMessageStart();
         await session.resume(repairPrompt, timeoutMs);
-        assistantText = await resolveAssistantText();
+        assistantText2 = await resolveAssistantText();
         stderr = session.getStderr();
       }
-      if (Buffer.byteLength(assistantText, "utf8") > assistantTextLimitBytes) {
+      if (Buffer.byteLength(assistantText2, "utf8") > assistantTextLimitBytes) {
         outputTooLarge = true;
         outputTooLargeReason = "assistant_text_too_large";
       }
       return {
         model,
-        text: assistantText,
+        text: assistantText2,
         stderr,
         exitCode: 0,
         timedOut,
@@ -35625,11 +35649,11 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       timedOut = message.toLowerCase().includes("timed out");
       if (timedOut)
         session.kill(error2 instanceof Error ? error2 : new Error(message));
-      assistantText = await session.getLastOutput().catch(() => "");
+      assistantText2 = await session.getLastOutput().catch(() => "");
       stderr = session.getStderr() || message;
       return {
         model,
-        text: assistantText,
+        text: assistantText2,
         stderr,
         exitCode: 1,
         timedOut,
@@ -35674,7 +35698,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
     let outputTooLarge = false;
     let outputTooLargeReason;
     let pending = "";
-    let assistantText = "";
+    let assistantText2 = "";
     let pendingBytes = 0;
     let stderrBytes = 0;
     const timer = setTimeout(() => {
@@ -35713,7 +35737,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
               setTimeout(() => pi.kill("SIGKILL"), 2000);
               return;
             }
-            assistantText = nextAssistantText;
+            assistantText2 = nextAssistantText;
           }
         } catch {
           continue;
@@ -35739,7 +35763,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       clearTimeout(timer);
       resolve15({
         model,
-        text: assistantText,
+        text: assistantText2,
         stderr,
         exitCode: code ?? 0,
         timedOut,
@@ -47056,10 +47080,10 @@ class ChatStatus {
     const jobId = this.currentStatus.id;
     const beadId = this.currentStatus.bead_id ?? "-";
     const state = this.currentStatus.status;
-    const tokenUsage = this.currentStatus.metrics?.token_usage?.total_tokens;
+    const tokenUsage2 = this.currentStatus.metrics?.token_usage?.total_tokens;
     const model = formatModel(this.currentStatus);
     const specialist = this.currentStatus.specialist ?? "job";
-    const line = `${specialist}/${jobId}/${beadId} \xB7 ${state} \xB7 ${formatTokenCount(tokenUsage)} tok \xB7 ${model}`;
+    const line = `${specialist}/${jobId}/${beadId} \xB7 ${state} \xB7 ${formatTokenCount(tokenUsage2)} tok \xB7 ${model}`;
     return truncateToWidth(line, width);
   }
   async poll() {
@@ -54258,16 +54282,16 @@ function createPiJsonProjector(context) {
   let text = "";
   let model = context.model;
   let backend = context.backend;
-  let tokenUsage;
+  let tokenUsage2;
   let messageTimestamp = context.startedAtMs ?? 0;
   const toolArgs = new Map;
   const toolResults = [];
-  const assistantMessage = (timestamp) => ({
+  const assistantMessage2 = (timestamp) => ({
     role: "assistant",
     content: text ? [{ type: "text", text }] : [],
     ...backend ? { provider: backend } : {},
     ...modelName(model, backend) ? { model: modelName(model, backend) } : {},
-    ...usage3(tokenUsage) ? { usage: usage3(tokenUsage) } : {},
+    ...usage3(tokenUsage2) ? { usage: usage3(tokenUsage2) } : {},
     stopReason: cycleComplete ? "stop" : undefined,
     timestamp
   });
@@ -54293,13 +54317,13 @@ function createPiJsonProjector(context) {
     messageStarted = true;
     messageOpen = true;
     messageTimestamp = timestamp;
-    return [{ type: "message_start", message: assistantMessage(timestamp) }];
+    return [{ type: "message_start", message: assistantMessage2(timestamp) }];
   };
   const resetTurn = () => {
     messageOpen = false;
     messageStarted = false;
     text = "";
-    tokenUsage = undefined;
+    tokenUsage2 = undefined;
     toolArgs.clear();
     toolResults.length = 0;
   };
@@ -54323,13 +54347,13 @@ function createPiJsonProjector(context) {
       return messageOpen && !messageStarted ? [...ensureStarted(event.t), ...ensureMessageStarted(event.t)] : [];
     }
     if (event.type === "token_usage") {
-      tokenUsage = event.token_usage;
+      tokenUsage2 = event.token_usage;
       return [];
     }
     if (event.type === "run_start")
       return ensureStarted(event.t);
     if (event.type === "turn") {
-      return [...ensureStarted(event.t), { type: "turn_end", message: assistantMessage(event.t), toolResults: [...toolResults] }];
+      return [...ensureStarted(event.t), { type: "turn_end", message: assistantMessage2(event.t), toolResults: [...toolResults] }];
     }
     if (event.type === "message") {
       if (event.role !== "assistant")
@@ -54341,14 +54365,14 @@ function createPiJsonProjector(context) {
       }
       const prefix = [...ensureStarted(event.t), ...ensureMessageStarted(messageTimestamp || event.t)];
       messageOpen = false;
-      return [...prefix, { type: "message_end", message: assistantMessage(event.t) }];
+      return [...prefix, { type: "message_end", message: assistantMessage2(event.t) }];
     }
     if (event.type === "text") {
       if (!event.content)
         return [];
       text = event.content;
       const prefix = [...ensureStarted(event.t), ...ensureMessageStarted(messageTimestamp || event.t)];
-      const message = assistantMessage(event.t);
+      const message = assistantMessage2(event.t);
       return [
         ...prefix,
         { type: "message_update", message, assistantMessageEvent: { type: "text_start", contentIndex: 0, partial: message } },
@@ -54402,10 +54426,10 @@ function createPiJsonProjector(context) {
       const output2 = ensureStarted(event.t);
       model = event.model ?? model;
       backend = event.backend ?? backend;
-      tokenUsage = event.token_usage ?? event.metrics?.token_usage ?? tokenUsage;
+      tokenUsage2 = event.token_usage ?? event.metrics?.token_usage ?? tokenUsage2;
       text = event.output ?? text;
       cycleComplete = true;
-      const message = assistantMessage(event.t);
+      const message = assistantMessage2(event.t);
       if (messageOpen && !messageStarted)
         output2.push(...ensureMessageStarted(messageTimestamp || event.t));
       if (messageOpen)
@@ -60887,8 +60911,8 @@ ${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job
   if (chainJobs.length > 1)
     console.log(`  chain     ${chainStr}`);
   console.log(`  elapsed   ${formatElapsed3(job.elapsed_s)}${job.metrics ? ` \xB7 ${job.metrics.turns ?? 0} turns \xB7 ${job.metrics.tool_calls ?? 0} tools` : ""}`);
-  const tokenUsage = job.metrics?.token_usage;
-  const tokenSummaryParts = formatTokenUsageSummary(tokenUsage);
+  const tokenUsage2 = job.metrics?.token_usage;
+  const tokenSummaryParts = formatTokenUsageSummary(tokenUsage2);
   if (tokenSummaryParts.length > 0) {
     console.log(`  tokens    ${tokenSummaryParts.join(" \xB7 ")}`);
   }
@@ -62700,8 +62724,8 @@ function renderPrometheusProjection(input2) {
       value: count
     });
   }
-  const terminalMetrics = input2.jobMetrics.filter((record3) => isTerminalStatus2(record3.status));
-  for (const [key, records] of groupBy2(terminalMetrics, (record3) => labelsKey(jobResultLabels(record3, input2.repo)))) {
+  const terminalMetrics = input2.jobMetrics.filter((record4) => isTerminalStatus2(record4.status));
+  for (const [key, records] of groupBy2(terminalMetrics, (record4) => labelsKey(jobResultLabels(record4, input2.repo)))) {
     samples.push({
       name: "xtrm_jobs_total",
       help: "Terminal specialist job activations by bounded participant role and result.",
@@ -62709,7 +62733,7 @@ function renderPrometheusProjection(input2) {
       labels: parseLabelsKey(key),
       value: records.length
     });
-    const durations = records.map((record3) => msToSeconds(record3.elapsed_ms)).filter(isNumber);
+    const durations = records.map((record4) => msToSeconds(record4.elapsed_ms)).filter(isNumber);
     if (durations.length > 0) {
       histograms.push({
         name: "xtrm_job_duration_seconds",
@@ -62719,7 +62743,7 @@ function renderPrometheusProjection(input2) {
         values: durations
       });
     }
-    const activeDurations = records.map((record3) => msToSeconds(record3.active_runtime_ms)).filter(isNumber);
+    const activeDurations = records.map((record4) => msToSeconds(record4.active_runtime_ms)).filter(isNumber);
     if (activeDurations.length > 0) {
       histograms.push({
         name: "xtrm_job_active_runtime_seconds",
@@ -62751,8 +62775,8 @@ function renderPrometheusProjection(input2) {
       });
     }
   }
-  for (const [key, records] of groupBy2(input2.jobMetrics, (record3) => labelsKey(jobParticipantLabels(record3, input2.repo)))) {
-    const waits = records.map((record3) => msToSeconds(record3.waiting_ms)).filter(isNumber);
+  for (const [key, records] of groupBy2(input2.jobMetrics, (record4) => labelsKey(jobParticipantLabels(record4, input2.repo)))) {
+    const waits = records.map((record4) => msToSeconds(record4.waiting_ms)).filter(isNumber);
     if (waits.length > 0) {
       histograms.push({
         name: "xtrm_job_wait_seconds",
@@ -62762,7 +62786,7 @@ function renderPrometheusProjection(input2) {
         values: waits
       });
     }
-    const turns = records.reduce((sum, record3) => sum + Math.max(0, Number(record3.total_turns) || 0), 0);
+    const turns = records.reduce((sum, record4) => sum + Math.max(0, Number(record4.total_turns) || 0), 0);
     if (turns > 0) {
       samples.push({
         name: "xtrm_turns_total",
@@ -62799,9 +62823,9 @@ function renderPrometheusProjection(input2) {
   return renderMetrics(samples, histograms);
 }
 function summarizeChains(records, repo) {
-  const chainRecords = records.filter((record3) => record3.chain_kind === "chain" || Boolean(record3.chain_id));
+  const chainRecords = records.filter((record4) => record4.chain_kind === "chain" || Boolean(record4.chain_id));
   const summaries = [];
-  for (const recordsForChain of groupBy2(chainRecords, (record3) => record3.chain_id ?? record3.job_id).values()) {
+  for (const recordsForChain of groupBy2(chainRecords, (record4) => record4.chain_id ?? record4.job_id).values()) {
     const labels = safeLabels({
       service_name: "specialists",
       repo,
@@ -62813,9 +62837,9 @@ function summarizeChains(records, repo) {
   return summaries;
 }
 function chainTemplateFor(records) {
-  for (const record3 of records) {
-    const startupPayload = parseJson(record3.startup_payload_json, {});
-    const raw = startupPayload.chain_template ?? startupPayload.chainTemplate ?? startupPayload.workflow_template ?? startupPayload.workflow ?? startupPayload.chain_kind ?? record3.chain_kind;
+  for (const record4 of records) {
+    const startupPayload = parseJson(record4.startup_payload_json, {});
+    const raw = startupPayload.chain_template ?? startupPayload.chainTemplate ?? startupPayload.workflow_template ?? startupPayload.workflow ?? startupPayload.chain_kind ?? record4.chain_kind;
     if (typeof raw === "string" && raw.trim().length > 0)
       return normalizeChainTemplate(raw);
   }
@@ -62828,7 +62852,7 @@ function normalizeChainTemplate(value) {
   return normalized;
 }
 function resultForChain(records) {
-  const results = records.map((record3) => resultForStatus(record3.status));
+  const results = records.map((record4) => resultForStatus(record4.status));
   if (results.includes("error"))
     return "error";
   if (results.includes("cancelled"))
@@ -62838,13 +62862,13 @@ function resultForChain(records) {
   return "unknown";
 }
 function chainDurationSeconds(records) {
-  const starts = records.map((record3) => record3.started_at_ms).filter(isNumber);
-  const completions = records.map((record3) => record3.completed_at_ms).filter(isNumber);
+  const starts = records.map((record4) => record4.started_at_ms).filter(isNumber);
+  const completions = records.map((record4) => record4.completed_at_ms).filter(isNumber);
   if (starts.length > 0 && completions.length > 0) {
     const durationMs = Math.max(...completions) - Math.min(...starts);
     return durationMs >= 0 ? durationMs / 1000 : null;
   }
-  const elapsedSum = records.map((record3) => record3.elapsed_ms).filter(isNumber).reduce((sum, elapsedMs) => sum + elapsedMs, 0);
+  const elapsedSum = records.map((record4) => record4.elapsed_ms).filter(isNumber).reduce((sum, elapsedMs) => sum + elapsedMs, 0);
   return elapsedSum > 0 ? elapsedSum / 1000 : null;
 }
 function jobStateLabels(status, repo) {
@@ -62881,32 +62905,32 @@ function worktreeLabels(status, repo) {
     state: isTerminalStatus2(String(rawStatus.status ?? "unknown")) ? "preserved_terminal" : "active"
   });
 }
-function jobParticipantLabels(record3, repo) {
+function jobParticipantLabels(record4, repo) {
   return safeLabels({
     ...DEFAULT_SERVICE_LABELS,
     repo,
-    participant_role: record3.specialist,
-    model: normalizeModel2(record3.model)
+    participant_role: record4.specialist,
+    model: normalizeModel2(record4.model)
   });
 }
-function jobResultLabels(record3, repo) {
+function jobResultLabels(record4, repo) {
   return safeLabels({
-    ...jobParticipantLabels(record3, repo),
-    result: resultForStatus(record3.status)
+    ...jobParticipantLabels(record4, repo),
+    result: resultForStatus(record4.status)
   });
 }
 function toolCallSamples(records, repo) {
   const byKey = new Map;
-  for (const record3 of records) {
-    const counts = parseJson(record3.tool_call_counts_json, {});
+  for (const record4 of records) {
+    const counts = parseJson(record4.tool_call_counts_json, {});
     for (const [toolName, rawCount] of Object.entries(counts)) {
       const value = Number(rawCount);
       if (!Number.isFinite(value) || value <= 0)
         continue;
       const labels = safeLabels({
-        ...jobParticipantLabels(record3, repo),
+        ...jobParticipantLabels(record4, repo),
         tool_name: normalizeToolName(toolName),
-        result: resultForStatus(record3.status)
+        result: resultForStatus(record4.status)
       });
       increment(byKey, labels, value);
     }
@@ -62921,13 +62945,13 @@ function toolCallSamples(records, repo) {
 }
 function tokenSamples(records, repo) {
   const byKey = new Map;
-  for (const record3 of records) {
-    const last = latestTokenTrajectory(record3);
+  for (const record4 of records) {
+    const last = latestTokenTrajectory(record4);
     if (!last)
       continue;
     const base = safeLabels({
-      ...jobParticipantLabels(record3, repo),
-      model_provider: modelProviderFor(record3.model)
+      ...jobParticipantLabels(record4, repo),
+      model_provider: modelProviderFor(record4.model)
     });
     for (const [direction, value] of Object.entries(last)) {
       if (typeof value !== "number" || value <= 0)
@@ -62943,8 +62967,8 @@ function tokenSamples(records, repo) {
     value
   }));
 }
-function latestTokenTrajectory(record3) {
-  const trajectory = parseJson(record3.token_trajectory_json, []);
+function latestTokenTrajectory(record4) {
+  const trajectory = parseJson(record4.token_trajectory_json, []);
   const latest = trajectory.at(-1);
   if (!latest)
     return null;
@@ -63201,8 +63225,8 @@ function withoutLabel(labels, key) {
 }
 function latestContextRatio(records) {
   const sorted = [...records].sort((a, b) => b.updated_at_ms - a.updated_at_ms);
-  for (const record3 of sorted) {
-    const trajectory = parseJson(record3.context_trajectory_json, []);
+  for (const record4 of sorted) {
+    const trajectory = parseJson(record4.context_trajectory_json, []);
     const latest = trajectory.at(-1);
     if (!latest)
       continue;
@@ -63925,10 +63949,10 @@ async function run27(argv = process.argv.slice(3)) {
       }
     });
     const rows = [];
-    for (const { target, record: record3 } of records) {
+    for (const { target, record: record4 } of records) {
       let event;
       try {
-        event = JSON.parse(record3.event_json);
+        event = JSON.parse(record4.event_json);
       } catch (error2) {
         logForensicReadError(target.repo, error2);
         continue;
@@ -63942,7 +63966,7 @@ async function run27(argv = process.argv.slice(3)) {
         continue;
       if (options2.nodeId && correlation.node_id !== options2.nodeId)
         continue;
-      rows.push({ target, record: record3, event, row: forensicEventToRow(event) });
+      rows.push({ target, record: record4, event, row: forensicEventToRow(event) });
     }
     rows.sort((a, b) => a.row.ts - b.row.ts || a.target.repo.localeCompare(b.target.repo) || a.row.jobId.localeCompare(b.row.jobId) || (a.row.seq ?? 0) - (b.row.seq ?? 0));
     const limitedRows = rows.slice(Math.max(0, rows.length - options2.limit));
@@ -66931,19 +66955,19 @@ function normalizeRows(source, payload) {
 function normalizeRow(source, value) {
   if (typeof value !== "object" || value === null)
     return [];
-  const record3 = value;
-  const id = firstString(record3.id, record3.slug, record3.model_id, record3.modelId, record3.name, record3.model);
+  const record4 = value;
+  const id = firstString(record4.id, record4.slug, record4.model_id, record4.modelId, record4.name, record4.model);
   if (!id)
     return [];
   return [{
     id,
-    provider: firstString(record3.provider, record3.organization, record3.creator, record3.company) ?? providerFromId(id),
-    quality_score: firstNumber(record3.quality_score, record3.qualityScore, record3.intelligence_index, record3.score),
-    elo: firstNumber(record3.elo, record3.arena_elo, record3.rating, source === "lmarena" ? record3.score : undefined),
-    cost_input: firstNumber(record3.cost_input, record3.input_cost, record3.price_1m_input_tokens, record3.inputPrice),
-    cost_output: firstNumber(record3.cost_output, record3.output_cost, record3.price_1m_output_tokens, record3.outputPrice),
-    context_window: firstNumber(record3.context_window, record3.contextWindow, record3.context, record3.max_tokens),
-    tools_supported: firstBoolean(record3.tools_supported, record3.supports_tools, record3.tool_use, record3.tools)
+    provider: firstString(record4.provider, record4.organization, record4.creator, record4.company) ?? providerFromId(id),
+    quality_score: firstNumber(record4.quality_score, record4.qualityScore, record4.intelligence_index, record4.score),
+    elo: firstNumber(record4.elo, record4.arena_elo, record4.rating, source === "lmarena" ? record4.score : undefined),
+    cost_input: firstNumber(record4.cost_input, record4.input_cost, record4.price_1m_input_tokens, record4.inputPrice),
+    cost_output: firstNumber(record4.cost_output, record4.output_cost, record4.price_1m_output_tokens, record4.outputPrice),
+    context_window: firstNumber(record4.context_window, record4.contextWindow, record4.context, record4.max_tokens),
+    tools_supported: firstBoolean(record4.tools_supported, record4.supports_tools, record4.tool_use, record4.tools)
   }];
 }
 function firstString(...values) {
@@ -78155,57 +78179,457 @@ function completionBody(result) {
   return JSON.stringify(result);
 }
 
+// src/specialist/native-activation-observability.ts
+init_timeline_events();
+var NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
+  activation_requested: "Dispatch intent precedes the legacy run_start boundary and has no timeline event.",
+  step_contract_compiled: "Step-contract compilation has no legacy AgentSession event.",
+  activation_admitted: "Admission metadata has no legacy timeline event; identity is projected on specialist_jobs.",
+  activation_starting: "Session construction has no legacy timeline event; run_start follows once construction succeeds.",
+  activation_resumed: "Resume-from-record has no legacy counterpart; the resumed run re-enters the shared stream at turn_start.",
+  output_validation_started: "Native result validation has no legacy timeline event kind.",
+  output_validation_passed: "Native result validation has no legacy timeline event kind.",
+  output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.",
+  activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.",
+  lease_acquired: "Workspace-lease contention has no legacy runner concept; admission identity is projected on specialist_jobs.",
+  lease_denied: "Workspace-lease contention has no legacy runner concept; the refusal itself is run_complete.",
+  lease_released: "Workspace-lease teardown has no legacy timeline event.",
+  lease_uncertain: "Uncertain lease release has no legacy timeline event; reconciliation is operator-visible via specialist_status.",
+  lease_reconciled: "Lease reconciliation has no legacy timeline event.",
+  tool_blocked: "Per-call tool-guard refusal has no legacy timeline event; the turn continues and completion carries the outcome.",
+  clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_resolved: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  turn_started: "Suppressed compatibility alias; the raw Pi turn_start event is canonical.",
+  turn_completed: "Suppressed compatibility alias; the raw Pi turn_end event is canonical.",
+  retry_started: "Suppressed compatibility alias; the raw Pi auto_retry_start event is canonical.",
+  retry_completed: "Suppressed compatibility alias; the raw Pi auto_retry_end event is canonical.",
+  compaction_started: "Suppressed compatibility alias; the raw Pi compaction_start event is canonical.",
+  compaction_completed: "Suppressed compatibility alias; the raw Pi compaction_end event is canonical."
+});
+var NATIVE_SESSION_OBSERVABILITY_GAPS = Object.freeze({
+  agent_start: "turn_start is the canonical turn boundary.",
+  agent_end: "run_complete is emitted by the activation lifecycle; agent_end is not a run boundary.",
+  agent_settled: "The lifecycle activation_settled signal projects the waiting status.",
+  message_update: "Only thinking deltas are projected; text is persisted once at assistant message_end.",
+  message_user: "User and custom-message boundaries are not persisted by the legacy timeline mapper.",
+  queue_update: "The legacy runner does not persist Pi prompt-queue state.",
+  entry_appended: "Session transcript persistence is not a timeline event.",
+  session_info_changed: "Session display-name changes are not a timeline event.",
+  thinking_level_changed: "The legacy runner does not persist thinking-level changes.",
+  summarization_retry_scheduled: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_attempt_start: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_finished: "The legacy runner has no summarization-retry timeline event.",
+  bash_execution_update: "The legacy runner does not persist streaming bash deltas."
+});
+function at(event, t) {
+  return { ...event, t };
+}
+function record3(value) {
+  return value !== null && typeof value === "object" ? value : undefined;
+}
+function stringField2(value) {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+function numberField2(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+function booleanField2(value) {
+  return typeof value === "boolean" ? value : undefined;
+}
+function messageRole(event) {
+  return stringField2(record3(event.message)?.role);
+}
+function assistantMessage(event) {
+  const message = record3(event.message);
+  return message?.role === "assistant" ? message : undefined;
+}
+function assistantText(event) {
+  const message = assistantMessage(event);
+  if (!message)
+    return;
+  const content = message.content;
+  if (typeof content === "string")
+    return content.trim().length > 0 ? content : undefined;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    const part = record3(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join("");
+  return text.trim().length > 0 ? text : undefined;
+}
+function tokenUsage(event) {
+  const usage = record3(assistantMessage(event)?.usage);
+  if (!usage)
+    return;
+  const projected = {
+    input_tokens: numberField2(usage.input),
+    output_tokens: numberField2(usage.output),
+    cache_creation_tokens: numberField2(usage.cacheWrite),
+    cache_read_tokens: numberField2(usage.cacheRead),
+    reasoning_tokens: numberField2(usage.reasoning),
+    total_tokens: numberField2(usage.totalTokens),
+    usage_source: "provider_usage"
+  };
+  return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
+}
+function resultContent(result) {
+  if (typeof result === "string")
+    return result;
+  const resultRecord = record3(result);
+  const content = resultRecord?.content;
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    if (typeof item === "string")
+      return item;
+    const part = record3(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join(`
+`);
+  return text.trim().length > 0 ? text : undefined;
+}
+function nativeAttemptNo(attemptId) {
+  const match = /:(\d+)$/.exec(attemptId);
+  if (!match)
+    return 1;
+  const parsed = Number(match[1]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+function nativeAttemptIdForNo(initialAttemptId, attemptNo) {
+  const safeAttemptNo = Number.isSafeInteger(attemptNo) && attemptNo > 0 ? attemptNo : 1;
+  return /:\d+$/.test(initialAttemptId) ? initialAttemptId.replace(/:\d+$/, `:${safeAttemptNo}`) : `${initialAttemptId}:${safeAttemptNo}`;
+}
+function mapNativeLifecycleEvent(event, context, t = Date.now()) {
+  switch (event.name) {
+    case "activation_started":
+      return at(createRunStartEvent(event.specialist, event.beadId, {
+        job_id: event.activationId,
+        specialist_name: event.specialist,
+        bead_id: event.beadId,
+        worktree_path: context.workspacePath
+      }), t);
+    case "activation_settled":
+      return at(createStatusChangeEvent("waiting", "running"), t);
+    case "activation_completed":
+      return at(createRunCompleteEvent("COMPLETE", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true,
+        metrics: {
+          token_usage: context.tokenUsage,
+          finish_reason: context.finishReason,
+          turns: context.turns,
+          tool_calls: context.toolCalls?.length,
+          tool_call_names: context.toolCalls,
+          auto_retries: context.autoRetries,
+          auto_compactions: context.autoCompactions
+        }
+      }), t);
+    case "activation_failed":
+    case "activation_rejected":
+      return at(createRunCompleteEvent("ERROR", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        error: stringField2(event.payload?.error) ?? stringField2(event.payload?.reason),
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true
+      }), t);
+    default:
+      return null;
+  }
+}
+function mapNativeSessionEvent(event, t = Date.now(), turnIndex = 0) {
+  const mapped = [];
+  const add = (timeline) => {
+    if (timeline)
+      mapped.push(at(timeline, t));
+  };
+  switch (event.type) {
+    case "turn_start":
+      add(mapCallbackEventToTimelineEvent("turn_start", {}));
+      break;
+    case "turn_end":
+      add(mapCallbackEventToTimelineEvent("turn_end", {}));
+      break;
+    case "message_start": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const message = assistantMessage(event);
+        const model = stringField2(message?.model);
+        const provider = stringField2(message?.provider);
+        if (model || provider)
+          mapped.push(at(createMetaEvent(model ?? "unknown", provider ?? "unknown"), t));
+        add(mapCallbackEventToTimelineEvent("message_start_assistant", {}));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_start_tool_result", {}));
+      break;
+    }
+    case "message_end": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const text = assistantText(event);
+        const usage = tokenUsage(event);
+        const finishReason = stringField2(assistantMessage(event)?.stopReason);
+        if (text)
+          mapped.push({ t, type: TIMELINE_EVENT_TYPES.TEXT, char_count: text.length, content: text });
+        add(mapCallbackEventToTimelineEvent("message_end_assistant", {}));
+        if (usage)
+          mapped.push(at(createTokenUsageEvent(usage, "message_done"), t));
+        if (finishReason)
+          mapped.push(at(createFinishReasonEvent(finishReason, "message_done"), t));
+        mapped.push(at(createTurnSummaryEvent(turnIndex, usage, finishReason, text), t));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_end_tool_result", {}));
+      break;
+    }
+    case "message_update": {
+      const update = record3(event.assistantMessageEvent);
+      if (update?.type === "thinking_delta") {
+        add(mapCallbackEventToTimelineEvent("thinking", { charCount: stringField2(update.delta)?.length }));
+      }
+      break;
+    }
+    case "tool_execution_start":
+      add(mapCallbackEventToTimelineEvent("tool_execution_start", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        args: record3(event.args)
+      }));
+      break;
+    case "tool_execution_update":
+      add(mapCallbackEventToTimelineEvent("tool_execution_update", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId)
+      }));
+      break;
+    case "tool_execution_end":
+      add(mapCallbackEventToTimelineEvent("tool_execution_end", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        isError: booleanField2(event.isError),
+        resultContent: resultContent(event.result)
+      }));
+      break;
+    case "compaction_start":
+      add(mapCallbackEventToTimelineEvent("auto_compaction_start", {}));
+      break;
+    case "compaction_end": {
+      const result = record3(event.result);
+      add(mapCallbackEventToTimelineEvent("auto_compaction_end", {
+        compaction: {
+          tokensBefore: numberField2(result?.tokensBefore),
+          summary: stringField2(result?.summary),
+          firstKeptEntryId: stringField2(result?.firstKeptEntryId)
+        }
+      }));
+      break;
+    }
+    case "auto_retry_start":
+      add(mapCallbackEventToTimelineEvent("auto_retry_start", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          maxAttempts: numberField2(event.maxAttempts),
+          delayMs: numberField2(event.delayMs),
+          errorMessage: stringField2(event.errorMessage)
+        }
+      }));
+      break;
+    case "auto_retry_end":
+      add(mapCallbackEventToTimelineEvent("auto_retry_end", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          errorMessage: stringField2(event.finalError)
+        }
+      }));
+      break;
+    default:
+      break;
+  }
+  return mapped;
+}
+
 // src/activation/forensic-sink.ts
-init_forensic_events();
-var ERROR_EVENTS = new Set([
-  "activation_rejected",
-  "activation_failed",
-  "output_validation_failed",
-  "retry_failed",
-  "tool_blocked",
-  "lease_denied"
-]);
-var WARN_EVENTS = new Set([
-  "activation_uncertain",
-  "lease_uncertain",
-  "retry_started"
-]);
-function severityFor(name) {
-  if (ERROR_EVENTS.has(name))
-    return "error";
-  if (WARN_EVENTS.has(name))
-    return "warn";
-  return "info";
+init_timeline_events();
+function stringValue(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+function statusForLifecycle(name, current) {
+  switch (name) {
+    case "activation_requested":
+    case "activation_admitted":
+    case "activation_starting":
+      return "starting";
+    case "activation_started":
+    case "activation_resumed":
+    case "turn_started":
+      return "running";
+    case "activation_settled":
+      return "waiting";
+    case "activation_completed":
+      return "done";
+    case "activation_failed":
+    case "activation_rejected":
+    case "output_validation_failed":
+      return "error";
+    default:
+      return current;
+  }
+}
+function statusForSessionEvent(type, current) {
+  if (type === "agent_start" || type === "turn_start")
+    return "running";
+  if (type === "agent_settled")
+    return "waiting";
+  return current;
+}
+function identityOf(state) {
+  return { attemptId: state.attemptId, attemptNo: state.attemptNo };
+}
+function statusOf(activationId, state, currentEvent, error2) {
+  const elapsedMs = Math.max(0, state.lastEventAtMs - state.startedAtMs);
+  return {
+    id: activationId,
+    specialist: state.specialist,
+    status: state.status,
+    current_event: currentEvent,
+    model: state.resolvedModel,
+    backend: state.resolvedModel?.split("/")[0],
+    started_at_ms: state.startedAtMs,
+    elapsed_s: elapsedMs / 1000,
+    last_event_at_ms: state.lastEventAtMs,
+    bead_id: state.beadId,
+    session_id: state.piSessionId,
+    worktree_path: state.workspacePath,
+    metrics: {
+      token_usage: state.tokenUsage,
+      finish_reason: state.finishReason,
+      turns: state.turns,
+      tool_calls: state.toolCalls.length,
+      tool_call_names: state.toolCalls,
+      auto_compactions: state.autoCompactions,
+      auto_retries: state.autoRetries
+    },
+    error: error2
+  };
+}
+function newProjectionState(input) {
+  return {
+    initialAttemptId: input.attemptId,
+    attemptId: input.attemptId,
+    attemptNo: nativeAttemptNo(input.attemptId),
+    specialist: input.specialist,
+    beadId: input.beadId,
+    startedAtMs: input.startedAtMs,
+    lastEventAtMs: input.startedAtMs,
+    status: "starting",
+    toolCalls: [],
+    turns: 0,
+    autoRetries: 0,
+    autoCompactions: 0
+  };
 }
 function createActivationForensicSink(observability) {
   if (!observability)
-    return { emit: () => {} };
+    return { emit: () => {}, sessionEvent: () => {} };
+  const states = new Map;
+  const writeProjection = (activationId, state, currentEvent, timelineEvents, error2) => {
+    const status = statusOf(activationId, state, currentEvent, error2);
+    if (timelineEvents.length > 0) {
+      observability.upsertStatusWithEvents(status, timelineEvents, identityOf(state));
+    } else {
+      observability.upsertStatus(status, identityOf(state));
+    }
+  };
   return {
     emit(event) {
       try {
-        observability.appendForensicEvent(event.activationId, event.specialist, event.beadId, createForensicEvent({
-          event_family: "activation",
-          event_name: `activation.${event.name}`,
-          severity: severityFor(event.name),
-          resource: {
-            service_namespace: "xtrm",
-            service_name: "specialists",
-            service_component: "native-activation-host",
-            deployment_environment: deploymentEnvironment(),
-            repo: "specialists",
-            participant_kind: "specialist",
-            participant_role: event.specialist
-          },
-          correlation: {
-            participant_id: event.participantId,
-            job_id: event.activationId,
-            bead_id: event.beadId
-          },
-          body: {
-            attempt_id: event.attemptId,
-            ...event.payload ?? {}
+        const now = Date.now();
+        const existing = states.get(event.activationId);
+        const state = existing ?? newProjectionState({
+          attemptId: event.attemptId,
+          specialist: event.specialist,
+          beadId: event.beadId,
+          startedAtMs: now
+        });
+        state.lastEventAtMs = now;
+        state.status = statusForLifecycle(event.name, state.status);
+        state.workspacePath = stringValue(event.payload?.workspace) ?? state.workspacePath;
+        state.piSessionId = stringValue(event.payload?.pi_session_id) ?? state.piSessionId;
+        state.resolvedModel = stringValue(event.payload?.resolved_model) ?? state.resolvedModel;
+        states.set(event.activationId, state);
+        const error2 = stringValue(event.payload?.error) ?? stringValue(event.payload?.reason);
+        const timelineEvent = mapNativeLifecycleEvent(event, {
+          startedAtMs: state.startedAtMs,
+          workspacePath: state.workspacePath,
+          resolvedModel: state.resolvedModel,
+          output: state.latestOutput,
+          tokenUsage: state.tokenUsage,
+          finishReason: state.finishReason,
+          toolCalls: state.toolCalls,
+          turns: state.turns,
+          autoRetries: state.autoRetries,
+          autoCompactions: state.autoCompactions
+        }, now);
+        writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error2);
+        if (event.name === "activation_disposed")
+          states.delete(event.activationId);
+      } catch {}
+    },
+    sessionEvent(input) {
+      try {
+        const now = Date.now();
+        const existing = states.get(input.activationId);
+        const state = existing ?? newProjectionState({
+          attemptId: input.attemptId,
+          specialist: input.specialist,
+          beadId: input.beadId,
+          startedAtMs: now
+        });
+        if (input.event.type === "auto_retry_start") {
+          state.attemptNo += 1;
+          state.attemptId = nativeAttemptIdForNo(state.initialAttemptId, state.attemptNo);
+          state.autoRetries += 1;
+        }
+        if (input.event.type === "turn_start")
+          state.turns += 1;
+        if (input.event.type === "compaction_start")
+          state.autoCompactions += 1;
+        state.lastEventAtMs = now;
+        state.status = statusForSessionEvent(input.event.type, state.status);
+        if (stringValue(input.piSessionId))
+          state.piSessionId = input.piSessionId;
+        state.workspacePath = input.workspacePath;
+        states.set(input.activationId, state);
+        const timelineEvents = mapNativeSessionEvent(input.event, now, state.turns);
+        for (const timelineEvent of timelineEvents) {
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TEXT && typeof timelineEvent.content === "string") {
+            state.latestOutput = timelineEvent.content;
           }
-        }));
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOKEN_USAGE)
+            state.tokenUsage = timelineEvent.token_usage;
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.FINISH_REASON)
+            state.finishReason = timelineEvent.finish_reason;
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOOL && timelineEvent.phase === "end") {
+            state.toolCalls.push(timelineEvent.tool);
+          }
+        }
+        writeProjection(input.activationId, state, timelineEvents.at(-1)?.type, timelineEvents);
       } catch {}
     }
   };

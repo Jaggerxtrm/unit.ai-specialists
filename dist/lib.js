@@ -14010,15 +14010,16 @@ class SqliteClient {
     this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
     this.db.run("PRAGMA journal_mode=WAL");
   }
-  writeStatusRow(status, lastOutput) {
+  writeStatusRow(status, lastOutput, identity) {
     const statusJson = JSON.stringify(status);
     const workspaceId = normalizeWorkspacePath(status.worktree_path);
     const piSessionId = status.session_id ?? null;
     const participantId = deriveParticipantId({ participant_role: status.specialist });
-    const attemptId = `${status.id}::attempt::1`;
+    const attemptNo = identity?.attemptNo ?? 1;
+    const attemptId = identity?.attemptId ?? `${status.id}::attempt::1`;
     this.db.run(`
       INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json, participant_id, pi_session_id, workspace_id, attempt_no, attempt_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
@@ -14035,8 +14036,10 @@ class SqliteClient {
         last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
         startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json),
         participant_id = excluded.participant_id,
-        pi_session_id = excluded.pi_session_id,
-        workspace_id = excluded.workspace_id;
+        pi_session_id = CASE WHEN ? THEN COALESCE(excluded.pi_session_id, specialist_jobs.pi_session_id) ELSE excluded.pi_session_id END,
+        workspace_id = CASE WHEN ? THEN COALESCE(excluded.workspace_id, specialist_jobs.workspace_id) ELSE excluded.workspace_id END,
+        attempt_no = CASE WHEN ? AND excluded.attempt_no >= specialist_jobs.attempt_no THEN excluded.attempt_no ELSE specialist_jobs.attempt_no END,
+        attempt_id = CASE WHEN ? AND excluded.attempt_no >= specialist_jobs.attempt_no THEN excluded.attempt_id ELSE specialist_jobs.attempt_id END;
     `, [
       status.id,
       status.specialist,
@@ -14056,7 +14059,12 @@ class SqliteClient {
       participantId,
       piSessionId,
       workspaceId,
-      attemptId
+      attemptNo,
+      attemptId,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
+      identity ? 1 : 0
     ]);
   }
   writeEpicRunRow(epic) {
@@ -14105,13 +14113,18 @@ class SqliteClient {
     const attemptNo = typeof row.attempt_no === "bigint" ? Number(row.attempt_no) : typeof row.attempt_no === "number" ? row.attempt_no : 0;
     return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === "string" ? row.attempt_id : null };
   }
-  writeEventRow(jobId, specialist, beadId, event) {
+  writeEventRow(jobId, specialist, beadId, event, identity) {
     const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
     const current = this.readJobAttempt(jobId);
     let attemptId;
-    if (isRetryStartEvent(event)) {
+    if (identity) {
+      attemptId = identity.attemptId;
+      if (current && identity.attemptNo >= current.attempt_no) {
+        this.db.run("UPDATE specialist_jobs SET attempt_no = ?, attempt_id = ?, updated_at_ms = ? WHERE job_id = ?", [identity.attemptNo, attemptId, Date.now(), jobId]);
+      }
+    } else if (isRetryStartEvent(event)) {
       const nextNo = (current?.attempt_no ?? 0) + 1;
       attemptId = buildAttemptId(jobId, nextNo);
       if (current) {
@@ -14435,9 +14448,9 @@ class SqliteClient {
       updatedAtMs
     ]);
   }
-  upsertStatus(status) {
+  upsertStatus(status, identity) {
     withRetry(() => {
-      this.writeStatusRow(status);
+      this.writeStatusRow(status, undefined, identity);
     }, "upsertStatus");
   }
   markSpecialistJobCancelled(jobId, reason) {
@@ -14474,6 +14487,17 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEvent");
   }
+  upsertStatusWithEvents(status, events, identity) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status, undefined, identity);
+        for (const event of events) {
+          this.writeEventRow(status.id, status.specialist, status.bead_id, event, identity);
+        }
+      });
+      transaction();
+    }, "upsertStatusWithEvents");
+  }
   upsertStatusWithEventAndResult(status, event, output) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
@@ -14484,9 +14508,9 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEventAndResult");
   }
-  appendEvent(jobId, specialist, beadId, event) {
+  appendEvent(jobId, specialist, beadId, event, identity) {
     withRetry(() => {
-      this.writeEventRow(jobId, specialist, beadId, event);
+      this.writeEventRow(jobId, specialist, beadId, event, identity);
     }, "appendEvent");
   }
   appendForensicEvent(jobId, specialist, beadId, forensicEvent) {
@@ -17395,6 +17419,14 @@ function createMetaEvent(model, backend) {
     type: TIMELINE_EVENT_TYPES.META,
     model,
     backend
+  };
+}
+function createStatusChangeEvent(status, previousStatus) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STATUS_CHANGE,
+    status,
+    ...previousStatus !== undefined ? { previous_status: previousStatus } : {}
   };
 }
 function createTokenUsageEvent(token_usage, source) {
@@ -21613,56 +21645,455 @@ function parseCompletionBody(body) {
     return;
   }
 }
+// src/specialist/native-activation-observability.ts
+var NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
+  activation_requested: "Dispatch intent precedes the legacy run_start boundary and has no timeline event.",
+  step_contract_compiled: "Step-contract compilation has no legacy AgentSession event.",
+  activation_admitted: "Admission metadata has no legacy timeline event; identity is projected on specialist_jobs.",
+  activation_starting: "Session construction has no legacy timeline event; run_start follows once construction succeeds.",
+  activation_resumed: "Resume-from-record has no legacy counterpart; the resumed run re-enters the shared stream at turn_start.",
+  output_validation_started: "Native result validation has no legacy timeline event kind.",
+  output_validation_passed: "Native result validation has no legacy timeline event kind.",
+  output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.",
+  activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.",
+  lease_acquired: "Workspace-lease contention has no legacy runner concept; admission identity is projected on specialist_jobs.",
+  lease_denied: "Workspace-lease contention has no legacy runner concept; the refusal itself is run_complete.",
+  lease_released: "Workspace-lease teardown has no legacy timeline event.",
+  lease_uncertain: "Uncertain lease release has no legacy timeline event; reconciliation is operator-visible via specialist_status.",
+  lease_reconciled: "Lease reconciliation has no legacy timeline event.",
+  tool_blocked: "Per-call tool-guard refusal has no legacy timeline event; the turn continues and completion carries the outcome.",
+  clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_resolved: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  turn_started: "Suppressed compatibility alias; the raw Pi turn_start event is canonical.",
+  turn_completed: "Suppressed compatibility alias; the raw Pi turn_end event is canonical.",
+  retry_started: "Suppressed compatibility alias; the raw Pi auto_retry_start event is canonical.",
+  retry_completed: "Suppressed compatibility alias; the raw Pi auto_retry_end event is canonical.",
+  compaction_started: "Suppressed compatibility alias; the raw Pi compaction_start event is canonical.",
+  compaction_completed: "Suppressed compatibility alias; the raw Pi compaction_end event is canonical."
+});
+var NATIVE_SESSION_OBSERVABILITY_GAPS = Object.freeze({
+  agent_start: "turn_start is the canonical turn boundary.",
+  agent_end: "run_complete is emitted by the activation lifecycle; agent_end is not a run boundary.",
+  agent_settled: "The lifecycle activation_settled signal projects the waiting status.",
+  message_update: "Only thinking deltas are projected; text is persisted once at assistant message_end.",
+  message_user: "User and custom-message boundaries are not persisted by the legacy timeline mapper.",
+  queue_update: "The legacy runner does not persist Pi prompt-queue state.",
+  entry_appended: "Session transcript persistence is not a timeline event.",
+  session_info_changed: "Session display-name changes are not a timeline event.",
+  thinking_level_changed: "The legacy runner does not persist thinking-level changes.",
+  summarization_retry_scheduled: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_attempt_start: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_finished: "The legacy runner has no summarization-retry timeline event.",
+  bash_execution_update: "The legacy runner does not persist streaming bash deltas."
+});
+function at(event, t) {
+  return { ...event, t };
+}
+function record(value) {
+  return value !== null && typeof value === "object" ? value : undefined;
+}
+function stringField2(value) {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+function numberField2(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+function booleanField2(value) {
+  return typeof value === "boolean" ? value : undefined;
+}
+function messageRole(event) {
+  return stringField2(record(event.message)?.role);
+}
+function assistantMessage(event) {
+  const message = record(event.message);
+  return message?.role === "assistant" ? message : undefined;
+}
+function assistantText(event) {
+  const message = assistantMessage(event);
+  if (!message)
+    return;
+  const content = message.content;
+  if (typeof content === "string")
+    return content.trim().length > 0 ? content : undefined;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    const part = record(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join("");
+  return text.trim().length > 0 ? text : undefined;
+}
+function tokenUsage(event) {
+  const usage = record(assistantMessage(event)?.usage);
+  if (!usage)
+    return;
+  const projected = {
+    input_tokens: numberField2(usage.input),
+    output_tokens: numberField2(usage.output),
+    cache_creation_tokens: numberField2(usage.cacheWrite),
+    cache_read_tokens: numberField2(usage.cacheRead),
+    reasoning_tokens: numberField2(usage.reasoning),
+    total_tokens: numberField2(usage.totalTokens),
+    usage_source: "provider_usage"
+  };
+  return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
+}
+function resultContent(result) {
+  if (typeof result === "string")
+    return result;
+  const resultRecord = record(result);
+  const content = resultRecord?.content;
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    if (typeof item === "string")
+      return item;
+    const part = record(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join(`
+`);
+  return text.trim().length > 0 ? text : undefined;
+}
+function nativeAttemptNo(attemptId) {
+  const match = /:(\d+)$/.exec(attemptId);
+  if (!match)
+    return 1;
+  const parsed = Number(match[1]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+function nativeAttemptIdForNo(initialAttemptId, attemptNo) {
+  const safeAttemptNo = Number.isSafeInteger(attemptNo) && attemptNo > 0 ? attemptNo : 1;
+  return /:\d+$/.test(initialAttemptId) ? initialAttemptId.replace(/:\d+$/, `:${safeAttemptNo}`) : `${initialAttemptId}:${safeAttemptNo}`;
+}
+function mapNativeLifecycleEvent(event, context, t = Date.now()) {
+  switch (event.name) {
+    case "activation_started":
+      return at(createRunStartEvent(event.specialist, event.beadId, {
+        job_id: event.activationId,
+        specialist_name: event.specialist,
+        bead_id: event.beadId,
+        worktree_path: context.workspacePath
+      }), t);
+    case "activation_settled":
+      return at(createStatusChangeEvent("waiting", "running"), t);
+    case "activation_completed":
+      return at(createRunCompleteEvent("COMPLETE", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true,
+        metrics: {
+          token_usage: context.tokenUsage,
+          finish_reason: context.finishReason,
+          turns: context.turns,
+          tool_calls: context.toolCalls?.length,
+          tool_call_names: context.toolCalls,
+          auto_retries: context.autoRetries,
+          auto_compactions: context.autoCompactions
+        }
+      }), t);
+    case "activation_failed":
+    case "activation_rejected":
+      return at(createRunCompleteEvent("ERROR", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        error: stringField2(event.payload?.error) ?? stringField2(event.payload?.reason),
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true
+      }), t);
+    default:
+      return null;
+  }
+}
+function mapNativeSessionEvent(event, t = Date.now(), turnIndex = 0) {
+  const mapped = [];
+  const add = (timeline) => {
+    if (timeline)
+      mapped.push(at(timeline, t));
+  };
+  switch (event.type) {
+    case "turn_start":
+      add(mapCallbackEventToTimelineEvent("turn_start", {}));
+      break;
+    case "turn_end":
+      add(mapCallbackEventToTimelineEvent("turn_end", {}));
+      break;
+    case "message_start": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const message = assistantMessage(event);
+        const model = stringField2(message?.model);
+        const provider = stringField2(message?.provider);
+        if (model || provider)
+          mapped.push(at(createMetaEvent(model ?? "unknown", provider ?? "unknown"), t));
+        add(mapCallbackEventToTimelineEvent("message_start_assistant", {}));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_start_tool_result", {}));
+      break;
+    }
+    case "message_end": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const text = assistantText(event);
+        const usage = tokenUsage(event);
+        const finishReason = stringField2(assistantMessage(event)?.stopReason);
+        if (text)
+          mapped.push({ t, type: TIMELINE_EVENT_TYPES.TEXT, char_count: text.length, content: text });
+        add(mapCallbackEventToTimelineEvent("message_end_assistant", {}));
+        if (usage)
+          mapped.push(at(createTokenUsageEvent(usage, "message_done"), t));
+        if (finishReason)
+          mapped.push(at(createFinishReasonEvent(finishReason, "message_done"), t));
+        mapped.push(at(createTurnSummaryEvent(turnIndex, usage, finishReason, text), t));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_end_tool_result", {}));
+      break;
+    }
+    case "message_update": {
+      const update = record(event.assistantMessageEvent);
+      if (update?.type === "thinking_delta") {
+        add(mapCallbackEventToTimelineEvent("thinking", { charCount: stringField2(update.delta)?.length }));
+      }
+      break;
+    }
+    case "tool_execution_start":
+      add(mapCallbackEventToTimelineEvent("tool_execution_start", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        args: record(event.args)
+      }));
+      break;
+    case "tool_execution_update":
+      add(mapCallbackEventToTimelineEvent("tool_execution_update", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId)
+      }));
+      break;
+    case "tool_execution_end":
+      add(mapCallbackEventToTimelineEvent("tool_execution_end", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        isError: booleanField2(event.isError),
+        resultContent: resultContent(event.result)
+      }));
+      break;
+    case "compaction_start":
+      add(mapCallbackEventToTimelineEvent("auto_compaction_start", {}));
+      break;
+    case "compaction_end": {
+      const result = record(event.result);
+      add(mapCallbackEventToTimelineEvent("auto_compaction_end", {
+        compaction: {
+          tokensBefore: numberField2(result?.tokensBefore),
+          summary: stringField2(result?.summary),
+          firstKeptEntryId: stringField2(result?.firstKeptEntryId)
+        }
+      }));
+      break;
+    }
+    case "auto_retry_start":
+      add(mapCallbackEventToTimelineEvent("auto_retry_start", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          maxAttempts: numberField2(event.maxAttempts),
+          delayMs: numberField2(event.delayMs),
+          errorMessage: stringField2(event.errorMessage)
+        }
+      }));
+      break;
+    case "auto_retry_end":
+      add(mapCallbackEventToTimelineEvent("auto_retry_end", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          errorMessage: stringField2(event.finalError)
+        }
+      }));
+      break;
+    default:
+      break;
+  }
+  return mapped;
+}
+
 // src/activation/forensic-sink.ts
-var ERROR_EVENTS = new Set([
-  "activation_rejected",
-  "activation_failed",
-  "output_validation_failed",
-  "retry_failed",
-  "tool_blocked",
-  "lease_denied"
-]);
-var WARN_EVENTS = new Set([
-  "activation_uncertain",
-  "lease_uncertain",
-  "retry_started"
-]);
-function severityFor(name) {
-  if (ERROR_EVENTS.has(name))
-    return "error";
-  if (WARN_EVENTS.has(name))
-    return "warn";
-  return "info";
+function stringValue(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+function statusForLifecycle(name, current) {
+  switch (name) {
+    case "activation_requested":
+    case "activation_admitted":
+    case "activation_starting":
+      return "starting";
+    case "activation_started":
+    case "activation_resumed":
+    case "turn_started":
+      return "running";
+    case "activation_settled":
+      return "waiting";
+    case "activation_completed":
+      return "done";
+    case "activation_failed":
+    case "activation_rejected":
+    case "output_validation_failed":
+      return "error";
+    default:
+      return current;
+  }
+}
+function statusForSessionEvent(type, current) {
+  if (type === "agent_start" || type === "turn_start")
+    return "running";
+  if (type === "agent_settled")
+    return "waiting";
+  return current;
+}
+function identityOf(state) {
+  return { attemptId: state.attemptId, attemptNo: state.attemptNo };
+}
+function statusOf(activationId, state, currentEvent, error) {
+  const elapsedMs = Math.max(0, state.lastEventAtMs - state.startedAtMs);
+  return {
+    id: activationId,
+    specialist: state.specialist,
+    status: state.status,
+    current_event: currentEvent,
+    model: state.resolvedModel,
+    backend: state.resolvedModel?.split("/")[0],
+    started_at_ms: state.startedAtMs,
+    elapsed_s: elapsedMs / 1000,
+    last_event_at_ms: state.lastEventAtMs,
+    bead_id: state.beadId,
+    session_id: state.piSessionId,
+    worktree_path: state.workspacePath,
+    metrics: {
+      token_usage: state.tokenUsage,
+      finish_reason: state.finishReason,
+      turns: state.turns,
+      tool_calls: state.toolCalls.length,
+      tool_call_names: state.toolCalls,
+      auto_compactions: state.autoCompactions,
+      auto_retries: state.autoRetries
+    },
+    error
+  };
+}
+function newProjectionState(input) {
+  return {
+    initialAttemptId: input.attemptId,
+    attemptId: input.attemptId,
+    attemptNo: nativeAttemptNo(input.attemptId),
+    specialist: input.specialist,
+    beadId: input.beadId,
+    startedAtMs: input.startedAtMs,
+    lastEventAtMs: input.startedAtMs,
+    status: "starting",
+    toolCalls: [],
+    turns: 0,
+    autoRetries: 0,
+    autoCompactions: 0
+  };
 }
 function createActivationForensicSink(observability) {
   if (!observability)
-    return { emit: () => {} };
+    return { emit: () => {}, sessionEvent: () => {} };
+  const states = new Map;
+  const writeProjection = (activationId, state, currentEvent, timelineEvents, error) => {
+    const status = statusOf(activationId, state, currentEvent, error);
+    if (timelineEvents.length > 0) {
+      observability.upsertStatusWithEvents(status, timelineEvents, identityOf(state));
+    } else {
+      observability.upsertStatus(status, identityOf(state));
+    }
+  };
   return {
     emit(event) {
       try {
-        observability.appendForensicEvent(event.activationId, event.specialist, event.beadId, createForensicEvent({
-          event_family: "activation",
-          event_name: `activation.${event.name}`,
-          severity: severityFor(event.name),
-          resource: {
-            service_namespace: "xtrm",
-            service_name: "specialists",
-            service_component: "native-activation-host",
-            deployment_environment: deploymentEnvironment(),
-            repo: "specialists",
-            participant_kind: "specialist",
-            participant_role: event.specialist
-          },
-          correlation: {
-            participant_id: event.participantId,
-            job_id: event.activationId,
-            bead_id: event.beadId
-          },
-          body: {
-            attempt_id: event.attemptId,
-            ...event.payload ?? {}
+        const now = Date.now();
+        const existing = states.get(event.activationId);
+        const state = existing ?? newProjectionState({
+          attemptId: event.attemptId,
+          specialist: event.specialist,
+          beadId: event.beadId,
+          startedAtMs: now
+        });
+        state.lastEventAtMs = now;
+        state.status = statusForLifecycle(event.name, state.status);
+        state.workspacePath = stringValue(event.payload?.workspace) ?? state.workspacePath;
+        state.piSessionId = stringValue(event.payload?.pi_session_id) ?? state.piSessionId;
+        state.resolvedModel = stringValue(event.payload?.resolved_model) ?? state.resolvedModel;
+        states.set(event.activationId, state);
+        const error = stringValue(event.payload?.error) ?? stringValue(event.payload?.reason);
+        const timelineEvent = mapNativeLifecycleEvent(event, {
+          startedAtMs: state.startedAtMs,
+          workspacePath: state.workspacePath,
+          resolvedModel: state.resolvedModel,
+          output: state.latestOutput,
+          tokenUsage: state.tokenUsage,
+          finishReason: state.finishReason,
+          toolCalls: state.toolCalls,
+          turns: state.turns,
+          autoRetries: state.autoRetries,
+          autoCompactions: state.autoCompactions
+        }, now);
+        writeProjection(event.activationId, state, timelineEvent?.type, timelineEvent ? [timelineEvent] : [], error);
+        if (event.name === "activation_disposed")
+          states.delete(event.activationId);
+      } catch {}
+    },
+    sessionEvent(input) {
+      try {
+        const now = Date.now();
+        const existing = states.get(input.activationId);
+        const state = existing ?? newProjectionState({
+          attemptId: input.attemptId,
+          specialist: input.specialist,
+          beadId: input.beadId,
+          startedAtMs: now
+        });
+        if (input.event.type === "auto_retry_start") {
+          state.attemptNo += 1;
+          state.attemptId = nativeAttemptIdForNo(state.initialAttemptId, state.attemptNo);
+          state.autoRetries += 1;
+        }
+        if (input.event.type === "turn_start")
+          state.turns += 1;
+        if (input.event.type === "compaction_start")
+          state.autoCompactions += 1;
+        state.lastEventAtMs = now;
+        state.status = statusForSessionEvent(input.event.type, state.status);
+        if (stringValue(input.piSessionId))
+          state.piSessionId = input.piSessionId;
+        state.workspacePath = input.workspacePath;
+        states.set(input.activationId, state);
+        const timelineEvents = mapNativeSessionEvent(input.event, now, state.turns);
+        for (const timelineEvent of timelineEvents) {
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TEXT && typeof timelineEvent.content === "string") {
+            state.latestOutput = timelineEvent.content;
           }
-        }));
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOKEN_USAGE)
+            state.tokenUsage = timelineEvent.token_usage;
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.FINISH_REASON)
+            state.finishReason = timelineEvent.finish_reason;
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOOL && timelineEvent.phase === "end") {
+            state.toolCalls.push(timelineEvent.tool);
+          }
+        }
+        writeProjection(input.activationId, state, timelineEvents.at(-1)?.type, timelineEvents);
       } catch {}
     }
   };

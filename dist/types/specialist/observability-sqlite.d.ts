@@ -256,14 +256,20 @@ export interface BranchIntegrationEventRecord {
     t: number;
     event: BranchIntegrationEvent;
 }
+export interface ObservabilityIdentityProjection {
+    /** Runtime-owned attempt identity. Omit on legacy writes to retain automatic sequencing. */
+    attemptId: string;
+    attemptNo: number;
+}
 export interface ObservabilitySqliteClient {
-    upsertStatus(status: SupervisorStatus): void;
+    upsertStatus(status: SupervisorStatus, identity?: ObservabilityIdentityProjection): void;
     markSpecialistJobCancelled(jobId: string, reason: string): void;
     upsertEpicRun(epic: EpicRunRecord): void;
     upsertEpicChainMembership(chain: EpicChainRecord): void;
     upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void;
+    upsertStatusWithEvents(status: SupervisorStatus, events: readonly TimelineEvent[], identity?: ObservabilityIdentityProjection): void;
     upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
-    appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
+    appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent, identity?: ObservabilityIdentityProjection): void;
     appendForensicEvent(jobId: string, specialist: string, beadId: string | undefined, forensicEvent: ForensicEvent): void;
     recordBranchIntegration(event: BranchIntegrationEvent): void;
     listBranchIntegrations(filters?: ListBranchIntegrationFilters): BranchIntegrationEventRecord[];
