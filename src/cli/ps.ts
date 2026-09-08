@@ -15,6 +15,7 @@ import type { TimelineEvent, TimelineEventRunComplete, TimelineTokenUsage } from
 // TODO(u4fdd.6): shared status loading now lives in src/specialist/status-load.ts for ChatStatus reuse.
 import { loadStatuses } from '../specialist/status-load.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { formatActivationAge, summarizeNativeActivations, type NativeActivationSummary } from '../specialist/native-activation-summary.js';
 import { resolveNodeRefWithClient } from '../specialist/node-resolve.js';
 import { loadEpicReadinessSummary, syncEpicStateFromReadiness, type EpicReadinessSummary } from '../specialist/epic-readiness.js';
 import { collectProcessHealth, type ProcessHealthProcess, type ProcessHealthReport } from '../specialist/process-health.js';
@@ -738,7 +739,45 @@ function resolveEpicReadinessMap(jobs: readonly SupervisorStatus[], includeTermi
   }
 }
 
-function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: WorktreeTree[], all: boolean, includeTerminal: boolean, epicReadiness: EpicReadinessMap, health: ProcessHealthReport, includeHealthDetails: boolean): void {
+function loadNativeActivationSummaries(args: PsArgs, mineBeadIds?: Set<string>): NativeActivationSummary[] {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) return [];
+  try {
+    const rows = sqliteClient.readForensicEvents({
+      eventFamily: 'activation',
+      sinceMs: args.sinceMs,
+      limit: 1000,
+    });
+    return summarizeNativeActivations(rows).filter((summary) => {
+      if (args.beadFilter && summary.bead_id !== args.beadFilter) return false;
+      if (mineBeadIds && (!summary.bead_id || !mineBeadIds.has(summary.bead_id))) return false;
+      return true;
+    });
+  } catch {
+    return [];
+  } finally {
+    sqliteClient.close();
+  }
+}
+
+const NATIVE_ACTIVATION_DISPLAY_LIMIT = 10;
+
+function renderNativeActivationsBlock(summaries: NativeActivationSummary[]): void {
+  if (summaries.length === 0) return;
+  console.log(bold(cyan('Native activations')) + dim(' · LAST-KNOWN from forensics — not live (the Fleet registry is in-process in the host session)'));
+  const now = Date.now();
+  for (const summary of summaries.slice(0, NATIVE_ACTIVATION_DISPLAY_LIMIT)) {
+    const bead = summary.bead_id ? ` ${summary.bead_id}` : '';
+    const detail = summary.detail ? ` · ${summary.detail}` : '';
+    console.log(`  ${summary.activation_id} ${summary.specialist}${bead} ${statusLabel(summary.state as JobState)} · ${summary.event_count} events · ${summary.turns} turns · ${formatActivationAge(now, summary.last_event_at_ms)}${detail}`);
+  }
+  if (summaries.length > NATIVE_ACTIVATION_DISPLAY_LIMIT) {
+    console.log(dim(`  +${summaries.length - NATIVE_ACTIVATION_DISPLAY_LIMIT} older omitted — narrow with --since/--bead`));
+  }
+  console.log('');
+}
+
+function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: WorktreeTree[], all: boolean, includeTerminal: boolean, epicReadiness: EpicReadinessMap, health: ProcessHealthReport, includeHealthDetails: boolean, nativeActivations: NativeActivationSummary[] = []): void {
   const beadTitles = buildBeadTitleCache(jobs);
   const renderedJobIds = new Set<string>();
   const epicGroups = buildEpicGroups(jobs, epicReadiness);
@@ -847,6 +886,8 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
     console.log(dim('  no active jobs'));
     console.log('');
   }
+
+  renderNativeActivationsBlock(nativeActivations);
 
   const renderedJobs = jobs.filter((job) => renderedJobIds.has(job.id));
   const runningCount = renderedJobs.filter((job) => job.status === 'running').length;
@@ -1068,6 +1109,7 @@ function renderJson(
   epicReadiness: EpicReadinessMap,
   args: PsArgs,
   health: ProcessHealthReport,
+  nativeActivations: NativeActivationSummary[] = [],
 ): void {
   console.log(JSON.stringify({
     generated_at_ms: Date.now(),
@@ -1111,6 +1153,8 @@ function renderJson(
     })),
     nodes,
     trees,
+    native_activations: nativeActivations.map((summary) => ({ ...summary, last_known: true as const, live: false as const })),
+    native_activations_note: 'LAST-KNOWN state from forensics, not live registry state.',
     epics: buildEpicGroups(jobs, epicReadiness),
     epic_readiness: Object.fromEntries([...epicReadiness.entries()].map(([epicId, summary]) => [epicId, summary])),
     process_health: health,
@@ -1168,13 +1212,14 @@ function render(args: PsArgs): void {
   const nodes = groupByNode(visibleStatuses);
   const trees = groupByTree(visibleStatuses);
   const health = collectProcessHealth();
+  const nativeActivations = loadNativeActivationSummaries(args, mineBeadIds);
 
   if (args.json) {
-    renderJson(visibleStatuses, nodes, trees, args.all, epicReadiness, args, health);
+    renderJson(visibleStatuses, nodes, trees, args.all, epicReadiness, args, health, nativeActivations);
     return;
   }
 
-  renderHuman(visibleStatuses, nodes, trees, args.all, args.includeTerminal, epicReadiness, health, args.health);
+  renderHuman(visibleStatuses, nodes, trees, args.all, args.includeTerminal, epicReadiness, health, args.health, nativeActivations);
 }
 
 function renderBuffered(args: PsArgs): string {
