@@ -1207,8 +1207,13 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   // render is a projection: readFleet() afresh on every render, nothing cached.
   let fleetExpanded = false;
   let fleetUnregister = null;
+  // While the keyboard inspector owns the screen, background repaints must
+  // stand down: the 1s fallback tick and the footer cycle otherwise fight the
+  // modal pane over renders every second (unitAI-z49s2 flicker).
+  let fleetInspectorOpen = false;
 
   const renderBelow = () => {
+    if (fleetInspectorOpen) return [];
     if (!fleetVisible) return [];
     const fleet = readFleet();
     if (fleet.activations.length === 0 && fleet.asks.length === 0) return [];
@@ -1228,6 +1233,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   };
 
   const paintFleetFallback = () => {
+    if (fleetInspectorOpen) return; // inspector mounted: its own render owns the screen
     const ctx = liveContext({ requireUI: true });
     if (!ctx) return;
     if (typeof ctx.ui?.setWidget !== 'function') return; // RPC/headless: silent skip
@@ -1264,6 +1270,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     }
     let selected = 0;
     const count = () => Math.max(1, fleet.activations.length);
+    fleetInspectorOpen = true;
     try {
       const result = await ctx.ui.custom((tui, theme, keybindings, done) => {
         const render = () => renderFleetSection(readFleet(), { expanded: true })
@@ -1298,6 +1305,9 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     } catch {
       report(ctx, renderFleetSection(fleet, { expanded: true }).join('\n'));
       return false;
+    } finally {
+      fleetInspectorOpen = false;
+      paintFleetFallback(); // resume live updates the moment the inspector closes
     }
   };
 

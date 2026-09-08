@@ -866,6 +866,38 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
   });
 
+  it('/fleet inspect suspends the background repaint while mounted and resumes on close (unitAI-z49s2)', async () => {
+    const { pi, ctx, command } = await boot();
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    await command_tick();
+    expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
+
+    // Hold the inspector open: capture the custom pane and resolve only on release.
+    const customs = [];
+    let release;
+    ctx.ui.custom = (render, opts) => {
+      customs.push([render, opts]);
+      return new Promise((resolve) => { release = () => resolve(undefined); });
+    };
+    let paints = 0;
+    const origSetWidget = ctx.ui.setWidget;
+    ctx.ui.setWidget = (...args) => { paints++; return origSetWidget(...args); };
+
+    const inspected = command('fleet').handler('inspect', ctx);
+    expect(customs).toHaveLength(1); // handler reaches ui.custom synchronously
+    const pane = customs[0][0]({ requestRender: vi.fn(), onKey: vi.fn() }, {}, { register: vi.fn() }, () => {});
+    expect(pane.render()).toContain('SPECIALISTS'); // inspector owns the screen
+
+    await command_tick();
+    await command_tick();
+    await command_tick();
+    expect(paints).toBe(0); // three poll intervals, zero background repaints
+
+    release();
+    await inspected; // handler returns undefined; the assertions below are the contract
+    expect(paints).toBeGreaterThan(0); // close resumes live updates
+  });
+
   it('/fleet reports in text too, so json and print modes are not blind', async () => {
     const { pi, ctx, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
