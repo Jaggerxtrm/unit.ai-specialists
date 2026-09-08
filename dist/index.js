@@ -77842,6 +77842,7 @@ class NativeActivationHost {
       case "agent_settled":
         snapshot.state = "settled";
         emit("activation_settled");
+        this.releaseIfWriter(snapshot, "settled");
         break;
       case "auto_retry_start":
         emit("retry_started", { attempt: event.attempt, max_attempts: event.maxAttempts });
@@ -77891,6 +77892,7 @@ class NativeActivationHost {
       emit("output_validation_passed");
       snapshot.state = "settled";
       emit("activation_completed", { pi_session_id: session.sessionId });
+      this.releaseIfWriter(snapshot, "completed");
       return {
         activationId: snapshot.activationId,
         participantId: snapshot.participantId,
@@ -78062,6 +78064,29 @@ class NativeActivationHost {
       });
     }
     const attemptId = nextAttemptId(record3.snapshot.attemptId);
+    if (record3.snapshot.access === "write") {
+      try {
+        acquire({
+          workspace: record3.snapshot.workspace,
+          activationId,
+          attemptId,
+          specialist: record3.snapshot.specialist
+        });
+      } catch (error2) {
+        if (error2 instanceof DispatchRejectedError) {
+          this.forensics.emit({
+            activationId,
+            attemptId,
+            participantId: record3.snapshot.participantId,
+            specialist: record3.snapshot.specialist,
+            beadId: record3.snapshot.beadId,
+            name: "lease_denied",
+            payload: { reason: error2.reason, note: error2.detail.holder, on: "resume" }
+          });
+        }
+        throw error2;
+      }
+    }
     record3.snapshot.attemptId = attemptId;
     record3.snapshot.state = "starting";
     const emit = (name, payload) => this.forensics.emit({

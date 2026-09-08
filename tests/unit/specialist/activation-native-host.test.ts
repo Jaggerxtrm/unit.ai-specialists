@@ -34,7 +34,16 @@ import type { PiSdk, PiAgentSessionLike, PiAgentSessionEvent } from '../../../sr
 
 interface FakeSessionOptions { record: { createArgs?: Record<string, unknown> } }
 
-function fakeSession(opts: FakeSessionOptions & { assistantText?: string; stopReason?: string; errorMessage?: string }): PiAgentSessionLike & {
+/**
+ * `holdOpen` suspends the turn: `prompt()` never resolves, so the activation stays RUNNING.
+ *
+ * Needed since unitAI-rrdnt.59 released the writer lease on settle AND on completion. A
+ * writer now holds its workspace for the duration of its turn and no longer, so contention
+ * and per-call mutation admission only exist inside that window. Without this the fake
+ * finishes the turn inside `start()` and there is nothing left to contend with — the tests
+ * would have to be weakened to pass, which would delete what they check.
+ */
+function fakeSession(opts: FakeSessionOptions & { assistantText?: string; stopReason?: string; errorMessage?: string; holdOpen?: boolean }): PiAgentSessionLike & {
   disposed: boolean; prompts: string[]; emit: (e: PiAgentSessionEvent) => void;
 } {
   const listeners: Array<(e: PiAgentSessionEvent) => void> = [];
@@ -49,6 +58,7 @@ function fakeSession(opts: FakeSessionOptions & { assistantText?: string; stopRe
     async prompt(text: string) {
       session.prompts.push(text);
       listeners.forEach(l => l({ type: 'agent_start' }));
+      if (opts.holdOpen) return new Promise<never>(() => {});
       messages.push({
         role: 'assistant',
         content: opts.assistantText ?? 'done',
@@ -282,7 +292,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
 
   it('admits a write-capable Specialist now that it takes the workspace lease', async () => {
     const record: { createArgs?: Record<string, unknown> } = {};
-    const session = fakeSession({ record });
+    const session = fakeSession({ record, holdOpen: true });
     const sink = collectingSink();
     const spec = readOnlySpec();
     (spec.specialist.execution as Record<string, unknown>).permission_required = 'HIGH';
@@ -315,7 +325,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       loader: loaderFor(spec),
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
-      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {}, holdOpen: true })),
       cwd: handle.workspace.worktreePath,
     });
 
@@ -712,7 +722,7 @@ describe('per-call mutation admission', () => {
       loader: loaderFor(writerSpec),
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
-      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {}, holdOpen: true })),
       cwd: hostWorkspace(),
     });
 
@@ -731,7 +741,7 @@ describe('per-call mutation admission', () => {
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
-      loadSdk: async () => makeSdk({}, fakeSession({ record: {} })),
+      loadSdk: async () => makeSdk({}, fakeSession({ record: {}, holdOpen: true })),
       cwd: writer.workspace.worktreePath,
     });
     const reader = await readerHost.start({
