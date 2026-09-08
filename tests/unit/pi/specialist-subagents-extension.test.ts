@@ -893,7 +893,8 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     };
     const lines = mod.renderSectionLines(fleet);
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines[1]).toMatch(/● researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k spent · working/);
+    expect(lines[1]).toMatch(/● researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k · working/);
+    expect(lines[1]).not.toContain('spent');
     // Command default: /fleet with no action reports the expanded rows.
     await command('fleet').handler('', ctx);
     expect(ctx.painted.notices.at(-1)[0].split('\n').length).toBeGreaterThan(1);
@@ -904,6 +905,55 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     // Expand restores the default rows (no-op when already expanded).
     await command('fleet').handler('expand', ctx);
     expect(ctx.painted.notices.at(-1)[0].split('\n').length).toBeGreaterThan(1);
+  });
+
+  it('fleet mapping never yields index-derived elapsed (unitAI-d99hb)', async () => {
+    const { pi, ctx, host } = await boot();
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    const startedAt = Date.now() - 41000;
+    host.list.mockReturnValue([0, 1].map((i) => ({
+      ...SNAPSHOT,
+      activationId: `act:live${i}`,
+      specialist: `spec-${i}`,
+      startedAt,
+      lastActivityAt: Math.floor(Date.now() / 1000),
+    })));
+    host.pendingAsks.mockReturnValue([]);
+    await command_tick();
+    const text = (ctx.painted.widgets['specialist-fleet'] ?? []).join('\n');
+    // Bare `.map(toActivationView)` passed the element index as nowMs, freezing
+    // every row at 0s. Both rows must show live elapsed, neither 0s.
+    expect(text).toMatch(/spec-0.*4[12]s/);
+    expect(text).toMatch(/spec-1.*4[12]s/);
+    expect(text).not.toMatch(/running 0s/);
+  });
+
+  it('zero/absent tokens render as nothing with no "spent" word (unitAI-d99hb)', async () => {
+    const { mod } = await boot();
+    const base = {
+      activation_id: 'act:x', specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+      resolved_model: 'm', elapsed_s: 41, last_activity_at: Math.floor(Date.now() / 1000),
+    };
+    expect(mod.formatSpendShort(undefined)).toBe('');
+    expect(mod.formatSpendShort({ input_tokens: 0, output_tokens: 0 })).toBe('');
+    for (const view of [base, { ...base, token_usage: { input_tokens: 0, output_tokens: 0 } }]) {
+      const row = mod.renderFleetRowLine(view);
+      expect(row).toBe('● explorer (m) · bd-1 · running 41s · working');
+      expect(row).not.toContain('spent');
+    }
+  });
+
+  it('renders live snake_case token usage as a bare count (unitAI-d99hb)', async () => {
+    const { mod } = await boot();
+    expect(mod.formatSpendShort({ input_tokens: 1500, output_tokens: 600 })).toBe('2.1k');
+    const row = mod.renderFleetRowLine({
+      activation_id: 'act:x', specialist: 'researcher', bead_id: 'ISSUE-92',
+      state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+      elapsed_s: 47, token_usage: { input_tokens: 1500, output_tokens: 600 },
+      last_activity_at: Math.floor(Date.now() / 1000),
+    });
+    expect(row).toMatch(/running 47s · 2\.1k · working/);
+    expect(row).not.toContain('spent');
   });
 
   it('needs-reply rows render with a ! marker and sort before idle rows (unitAI-nmxhg)', async () => {

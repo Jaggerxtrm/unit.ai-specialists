@@ -117,8 +117,14 @@ export function formatElapsedShort(elapsedS) {
 // Spend counts only. Window-context % is coordinator-owned and out of scope;
 // never fabricated here (unitAI-beqby.3).
 export function formatSpendShort(tokenUsage) {
-  const total = (tokenUsage?.input ?? 0) + (tokenUsage?.output ?? 0) + (tokenUsage?.cache ?? 0);
-  if (!tokenUsage || total <= 0) return '—';
+  if (!tokenUsage) return '';
+  // Snapshot keys are snake_case (input_tokens, output_tokens, ...); the short
+  // camel keys below are the legacy test/fixture shape. total_tokens is a rollup,
+  // never a summand — adding it would double-count (unitAI-d99hb).
+  const total = ['input_tokens', 'output_tokens', 'cache_creation_tokens', 'cache_read_tokens', 'reasoning_tokens', 'tool_tokens']
+    .reduce((n, k) => n + (tokenUsage[k] ?? 0), 0)
+    + (tokenUsage.input ?? 0) + (tokenUsage.output ?? 0) + (tokenUsage.cache ?? 0);
+  if (total <= 0) return '';
   if (total < 1000) return `${total}`;
   if (total < 10000) return `${(total / 1000).toFixed(1)}k`;
   return `${Math.round(total / 1000)}k`;
@@ -152,7 +158,9 @@ export function renderFleetRowLine(view, asks = []) {
   const activity = view.state === 'running'
     ? (idleS != null && idleS > 30 ? `idle ${formatElapsedShort(idleS)}` : 'working')
     : view.state;
-  return `● ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · ${view.state} ${elapsed} · ${tokens} spent · ${activity}`;
+  // Zero/absent tokens render as nothing: no "0", no "spent" word (unitAI-d99hb).
+  const spend = tokens ? ` · ${tokens}` : '';
+  return `● ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · ${view.state} ${elapsed}${spend} · ${activity}`;
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
@@ -1199,7 +1207,9 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     // database for a session that has not dispatched anything.
     if (!host) return { activations: [], asks: [] };
     return {
-      activations: host.list().map(toActivationView),
+      // Arrow form, never bare `.map(toActivationView)`: Array.map passes the
+      // element INDEX as nowMs, freezing every row at elapsed 0s (unitAI-d99hb).
+      activations: host.list().map((s) => toActivationView(s)),
       asks: host.pendingAsks().map(toPendingAskView),
     };
   };
