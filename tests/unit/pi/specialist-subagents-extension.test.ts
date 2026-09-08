@@ -19,6 +19,7 @@ vi.mock('typebox', () => ({
   Type: {
     Object: (props) => ({ type: 'object', properties: props }),
     String: (opts = {}) => ({ type: 'string', ...opts }),
+    Integer: (opts = {}) => ({ type: 'integer', ...opts }),
     Optional: (schema) => schema,
   },
 }));
@@ -254,6 +255,49 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
       requestedByParticipantId: 'orch::scheduler-1',
       coordinatorSessionId: 'sess-9',
     });
+  });
+
+  it('epic_context_depth passes through on bead_id dispatch, omitted by default', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host, calls } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const dispatch = toolNamed(pi, 'specialist_dispatch');
+    await dispatch.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1', epic_context_depth: 2 });
+    expect(calls.start[0]).toMatchObject({ epicContextDepth: 2 });
+    await dispatch.execute('tc2', { specialist: 'explorer', bead_id: 'bd-1' });
+    expect(calls.start[1]).not.toHaveProperty('epicContextDepth');
+  });
+
+  it('epic_context_depth refuses values outside 1|2 without dispatching', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const dispatch = toolNamed(pi, 'specialist_dispatch');
+    for (const bad of [0, 3, -1]) {
+      const out = resultText(await dispatch.execute('tc1', {
+        specialist: 'explorer', bead_id: 'bd-1', epic_context_depth: bad,
+      }));
+      expect(out.status).toBe('rejected');
+      expect(out.reason).toContain('epic_context_depth must be 1 or 2');
+    }
+    expect(host.start).not.toHaveBeenCalled();
+  });
+
+  it('inline contract dispatch carries no lineage even with epic_context_depth', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host, calls } = makeFakeHost();
+    const createBead = vi.fn(() => 'bd-inline-1');
+    mod.default(pi, { createHost: () => host, createBead });
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', {
+      specialist: 'explorer',
+      contract: INLINE_CONTRACT,
+      epic_context_depth: 2,
+    }));
+    expect(out.status).toBe('dispatched');
+    expect(calls.start[0]).not.toHaveProperty('epicContextDepth');
   });
 
   it('renders a DispatchRejectedError as a structured result, preserving detail.missing', async () => {

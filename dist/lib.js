@@ -16400,7 +16400,7 @@ function renderTemplate(template, variables) {
 
 // src/specialist/beads.ts
 import { spawnSync as spawnSync3 } from "node:child_process";
-function buildBeadContext(bead, completedBlockers = []) {
+function buildBeadContext(bead, completedBlockers = [], epicAncestors = []) {
   const lines = [`# Task: ${bead.title}`, `## Bead id: ${bead.id}`];
   if (bead.description?.trim()) {
     lines.push(bead.description.trim());
@@ -16410,6 +16410,18 @@ function buildBeadContext(bead, completedBlockers = []) {
   }
   if (bead.notes?.trim()) {
     lines.push("", "## Notes", bead.notes.trim());
+  }
+  if (epicAncestors.length > 0) {
+    lines.push("", "## Epic lineage");
+    for (const ancestor of epicAncestors) {
+      lines.push("", `### ${ancestor.title} (${ancestor.id})`);
+      if (ancestor.description?.trim()) {
+        lines.push(ancestor.description.trim());
+      }
+      if (ancestor.notes?.trim()) {
+        lines.push("", ancestor.notes.trim());
+      }
+    }
   }
   if (completedBlockers.length > 0) {
     lines.push("", "## Context from completed dependencies:");
@@ -16425,6 +16437,25 @@ function buildBeadContext(bead, completedBlockers = []) {
   }
   return lines.join(`
 `).trim();
+}
+function collectEpicAncestors(readBead, bead, depth) {
+  if (depth !== 1 && depth !== 2)
+    return [];
+  const ancestors = [];
+  let parentId = bead.parent?.trim();
+  for (let i = 0;i < depth && parentId; i++) {
+    let parent = null;
+    try {
+      parent = readBead(parentId);
+    } catch {
+      break;
+    }
+    if (!parent)
+      break;
+    ancestors.push(parent);
+    parentId = parent.parent?.trim();
+  }
+  return ancestors;
 }
 
 class BeadsClient {
@@ -16644,7 +16675,7 @@ function renderTaskPrompt(input) {
   const prompt = specialist.prompt;
   const bare = specialist.execution?.bare ?? false;
   const completedBlockers = input.completedBlockers ?? [];
-  const beadContextText = input.bead ? buildBeadContext(input.bead, completedBlockers) : "";
+  const beadContextText = input.bead ? buildBeadContext(input.bead, completedBlockers, input.epicAncestors ?? []) : "";
   const beadContextOwn = beadContextText ? measurePayloadComponent("bead_context", "own", beadContextText) : null;
   const beadContextParent = input.bead?.parent?.trim() ? measurePayloadComponent("bead_context", "parent", input.bead.parent.trim()) : null;
   const beadContextBlockers = completedBlockers.map((blocker) => measurePayloadComponent("bead_context", blocker.id, buildBeadContext(blocker, [])));
@@ -21492,11 +21523,13 @@ class NativeActivationHost {
       tools: toolContract.toolsList.join(","),
       custom_tools: `${ASK_TOOL},${ESCALATE_TOOL}`
     });
+    const epicAncestors = collectEpicAncestors((id) => this.beadsClient.readBead(id), bead, request.epicContextDepth);
     const rendered = renderTaskPrompt({
       specialist: specialist.specialist,
       cwd: this.cwd,
       beadId: request.beadId,
-      bead
+      bead,
+      epicAncestors
     });
     const systemPrompt = buildSystemPrompt({
       systemPromptTemplate: specialist.specialist.prompt.system ?? "",

@@ -75,6 +75,13 @@ export interface ActivationRequest {
   requestedByParticipantId: ParticipantId;
   coordinatorSessionId?: string;
 
+  /**
+   * Up-walk hops along bead.parent for epic lineage in the turn-1 prompt.
+   * 1 = immediate parent, 2 = parent + grandparent. Absent = no lineage.
+   * Distinct from the CLI's downward --context-depth over completed blockers.
+   */
+  epicContextDepth?: number;
+
   /** Defaults to the coordinator's current worktree. A writer does not get a new one. */
   workspaceHint?: WorkspaceIdentity;
 }

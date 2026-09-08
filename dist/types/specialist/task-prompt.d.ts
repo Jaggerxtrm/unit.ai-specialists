@@ -40,6 +40,8 @@ export interface TaskPromptInput {
     beadId?: string;
     bead?: BeadRecord | null;
     completedBlockers?: BeadRecord[];
+    /** Up-walk ancestors (immediate parent first). Empty/absent = no lineage section. */
+    epicAncestors?: BeadRecord[];
     /**
      * Prompt used when no bead context is available — either no `beadId`, or a
      * `beadId` that could not be read. Lazy so callers only pay for it on that path.

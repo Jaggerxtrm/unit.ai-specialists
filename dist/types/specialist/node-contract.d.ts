@@ -148,16 +148,16 @@ export declare const createBeadActionSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     type: "create_bead";
     priority: number;
-    description: string;
     title: string;
+    description: string;
     depends_on: string[];
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     parent_bead_id?: string | undefined;
 }, {
     type: "create_bead";
     priority: number;
-    description: string;
     title: string;
+    description: string;
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     depends_on?: string[] | undefined;
     parent_bead_id?: string | undefined;
@@ -209,16 +209,16 @@ export declare const coordinatorActionSchema: z.ZodDiscriminatedUnion<"type", [z
 }, "strip", z.ZodTypeAny, {
     type: "create_bead";
     priority: number;
-    description: string;
     title: string;
+    description: string;
     depends_on: string[];
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     parent_bead_id?: string | undefined;
 }, {
     type: "create_bead";
     priority: number;
-    description: string;
     title: string;
+    description: string;
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     depends_on?: string[] | undefined;
     parent_bead_id?: string | undefined;
