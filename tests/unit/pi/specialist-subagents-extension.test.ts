@@ -774,7 +774,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
     expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
     const lines = sections.get('specialist-fleet')(80);
-    expect(lines[0]).toContain('SPECIALISTS');
+    expect(lines[0]).toContain('specialists');
     expect(lines[0]).toContain('need reply');
   });
 
@@ -790,7 +790,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
       expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
       const lines = sections.get('specialist-fleet')(80);
-      expect(lines[0]).toContain('SPECIALISTS');
+      expect(lines[0]).toContain('specialists');
       expect(lines[0]).toContain('need reply');
     } finally {
       if (prev === undefined) delete (globalThis as any).__registerFooterSection;
@@ -804,7 +804,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     await command_tick();
     const lines = ctx.painted.widgets['specialist-fleet'];
     expect(lines).toBeDefined();
-    expect(lines[0]).toContain('SPECIALISTS');
+    expect(lines[0]).toContain('specialists');
     expect(ctx.painted.widgetOptions['specialist-fleet']).toMatchObject({ placement: 'belowEditor' });
     expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
   });
@@ -853,7 +853,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     const { command, ctx } = await boot({ hasUI: true, mode: 'tui' });
     ctx.ui.custom = undefined;
     await command('fleet').handler('inspect', ctx);
-    expect(ctx.painted.notices.at(-1)[0]).toContain('SPECIALISTS');
+    expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
   });
 
   it('clears the widget when the Fleet is empty rather than painting a bare header', async () => {
@@ -883,7 +883,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     await command('fleet').handler('inspect', ctx);
     expect(custom).not.toHaveBeenCalled(); // no custom-pane mount anywhere on the fleet path
     const text = ctx.painted.notices.at(-1)[0];
-    expect(text).toContain('SPECIALISTS');
+    expect(text).toContain('specialists');
     expect(text).toContain('explorer'); // expanded rows, not the collapsed line alone
   });
 
@@ -947,7 +947,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(mod.formatSpendShort({ input_tokens: 0, output_tokens: 0 })).toBe('');
     for (const view of [base, { ...base, token_usage: { input_tokens: 0, output_tokens: 0 } }]) {
       const row = mod.renderFleetRowLine(view);
-      expect(row).toBe('● explorer (m) · bd-1 · running 41s · working');
+      expect(row).toBe('    ● explorer (m) · bd-1 · running 41s · working');
       expect(row).not.toContain('spent');
     }
   });
@@ -973,12 +973,12 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       last_activity_at: Math.floor(Date.now() / 1000),
     };
     expect(mod.renderFleetRowLine({ ...base, purpose: 'researching activation transport' }))
-      .toBe('● researcher (m) · ISSUE-92 · researching activation transport · running 47s · working');
+      .toBe('    ● researcher (m) · ISSUE-92 · researching activation transport · running 47s · working');
     const long = mod.renderFleetRowLine({ ...base, purpose: `${'p '.repeat(100)}` });
-    expect(long).not.toMatch(/  /);
+    expect(long.slice(4)).not.toMatch(/  /); // skip the four-space row indent
     expect(long.split(' · ')[2].length).toBeLessThanOrEqual(mod.PURPOSE_ROW_MAX);
     expect(mod.renderFleetRowLine(base))
-      .toBe('● researcher (m) · ISSUE-92 · running 47s · working');
+      .toBe('    ● researcher (m) · ISSUE-92 · running 47s · working');
   });
 
   it('elapsed always renders in seconds and settled rows keep token totals (unitAI-uvg4j)', async () => {
@@ -1025,11 +1025,40 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(lines.join('\n')).not.toContain('act:ask'); // no forensic ids in rows
   });
 
+  it('fleet chrome is lowercase with tree indentation (unitAI-beqby.5)', async () => {
+    const { mod } = await boot();
+    const now = Math.floor(Date.now() / 1000);
+    const fleet = {
+      activations: [{
+        activation_id: 'act:aaaa', specialist: 'researcher', bead_id: 'ISSUE-92',
+        state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+        elapsed_s: 47, token_usage: { input: 1500, output: 600, cache: 0 },
+        last_activity_at: now,
+      }],
+      asks: [],
+    };
+    // Collapsed: two-space tree branch, chrome lowercase, identifiers canonical.
+    expect(mod.renderCollapsedLine(fleet))
+      .toBe('  └ specialists · 1 active · 0 waiting · /fleet inspect');
+    expect(mod.renderCollapsedLine({ activations: [], asks: [] }))
+      .toBe('  └ specialists · idle · /fleet inspect');
+    // Execution row: four-space indent, ● marker, canonical identifier case.
+    expect(mod.renderSectionLines(fleet)[1])
+      .toBe('    ● researcher (gpt-5.6-sol high) · ISSUE-92 · running 47s · 2.1k · working');
+    // Ask row: four-space indent with ! marker (seconds elided: wall-clock flake).
+    const askRow = mod.renderFleetRowLine(
+      { activation_id: 'act:q', specialist: 'reviewer', bead_id: 'ISSUE-92' },
+      [{ activation_id: 'act:q', asked_at: now - 31 }],
+    );
+    expect(askRow.startsWith('    ! reviewer (?model) · ISSUE-92 · needs reply ')).toBe(true);
+    expect(askRow.endsWith('s')).toBe(true);
+  });
+
   it('/fleet reports in text too, so json and print modes are not blind', async () => {
     const { pi, ctx, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command('fleet').handler('', ctx);
-    expect(ctx.painted.notices.at(-1)[0]).toContain('SPECIALISTS');
+    expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
   });
 
   it('/fleet:reply answers by message_id and reports an unknown id instead of silently passing', async () => {

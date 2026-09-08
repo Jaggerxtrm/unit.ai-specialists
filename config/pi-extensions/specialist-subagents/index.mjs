@@ -140,11 +140,11 @@ export function formatSpendShort(tokenUsage) {
  * passive pi extension, so no arrow promise of any kind. */
 export function renderCollapsedLine({ activations, asks }) {
   const { active, waiting, needsReply, total } = fleetSummaryOf({ activations, asks });
-  if (total === 0 && needsReply === 0) return 'SPECIALISTS · idle · /fleet inspect';
+  if (total === 0 && needsReply === 0) return '  └ specialists · idle · /fleet inspect';
   const parts = [`${active} active`, `${waiting} waiting`];
   if (needsReply > 0) parts.push(`${needsReply} need reply`);
   const hint = needsReply > 0 ? '/fleet inspect · /fleet:reply' : '/fleet inspect';
-  return `SPECIALISTS · ${parts.join(' · ')} · ${hint}`;
+  return `  └ specialists · ${parts.join(' · ')} · ${hint}`;
 }
 
 /** One row per specialist. Forensic IDs never appear here. An activation with a
@@ -156,7 +156,7 @@ export function renderFleetRowLine(view, asks = []) {
   const ask = (asks ?? []).find((a) => a.activation_id === view.activation_id);
   if (ask) {
     const waiting = formatElapsedShort(Date.now() / 1000 - (ask.asked_at ?? Date.now() / 1000));
-    return `! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`;
+    return `    ! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`;
   }
   const elapsed = formatElapsedShort(view.elapsed_s);
   const tokens = formatSpendShort(view.token_usage);
@@ -171,7 +171,7 @@ export function renderFleetRowLine(view, asks = []) {
   // Spend renders for every state, not only running: final spend stays visible after settle.
   const spend = tokens ? ` · ${tokens}` : '';
   const why = purpose ? ` · ${purpose}` : '';
-  return `● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
+  return `    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
@@ -184,9 +184,9 @@ export function renderSectionLines({ activations, asks }, { expanded = true } = 
     (a, b) => Number(askIds.has(b.activation_id)) - Number(askIds.has(a.activation_id)),
   );
   const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks));
-  lines.push(...rows.map((r) => `  ${r}`));
+  lines.push(...rows);
   const overflow = (activations ?? []).length - rows.length;
-  if (overflow > 0) lines.push(`  +${overflow} more`);
+  if (overflow > 0) lines.push(`    +${overflow} more`);
   return lines;
 }
 
