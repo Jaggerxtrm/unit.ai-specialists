@@ -125,9 +125,16 @@ function fakeSession(): PiAgentSessionLike & { emit: (e: PiAgentSessionEvent) =>
     async prompt() {
       listeners.forEach(l => l({ type: 'agent_start' }));
       (session.messages as unknown[]).push({ role: 'assistant', content: 'done' });
+      // Realistic per-message usage: one message_end carrying the final assistant
+      // message with nested short-key usage (unitAI-beqby.12). The SDK emits no
+      // `token_usage`-typed session event.
       listeners.forEach(l => l({
-        type: 'token_usage',
-        token_usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        type: 'message_end',
+        message: {
+          role: 'assistant', provider: 'testprov', model: 'test-model', stopReason: 'stop',
+          usage: { input: 100, output: 50, totalTokens: 150 },
+          content: [{ type: 'text', text: 'done' }],
+        },
       }));
       listeners.forEach(l => l({ type: 'agent_end', willRetry: false }));
       listeners.forEach(l => l({ type: 'agent_settled' }));

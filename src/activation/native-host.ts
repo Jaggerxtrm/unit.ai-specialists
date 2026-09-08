@@ -575,8 +575,24 @@ export class NativeActivationHost {
     emit: (name: string, payload?: Record<string, unknown>) => void,
   ): void {
     snapshot.lastActivityAt = this.now();
-    const usage = extractTokenUsage(event);
-    if (usage) snapshot.tokenUsage = { ...snapshot.tokenUsage, ...usage };
+    // Session spend is the SUM of per-message provider counts (pi's `addUsage`
+    // semantics): each message_end carries only its own request's tokens, so a
+    // spread-merge would replace the running total with one message's counts and
+    // the row would flap down or blank. Accumulate on message_end only — the one
+    // event per message carrying final usage — so streaming updates carrying
+    // partial or zero usage can never double-count or clear the total.
+    if (event.type === 'message_end') {
+      const usage = extractTokenUsage(event);
+      if (usage) {
+        const prev = snapshot.tokenUsage ?? {};
+        const merged: typeof prev = { ...prev };
+        for (const [key, value] of Object.entries(usage) as Array<[keyof typeof prev, number]>) {
+          if (value === undefined) continue;
+          merged[key] = (prev[key] ?? 0) + value;
+        }
+        snapshot.tokenUsage = merged;
+      }
+    }
 
     // Offer the RAW event before any translation. Deliberately not wrapped in try/catch:
     // the sink swallows its own errors, and a forensic concern must never alter activation

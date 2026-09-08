@@ -686,6 +686,56 @@ describe('snapshot tokenUsage (unitAI-crjh7)', () => {
     });
     expect(host.liveStats(handle.activationId)?.token_usage?.total_tokens).toBe(13852);
   });
+
+  it('accumulates per-message counts monotonically across interleaved usage/no-usage events (unitAI-beqby.12)', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record, holdOpen: true });
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      forensics: { emit: () => {} },
+      cwd: hostWorkspace(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+    const totals = () => {
+      const usage = host.inspect(handle.activationId)?.tokenUsage;
+      return ['input_tokens', 'output_tokens', 'cache_creation_tokens', 'cache_read_tokens', 'reasoning_tokens', 'tool_tokens']
+        .reduce((n, k) => n + ((usage as Record<string, number> | undefined)?.[k] ?? 0), 0);
+    };
+    const assistantEnd = (usage?: Record<string, number>) => ({
+      type: 'message_end',
+      message: {
+        role: 'assistant', provider: 'provider', model: 'model', stopReason: 'stop',
+        ...(usage ? { usage } : {}),
+        content: [{ type: 'text', text: 'answer' }],
+      },
+    } as never);
+
+    // First message: large context load, as seen live.
+    session.emit(assistantEnd({ input: 15798, output: 118, cacheWrite: 0, cacheRead: 0, reasoning: 7, totalTokens: 15916 }));
+    expect(totals()).toBe(15923);
+
+    // Interleaved events with no usage (tool traffic, streaming updates, user echo)
+    // must leave the total untouched — this is the flap window.
+    session.emit({ type: 'tool_execution_start', toolName: 'grep' } as never);
+    session.emit({ type: 'message_update', message: { role: 'assistant', content: [] } } as never);
+    session.emit(assistantEnd());
+    session.emit({ type: 'agent_end', willRetry: false } as never);
+    expect(totals()).toBe(15923);
+
+    // Second message is small with cache hits; the old spread-merge replaced the
+    // total with these per-message counts and the row visibly dropped.
+    session.emit(assistantEnd({ input: 303, output: 120, cacheWrite: 0, cacheRead: 15729, reasoning: 0, totalTokens: 16152 }));
+    expect(totals()).toBe(15923 + 16152);
+    expect(host.liveStats(handle.activationId)?.token_usage?.input_tokens).toBe(15798 + 303);
+  });
 });
 
 /**
