@@ -15,7 +15,13 @@ export interface BeadRecord {
     status?: string;
     dependencies?: BeadDependency[];
 }
-export declare function buildBeadContext(bead: BeadRecord, completedBlockers?: BeadRecord[]): string;
+export declare function buildBeadContext(bead: BeadRecord, completedBlockers?: BeadRecord[], epicAncestors?: BeadRecord[]): string;
+/**
+ * Walk bead.parent upward, collecting up to `depth` ancestors (parent first).
+ * Stops silently at a null/absent parent or an unreadable bead. Depth outside
+ * 1|2 collects nothing; the tool layer refuses such values.
+ */
+export declare function collectEpicAncestors(readBead: (id: string) => BeadRecord | null, bead: Pick<BeadRecord, 'parent'>, depth: number | undefined): BeadRecord[];
 export declare class BeadsClient {
     private readonly available;
     constructor();
