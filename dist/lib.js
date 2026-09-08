@@ -19833,6 +19833,19 @@ function extractSections(description) {
   flush();
   return sections;
 }
+var PURPOSE_EXCERPT_MAX = 60;
+function extractPurposeExcerpt(description) {
+  const sections = extractSections(description ?? "");
+  for (const name of ["SCOPE", "SUCCESS"]) {
+    const line = (sections.get(name) ?? "").split(`
+`).map((s) => s.trim()).find(Boolean);
+    if (!line)
+      continue;
+    const flat = line.replace(/\s+/g, " ");
+    return flat.length <= PURPOSE_EXCERPT_MAX ? flat : `${flat.slice(0, PURPOSE_EXCERPT_MAX - 1)}…`;
+  }
+  return;
+}
 function scrutinyLevel(description) {
   const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-—]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
   return match?.[1]?.toUpperCase();
@@ -20934,6 +20947,294 @@ async function loadPiSdk() {
   throw new PiSdkUnavailableError(attempted, lastError);
 }
 
+// src/specialist/native-activation-observability.ts
+var NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
+  activation_requested: "Dispatch intent precedes the legacy run_start boundary and has no timeline event.",
+  step_contract_compiled: "Step-contract compilation has no legacy AgentSession event.",
+  activation_admitted: "Admission metadata has no legacy timeline event; identity is projected on specialist_jobs.",
+  activation_starting: "Session construction has no legacy timeline event; run_start follows once construction succeeds.",
+  activation_resumed: "Resume-from-record has no legacy counterpart; the resumed run re-enters the shared stream at turn_start.",
+  output_validation_started: "Native result validation has no legacy timeline event kind.",
+  output_validation_passed: "Native result validation has no legacy timeline event kind.",
+  output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.",
+  activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.",
+  lease_released: "Workspace-lease teardown has no legacy timeline event.",
+  lease_reconciled: "Lease reconciliation has no legacy timeline event.",
+  clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_resolved: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  turn_started: "Suppressed compatibility alias; the raw Pi turn_start event is canonical.",
+  turn_completed: "Suppressed compatibility alias; the raw Pi turn_end event is canonical.",
+  retry_started: "Suppressed compatibility alias; the raw Pi auto_retry_start event is canonical.",
+  retry_completed: "Suppressed compatibility alias; the raw Pi auto_retry_end event is canonical.",
+  compaction_started: "Suppressed compatibility alias; the raw Pi compaction_start event is canonical.",
+  compaction_completed: "Suppressed compatibility alias; the raw Pi compaction_end event is canonical."
+});
+var NATIVE_SESSION_OBSERVABILITY_GAPS = Object.freeze({
+  agent_start: "turn_start is the canonical turn boundary.",
+  agent_end: "run_complete is emitted by the activation lifecycle; agent_end is not a run boundary.",
+  agent_settled: "The lifecycle activation_settled signal projects the waiting status.",
+  message_update: "Only thinking deltas are projected; text is persisted once at assistant message_end.",
+  message_user: "User and custom-message boundaries are not persisted by the legacy timeline mapper.",
+  queue_update: "The legacy runner does not persist Pi prompt-queue state.",
+  entry_appended: "Session transcript persistence is not a timeline event.",
+  session_info_changed: "Session display-name changes are not a timeline event.",
+  thinking_level_changed: "The legacy runner does not persist thinking-level changes.",
+  summarization_retry_scheduled: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_attempt_start: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_finished: "The legacy runner has no summarization-retry timeline event.",
+  bash_execution_update: "The legacy runner does not persist streaming bash deltas."
+});
+function at(event, t) {
+  return { ...event, t };
+}
+function record(value) {
+  return value !== null && typeof value === "object" ? value : undefined;
+}
+function stringField2(value) {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+function numberField2(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+function booleanField2(value) {
+  return typeof value === "boolean" ? value : undefined;
+}
+function messageRole(event) {
+  return stringField2(record(event.message)?.role);
+}
+function assistantMessage(event) {
+  const message = record(event.message);
+  return message?.role === "assistant" ? message : undefined;
+}
+function assistantText(event) {
+  const message = assistantMessage(event);
+  if (!message)
+    return;
+  const content = message.content;
+  if (typeof content === "string")
+    return content.trim().length > 0 ? content : undefined;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    const part = record(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join("");
+  return text.trim().length > 0 ? text : undefined;
+}
+function nativeSessionTokenUsage(event) {
+  const usage = record(assistantMessage(event)?.usage);
+  if (!usage)
+    return;
+  const projected = {
+    input_tokens: numberField2(usage.input),
+    output_tokens: numberField2(usage.output),
+    cache_creation_tokens: numberField2(usage.cacheWrite),
+    cache_read_tokens: numberField2(usage.cacheRead),
+    reasoning_tokens: numberField2(usage.reasoning),
+    total_tokens: numberField2(usage.totalTokens),
+    usage_source: "provider_usage"
+  };
+  return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
+}
+function resultContent(result) {
+  if (typeof result === "string")
+    return result;
+  const resultRecord = record(result);
+  const content = resultRecord?.content;
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    if (typeof item === "string")
+      return item;
+    const part = record(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join(`
+`);
+  return text.trim().length > 0 ? text : undefined;
+}
+function nativeAttemptNo(attemptId) {
+  const match = /:(\d+)$/.exec(attemptId);
+  if (!match)
+    return 1;
+  const parsed = Number(match[1]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+function nativeAttemptIdForNo(initialAttemptId, attemptNo) {
+  const safeAttemptNo = Number.isSafeInteger(attemptNo) && attemptNo > 0 ? attemptNo : 1;
+  return /:\d+$/.test(initialAttemptId) ? initialAttemptId.replace(/:\d+$/, `:${safeAttemptNo}`) : `${initialAttemptId}:${safeAttemptNo}`;
+}
+function mapNativeLifecycleEvent(event, context, t = Date.now()) {
+  switch (event.name) {
+    case "activation_started":
+      return at(createRunStartEvent(event.specialist, event.beadId, {
+        job_id: event.activationId,
+        specialist_name: event.specialist,
+        bead_id: event.beadId,
+        worktree_path: context.workspacePath
+      }), t);
+    case "activation_settled":
+      return at(createStatusChangeEvent("waiting", "running"), t);
+    case "activation_completed":
+      return at(createRunCompleteEvent("COMPLETE", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true,
+        metrics: {
+          token_usage: context.tokenUsage,
+          finish_reason: context.finishReason,
+          turns: context.turns,
+          tool_calls: context.toolCalls?.length,
+          tool_call_names: context.toolCalls,
+          auto_retries: context.autoRetries,
+          auto_compactions: context.autoCompactions
+        }
+      }), t);
+    case "lease_acquired":
+    case "lease_denied":
+    case "lease_uncertain":
+    case "tool_blocked":
+      return at(createControlSignalEvent(event.name, {
+        bead_id: event.beadId,
+        ...event.payload ?? {}
+      }), t);
+    case "activation_failed":
+    case "activation_rejected":
+      return at(createRunCompleteEvent("ERROR", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        error: stringField2(event.payload?.error) ?? stringField2(event.payload?.reason),
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true
+      }), t);
+    default:
+      return null;
+  }
+}
+function mapNativeSessionEvent(event, t = Date.now(), turnIndex = 0) {
+  const mapped = [];
+  const add = (timeline) => {
+    if (timeline)
+      mapped.push(at(timeline, t));
+  };
+  switch (event.type) {
+    case "turn_start":
+      add(mapCallbackEventToTimelineEvent("turn_start", {}));
+      break;
+    case "turn_end":
+      add(mapCallbackEventToTimelineEvent("turn_end", {}));
+      break;
+    case "message_start": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const message = assistantMessage(event);
+        const model = stringField2(message?.model);
+        const provider = stringField2(message?.provider);
+        if (model || provider)
+          mapped.push(at(createMetaEvent(model ?? "unknown", provider ?? "unknown"), t));
+        add(mapCallbackEventToTimelineEvent("message_start_assistant", {}));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_start_tool_result", {}));
+      break;
+    }
+    case "message_end": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const text = assistantText(event);
+        const usage = nativeSessionTokenUsage(event);
+        const finishReason = stringField2(assistantMessage(event)?.stopReason);
+        if (text)
+          mapped.push({ t, type: TIMELINE_EVENT_TYPES.TEXT, char_count: text.length, content: text });
+        add(mapCallbackEventToTimelineEvent("message_end_assistant", {}));
+        if (usage)
+          mapped.push(at(createTokenUsageEvent(usage, "message_done"), t));
+        if (finishReason)
+          mapped.push(at(createFinishReasonEvent(finishReason, "message_done"), t));
+        mapped.push(at(createTurnSummaryEvent(turnIndex, usage, finishReason, text), t));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_end_tool_result", {}));
+      break;
+    }
+    case "message_update": {
+      const update = record(event.assistantMessageEvent);
+      if (update?.type === "thinking_delta") {
+        add(mapCallbackEventToTimelineEvent("thinking", { charCount: stringField2(update.delta)?.length }));
+      }
+      break;
+    }
+    case "tool_execution_start":
+      add(mapCallbackEventToTimelineEvent("tool_execution_start", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        args: record(event.args)
+      }));
+      break;
+    case "tool_execution_update":
+      add(mapCallbackEventToTimelineEvent("tool_execution_update", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId)
+      }));
+      break;
+    case "tool_execution_end":
+      add(mapCallbackEventToTimelineEvent("tool_execution_end", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        isError: booleanField2(event.isError),
+        resultContent: resultContent(event.result)
+      }));
+      break;
+    case "compaction_start":
+      add(mapCallbackEventToTimelineEvent("auto_compaction_start", {}));
+      break;
+    case "compaction_end": {
+      const result = record(event.result);
+      add(mapCallbackEventToTimelineEvent("auto_compaction_end", {
+        compaction: {
+          tokensBefore: numberField2(result?.tokensBefore),
+          summary: stringField2(result?.summary),
+          firstKeptEntryId: stringField2(result?.firstKeptEntryId)
+        }
+      }));
+      break;
+    }
+    case "auto_retry_start":
+      add(mapCallbackEventToTimelineEvent("auto_retry_start", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          maxAttempts: numberField2(event.maxAttempts),
+          delayMs: numberField2(event.delayMs),
+          errorMessage: stringField2(event.errorMessage)
+        }
+      }));
+      break;
+    case "auto_retry_end":
+      add(mapCallbackEventToTimelineEvent("auto_retry_end", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          errorMessage: stringField2(event.finalError)
+        }
+      }));
+      break;
+    default:
+      break;
+  }
+  return mapped;
+}
+
 // src/activation/model-gate.ts
 async function createGateModelRuntime(sdk) {
   return sdk.ModelRuntime.create({ allowModelNetwork: false });
@@ -20987,8 +21288,8 @@ async function validateModelAvailable(sdk, modelRuntime, requested) {
 // src/activation/registry.ts
 class FleetRegistry {
   records = new Map;
-  register(record) {
-    this.records.set(record.snapshot.activationId, record);
+  register(record2) {
+    this.records.set(record2.snapshot.activationId, record2);
   }
   get(activationId) {
     return this.records.get(activationId);
@@ -21013,6 +21314,38 @@ function nextAttemptId(current) {
 var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
 
 // src/activation/native-host.ts
+var TOKEN_USAGE_KEYS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_creation_tokens",
+  "cache_read_tokens",
+  "reasoning_tokens",
+  "tool_tokens",
+  "total_tokens"
+];
+function extractTokenUsage(event) {
+  const nested = nativeSessionTokenUsage(event);
+  if (nested) {
+    const { usage_source: _ignored, ...usage } = nested;
+    if (Object.keys(usage).length > 0)
+      return usage;
+  }
+  const candidates = [event.token_usage, event.tokenUsage, event.usage];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object")
+      continue;
+    const record2 = candidate;
+    const usage = {};
+    for (const key of TOKEN_USAGE_KEYS) {
+      const value = record2[key];
+      if (typeof value === "number" && Number.isFinite(value))
+        usage[key] = value;
+    }
+    if (Object.keys(usage).length > 0)
+      return usage;
+  }
+  return;
+}
 var WRITE_TIERS = new Set(["MEDIUM", "HIGH"]);
 var NULL_FORENSIC_SINK = { emit: () => {} };
 
@@ -21186,15 +21519,15 @@ class NativeActivationHost {
       self: participantId,
       parent: request.requestedByParticipantId,
       onAsk: (kind, body) => {
-        const record = this.registry.get(activationId);
-        if (record)
-          record.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
+        const record2 = this.registry.get(activationId);
+        if (record2)
+          record2.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
         emit(kind === "escalation" ? "escalation_raised" : "clarification_requested", { body });
       },
       onAnswered: (kind) => {
-        const record = this.registry.get(activationId);
-        if (record)
-          record.snapshot.state = "running";
+        const record2 = this.registry.get(activationId);
+        if (record2)
+          record2.snapshot.state = "running";
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
@@ -21221,6 +21554,7 @@ class NativeActivationHost {
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
     });
+    const purpose = extractPurposeExcerpt(bead.description ?? "");
     const startedAt = this.now();
     const snapshot = {
       activationId,
@@ -21236,6 +21570,8 @@ class NativeActivationHost {
       requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
+      ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...purpose ? { purpose } : {},
       startedAt,
       lastActivityAt: startedAt
     };
@@ -21258,6 +21594,9 @@ class NativeActivationHost {
   }
   onSessionEvent(snapshot, event, emit) {
     snapshot.lastActivityAt = this.now();
+    const usage = extractTokenUsage(event);
+    if (usage)
+      snapshot.tokenUsage = { ...snapshot.tokenUsage, ...usage };
     this.forensics.sessionEvent?.({
       activationId: snapshot.activationId,
       attemptId: snapshot.attemptId,
@@ -21412,21 +21751,21 @@ class NativeActivationHost {
     }
   }
   admitToolCall(activationId, toolName) {
-    const record = this.registry.get(activationId);
-    if (!record)
+    const record2 = this.registry.get(activationId);
+    if (!record2)
       return { allow: false, reason: `unknown activation ${activationId}` };
     const verdict = admitToolCall({
       toolName,
-      workspace: record.snapshot.workspace,
+      workspace: record2.snapshot.workspace,
       activationId
     });
     if (!verdict.allow) {
       this.forensics.emit({
         activationId,
-        attemptId: record.snapshot.attemptId,
-        participantId: record.snapshot.participantId,
-        specialist: record.snapshot.specialist,
-        beadId: record.snapshot.beadId,
+        attemptId: record2.snapshot.attemptId,
+        participantId: record2.snapshot.participantId,
+        specialist: record2.snapshot.specialist,
+        beadId: record2.snapshot.beadId,
         name: "tool_blocked",
         payload: { tool: toolName, note: verdict.reason }
       });
@@ -21438,6 +21777,18 @@ class NativeActivationHost {
   }
   inspect(activationId) {
     return this.registry.projection(activationId);
+  }
+  liveStats(activationId) {
+    const snapshot = this.registry.projection(activationId);
+    if (!snapshot)
+      return;
+    return {
+      activationId: snapshot.activationId,
+      elapsed_s: Math.max(0, Math.floor((this.now() - snapshot.startedAt) / 1000)),
+      last_activity_at: snapshot.lastActivityAt,
+      ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+      ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {}
+    };
   }
   wirePeerDelivery(peer) {
     const repoRoot = peer.repoRoot ?? this.cwd;
@@ -21457,23 +21808,23 @@ class NativeActivationHost {
     return this.registry.list();
   }
   async stop(activationId, reason = "operator request") {
-    const record = this.registry.get(activationId);
-    if (!record)
+    const record2 = this.registry.get(activationId);
+    if (!record2)
       return;
-    record.snapshot.state = "stopping";
+    record2.snapshot.state = "stopping";
     try {
-      await record.session.abort();
+      await record2.session.abort();
     } finally {
-      record.unsubscribe();
-      record.session.dispose();
-      record.snapshot.state = "stopped";
-      this.releaseIfWriter(record.snapshot, reason);
+      record2.unsubscribe();
+      record2.session.dispose();
+      record2.snapshot.state = "stopped";
+      this.releaseIfWriter(record2.snapshot, reason);
       this.forensics.emit({
         activationId,
-        attemptId: record.snapshot.attemptId,
-        participantId: record.snapshot.participantId,
-        specialist: record.snapshot.specialist,
-        beadId: record.snapshot.beadId,
+        attemptId: record2.snapshot.attemptId,
+        participantId: record2.snapshot.participantId,
+        specialist: record2.snapshot.specialist,
+        beadId: record2.snapshot.beadId,
         name: "activation_disposed",
         payload: { reason }
       });
@@ -21481,42 +21832,42 @@ class NativeActivationHost {
     }
   }
   attach(activationId, listener) {
-    const record = this.registry.get(activationId);
-    if (!record)
+    const record2 = this.registry.get(activationId);
+    if (!record2)
       return;
-    return { snapshot: record.snapshot, detach: record.session.subscribe(listener) };
+    return { snapshot: record2.snapshot, detach: record2.session.subscribe(listener) };
   }
   return(attachment) {
     attachment.detach();
   }
   async resume(activationId, prompt) {
-    const record = this.registry.get(activationId);
-    if (!record) {
+    const record2 = this.registry.get(activationId);
+    if (!record2) {
       throw new DispatchRejectedError("unknown_activation", { activationId });
     }
-    if (!RESUMABLE_STATES.has(record.snapshot.state)) {
+    if (!RESUMABLE_STATES.has(record2.snapshot.state)) {
       throw new DispatchRejectedError("not_resumable", {
         activationId,
-        note: `state is "${record.snapshot.state}"`
+        note: `state is "${record2.snapshot.state}"`
       });
     }
-    const attemptId = nextAttemptId(record.snapshot.attemptId);
-    if (record.snapshot.access === "write") {
+    const attemptId = nextAttemptId(record2.snapshot.attemptId);
+    if (record2.snapshot.access === "write") {
       try {
         acquire({
-          workspace: record.snapshot.workspace,
+          workspace: record2.snapshot.workspace,
           activationId,
           attemptId,
-          specialist: record.snapshot.specialist
+          specialist: record2.snapshot.specialist
         });
       } catch (error) {
         if (error instanceof DispatchRejectedError) {
           this.forensics.emit({
             activationId,
             attemptId,
-            participantId: record.snapshot.participantId,
-            specialist: record.snapshot.specialist,
-            beadId: record.snapshot.beadId,
+            participantId: record2.snapshot.participantId,
+            specialist: record2.snapshot.specialist,
+            beadId: record2.snapshot.beadId,
             name: "lease_denied",
             payload: { reason: error.reason, note: error.detail.holder, on: "resume" }
           });
@@ -21524,36 +21875,36 @@ class NativeActivationHost {
         throw error;
       }
     }
-    record.snapshot.attemptId = attemptId;
-    record.snapshot.state = "starting";
+    record2.snapshot.attemptId = attemptId;
+    record2.snapshot.state = "starting";
     const emit = (name, payload) => this.forensics.emit({
       activationId,
       attemptId,
-      participantId: record.snapshot.participantId,
-      specialist: record.snapshot.specialist,
-      beadId: record.snapshot.beadId,
+      participantId: record2.snapshot.participantId,
+      specialist: record2.snapshot.specialist,
+      beadId: record2.snapshot.beadId,
       name,
       payload
     });
     emit("activation_resumed", {
-      requested_model: record.snapshot.requestedModel,
-      resolved_model: record.snapshot.resolvedModel,
-      model_override: record.snapshot.modelOverride
+      requested_model: record2.snapshot.requestedModel,
+      resolved_model: record2.snapshot.resolvedModel,
+      model_override: record2.snapshot.modelOverride
     });
-    record.unsubscribe();
-    record.unsubscribe = record.session.subscribe((event) => this.onSessionEvent(record.snapshot, event, emit));
-    const result = this.runToSettled(record.snapshot, record.session, prompt, emit);
-    record.result = result;
+    record2.unsubscribe();
+    record2.unsubscribe = record2.session.subscribe((event) => this.onSessionEvent(record2.snapshot, event, emit));
+    const result = this.runToSettled(record2.snapshot, record2.session, prompt, emit);
+    record2.result = result;
     return {
       activationId,
-      participantId: record.snapshot.participantId,
+      participantId: record2.snapshot.participantId,
       attemptId,
-      specialist: record.snapshot.specialist,
-      beadId: record.snapshot.beadId,
-      access: record.snapshot.access,
-      workspace: record.snapshot.workspace,
-      resolvedModel: record.snapshot.resolvedModel,
-      stepContract: record.stepContract,
+      specialist: record2.snapshot.specialist,
+      beadId: record2.snapshot.beadId,
+      access: record2.snapshot.access,
+      workspace: record2.snapshot.workspace,
+      resolvedModel: record2.snapshot.resolvedModel,
+      stepContract: record2.stepContract,
       result
     };
   }
@@ -21575,7 +21926,7 @@ function textOf(message) {
   return content.filter((part) => typeof part === "object" && part !== null && part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
 }
 // src/tools/specialist/activation.tool.ts
-function toActivationView(snapshot) {
+function toActivationView(snapshot, nowMs = Date.now()) {
   return {
     activation_id: snapshot.activationId,
     participant_id: snapshot.participantId,
@@ -21589,7 +21940,12 @@ function toActivationView(snapshot) {
     ...snapshot.piSessionId ? { pi_session_id: snapshot.piSessionId } : {},
     ...snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {},
     resolved_model: snapshot.resolvedModel,
-    model_override: snapshot.modelOverride
+    model_override: snapshot.modelOverride,
+    elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
+    ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {},
+    ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+    ...snapshot.purpose ? { purpose: snapshot.purpose } : {},
+    last_activity_at: snapshot.lastActivityAt
   };
 }
 function toPendingAskView(ask) {
@@ -21713,294 +22069,6 @@ function parseCompletionBody(body) {
     return;
   }
 }
-// src/specialist/native-activation-observability.ts
-var NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
-  activation_requested: "Dispatch intent precedes the legacy run_start boundary and has no timeline event.",
-  step_contract_compiled: "Step-contract compilation has no legacy AgentSession event.",
-  activation_admitted: "Admission metadata has no legacy timeline event; identity is projected on specialist_jobs.",
-  activation_starting: "Session construction has no legacy timeline event; run_start follows once construction succeeds.",
-  activation_resumed: "Resume-from-record has no legacy counterpart; the resumed run re-enters the shared stream at turn_start.",
-  output_validation_started: "Native result validation has no legacy timeline event kind.",
-  output_validation_passed: "Native result validation has no legacy timeline event kind.",
-  output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.",
-  activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.",
-  lease_released: "Workspace-lease teardown has no legacy timeline event.",
-  lease_reconciled: "Lease reconciliation has no legacy timeline event.",
-  clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
-  clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
-  escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
-  escalation_resolved: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
-  turn_started: "Suppressed compatibility alias; the raw Pi turn_start event is canonical.",
-  turn_completed: "Suppressed compatibility alias; the raw Pi turn_end event is canonical.",
-  retry_started: "Suppressed compatibility alias; the raw Pi auto_retry_start event is canonical.",
-  retry_completed: "Suppressed compatibility alias; the raw Pi auto_retry_end event is canonical.",
-  compaction_started: "Suppressed compatibility alias; the raw Pi compaction_start event is canonical.",
-  compaction_completed: "Suppressed compatibility alias; the raw Pi compaction_end event is canonical."
-});
-var NATIVE_SESSION_OBSERVABILITY_GAPS = Object.freeze({
-  agent_start: "turn_start is the canonical turn boundary.",
-  agent_end: "run_complete is emitted by the activation lifecycle; agent_end is not a run boundary.",
-  agent_settled: "The lifecycle activation_settled signal projects the waiting status.",
-  message_update: "Only thinking deltas are projected; text is persisted once at assistant message_end.",
-  message_user: "User and custom-message boundaries are not persisted by the legacy timeline mapper.",
-  queue_update: "The legacy runner does not persist Pi prompt-queue state.",
-  entry_appended: "Session transcript persistence is not a timeline event.",
-  session_info_changed: "Session display-name changes are not a timeline event.",
-  thinking_level_changed: "The legacy runner does not persist thinking-level changes.",
-  summarization_retry_scheduled: "The legacy runner has no summarization-retry timeline event.",
-  summarization_retry_attempt_start: "The legacy runner has no summarization-retry timeline event.",
-  summarization_retry_finished: "The legacy runner has no summarization-retry timeline event.",
-  bash_execution_update: "The legacy runner does not persist streaming bash deltas."
-});
-function at(event, t) {
-  return { ...event, t };
-}
-function record(value) {
-  return value !== null && typeof value === "object" ? value : undefined;
-}
-function stringField2(value) {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-function numberField2(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-function booleanField2(value) {
-  return typeof value === "boolean" ? value : undefined;
-}
-function messageRole(event) {
-  return stringField2(record(event.message)?.role);
-}
-function assistantMessage(event) {
-  const message = record(event.message);
-  return message?.role === "assistant" ? message : undefined;
-}
-function assistantText(event) {
-  const message = assistantMessage(event);
-  if (!message)
-    return;
-  const content = message.content;
-  if (typeof content === "string")
-    return content.trim().length > 0 ? content : undefined;
-  if (!Array.isArray(content))
-    return;
-  const text = content.map((item) => {
-    const part = record(item);
-    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
-  }).join("");
-  return text.trim().length > 0 ? text : undefined;
-}
-function tokenUsage(event) {
-  const usage = record(assistantMessage(event)?.usage);
-  if (!usage)
-    return;
-  const projected = {
-    input_tokens: numberField2(usage.input),
-    output_tokens: numberField2(usage.output),
-    cache_creation_tokens: numberField2(usage.cacheWrite),
-    cache_read_tokens: numberField2(usage.cacheRead),
-    reasoning_tokens: numberField2(usage.reasoning),
-    total_tokens: numberField2(usage.totalTokens),
-    usage_source: "provider_usage"
-  };
-  return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
-}
-function resultContent(result) {
-  if (typeof result === "string")
-    return result;
-  const resultRecord = record(result);
-  const content = resultRecord?.content;
-  if (typeof content === "string")
-    return content;
-  if (!Array.isArray(content))
-    return;
-  const text = content.map((item) => {
-    if (typeof item === "string")
-      return item;
-    const part = record(item);
-    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
-  }).join(`
-`);
-  return text.trim().length > 0 ? text : undefined;
-}
-function nativeAttemptNo(attemptId) {
-  const match = /:(\d+)$/.exec(attemptId);
-  if (!match)
-    return 1;
-  const parsed = Number(match[1]);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
-}
-function nativeAttemptIdForNo(initialAttemptId, attemptNo) {
-  const safeAttemptNo = Number.isSafeInteger(attemptNo) && attemptNo > 0 ? attemptNo : 1;
-  return /:\d+$/.test(initialAttemptId) ? initialAttemptId.replace(/:\d+$/, `:${safeAttemptNo}`) : `${initialAttemptId}:${safeAttemptNo}`;
-}
-function mapNativeLifecycleEvent(event, context, t = Date.now()) {
-  switch (event.name) {
-    case "activation_started":
-      return at(createRunStartEvent(event.specialist, event.beadId, {
-        job_id: event.activationId,
-        specialist_name: event.specialist,
-        bead_id: event.beadId,
-        worktree_path: context.workspacePath
-      }), t);
-    case "activation_settled":
-      return at(createStatusChangeEvent("waiting", "running"), t);
-    case "activation_completed":
-      return at(createRunCompleteEvent("COMPLETE", Math.max(0, t - context.startedAtMs) / 1000, {
-        model: context.resolvedModel,
-        backend: context.resolvedModel?.split("/")[0],
-        bead_id: event.beadId,
-        output: context.output,
-        token_usage: context.tokenUsage,
-        finish_reason: context.finishReason,
-        tool_calls: context.toolCalls,
-        final: true,
-        metrics: {
-          token_usage: context.tokenUsage,
-          finish_reason: context.finishReason,
-          turns: context.turns,
-          tool_calls: context.toolCalls?.length,
-          tool_call_names: context.toolCalls,
-          auto_retries: context.autoRetries,
-          auto_compactions: context.autoCompactions
-        }
-      }), t);
-    case "lease_acquired":
-    case "lease_denied":
-    case "lease_uncertain":
-    case "tool_blocked":
-      return at(createControlSignalEvent(event.name, {
-        bead_id: event.beadId,
-        ...event.payload ?? {}
-      }), t);
-    case "activation_failed":
-    case "activation_rejected":
-      return at(createRunCompleteEvent("ERROR", Math.max(0, t - context.startedAtMs) / 1000, {
-        model: context.resolvedModel,
-        backend: context.resolvedModel?.split("/")[0],
-        bead_id: event.beadId,
-        error: stringField2(event.payload?.error) ?? stringField2(event.payload?.reason),
-        output: context.output,
-        token_usage: context.tokenUsage,
-        finish_reason: context.finishReason,
-        tool_calls: context.toolCalls,
-        final: true
-      }), t);
-    default:
-      return null;
-  }
-}
-function mapNativeSessionEvent(event, t = Date.now(), turnIndex = 0) {
-  const mapped = [];
-  const add = (timeline) => {
-    if (timeline)
-      mapped.push(at(timeline, t));
-  };
-  switch (event.type) {
-    case "turn_start":
-      add(mapCallbackEventToTimelineEvent("turn_start", {}));
-      break;
-    case "turn_end":
-      add(mapCallbackEventToTimelineEvent("turn_end", {}));
-      break;
-    case "message_start": {
-      const role = messageRole(event);
-      if (role === "assistant") {
-        const message = assistantMessage(event);
-        const model = stringField2(message?.model);
-        const provider = stringField2(message?.provider);
-        if (model || provider)
-          mapped.push(at(createMetaEvent(model ?? "unknown", provider ?? "unknown"), t));
-        add(mapCallbackEventToTimelineEvent("message_start_assistant", {}));
-      }
-      if (role === "toolResult")
-        add(mapCallbackEventToTimelineEvent("message_start_tool_result", {}));
-      break;
-    }
-    case "message_end": {
-      const role = messageRole(event);
-      if (role === "assistant") {
-        const text = assistantText(event);
-        const usage = tokenUsage(event);
-        const finishReason = stringField2(assistantMessage(event)?.stopReason);
-        if (text)
-          mapped.push({ t, type: TIMELINE_EVENT_TYPES.TEXT, char_count: text.length, content: text });
-        add(mapCallbackEventToTimelineEvent("message_end_assistant", {}));
-        if (usage)
-          mapped.push(at(createTokenUsageEvent(usage, "message_done"), t));
-        if (finishReason)
-          mapped.push(at(createFinishReasonEvent(finishReason, "message_done"), t));
-        mapped.push(at(createTurnSummaryEvent(turnIndex, usage, finishReason, text), t));
-      }
-      if (role === "toolResult")
-        add(mapCallbackEventToTimelineEvent("message_end_tool_result", {}));
-      break;
-    }
-    case "message_update": {
-      const update = record(event.assistantMessageEvent);
-      if (update?.type === "thinking_delta") {
-        add(mapCallbackEventToTimelineEvent("thinking", { charCount: stringField2(update.delta)?.length }));
-      }
-      break;
-    }
-    case "tool_execution_start":
-      add(mapCallbackEventToTimelineEvent("tool_execution_start", {
-        tool: stringField2(event.toolName),
-        toolCallId: stringField2(event.toolCallId),
-        args: record(event.args)
-      }));
-      break;
-    case "tool_execution_update":
-      add(mapCallbackEventToTimelineEvent("tool_execution_update", {
-        tool: stringField2(event.toolName),
-        toolCallId: stringField2(event.toolCallId)
-      }));
-      break;
-    case "tool_execution_end":
-      add(mapCallbackEventToTimelineEvent("tool_execution_end", {
-        tool: stringField2(event.toolName),
-        toolCallId: stringField2(event.toolCallId),
-        isError: booleanField2(event.isError),
-        resultContent: resultContent(event.result)
-      }));
-      break;
-    case "compaction_start":
-      add(mapCallbackEventToTimelineEvent("auto_compaction_start", {}));
-      break;
-    case "compaction_end": {
-      const result = record(event.result);
-      add(mapCallbackEventToTimelineEvent("auto_compaction_end", {
-        compaction: {
-          tokensBefore: numberField2(result?.tokensBefore),
-          summary: stringField2(result?.summary),
-          firstKeptEntryId: stringField2(result?.firstKeptEntryId)
-        }
-      }));
-      break;
-    }
-    case "auto_retry_start":
-      add(mapCallbackEventToTimelineEvent("auto_retry_start", {
-        retry: {
-          attempt: numberField2(event.attempt),
-          maxAttempts: numberField2(event.maxAttempts),
-          delayMs: numberField2(event.delayMs),
-          errorMessage: stringField2(event.errorMessage)
-        }
-      }));
-      break;
-    case "auto_retry_end":
-      add(mapCallbackEventToTimelineEvent("auto_retry_end", {
-        retry: {
-          attempt: numberField2(event.attempt),
-          errorMessage: stringField2(event.finalError)
-        }
-      }));
-      break;
-    default:
-      break;
-  }
-  return mapped;
-}
-
 // src/activation/forensic-sink.ts
 function stringValue(value) {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
@@ -22182,6 +22250,34 @@ function createActivationForensicSink(observability) {
       } catch {}
     }
   };
+}
+// src/activation/build-identity.ts
+import { createHash as createHash6 } from "node:crypto";
+import { readFileSync as readFileSync12 } from "node:fs";
+var BUILD_ID_BYTES = 12;
+var UNKNOWN_BUILD_ID = "unknown";
+function hashFileBytes(path) {
+  return createHash6("sha256").update(readFileSync12(path)).digest("hex");
+}
+function shortBuildId(hash) {
+  return hash.slice(0, BUILD_ID_BYTES);
+}
+function readBuildId(path) {
+  try {
+    return shortBuildId(hashFileBytes(path));
+  } catch {
+    return UNKNOWN_BUILD_ID;
+  }
+}
+function describeBuildIdentity(loadedId, onDiskId) {
+  if (loadedId === UNKNOWN_BUILD_ID || onDiskId === UNKNOWN_BUILD_ID) {
+    const known = loadedId !== UNKNOWN_BUILD_ID ? loadedId : onDiskId;
+    return known !== UNKNOWN_BUILD_ID ? `build: ${known} (the other side of the comparison could not be read, so staleness cannot be ruled out)` : "build: unknown (build identity unavailable)";
+  }
+  if (loadedId === onDiskId) {
+    return `build: ${loadedId} (loaded module matches the file on disk)`;
+  }
+  return `build: module loaded ${loadedId}, file on disk ${onDiskId} — ` + "the runtime was rebuilt after this session loaded it. Restart the session to pick up " + "the new build; until then, treat a refusal below as possibly stale rather than broken.";
 }
 // src/specialist/launch-outcome.ts
 var LAUNCH_OUTCOME_SCHEMA_VERSION = "xtrm.command-outcome.v1";
@@ -22549,26 +22645,32 @@ export {
   toPendingAskView,
   toActivationView,
   toActivationResultView,
+  shortBuildId,
   runScriptSpecialist as runScript,
   resolveRuntimeToolContract,
   resolveObservabilityDbLocation,
   resolveModelChain,
   readVerifiedCitationWindow,
+  readBuildId,
   projectLaunchOutcome,
   parseLaunchOutcome,
   parseCompletionBody,
   leaseScopeFor,
+  hashFileBytes,
   extractSections,
   evaluateBeadReadiness,
+  describeBuildIdentity,
   createObservabilitySqliteClientAtPath,
   createActivationForensicSink,
   completionBody,
   admitCoordinatorToolCall,
+  UNKNOWN_BUILD_ID,
   SpecialistLoader,
   RuntimeEventPusher,
   ResultNotValidatedError,
   NativeActivationHost,
   LaunchOutcomeError,
   LAUNCH_OUTCOME_SCHEMA_VERSION,
-  DispatchRejectedError
+  DispatchRejectedError,
+  BUILD_ID_BYTES
 };

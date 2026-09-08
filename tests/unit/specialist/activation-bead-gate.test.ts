@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateBeadReadiness, extractSections, REQUIRED_SECTIONS } from '../../../src/activation/bead-gate.js';
+import { evaluateBeadReadiness, extractPurposeExcerpt, extractSections, PURPOSE_EXCERPT_MAX, REQUIRED_SECTIONS } from '../../../src/activation/bead-gate.js';
 import { NativeActivationHost } from '../../../src/activation/native-host.js';
 import { DispatchRejectedError } from '../../../src/activation/types.js';
 import type { PiSdk, PiAgentSessionLike } from '../../../src/activation/pi-sdk.js';
@@ -225,5 +225,70 @@ describe('NativeActivationHost — bead gate admission', () => {
       ['PROBLEM', 'the thing is broken'],
       ['SUCCESS', 'it works'],
     ]);
+  });
+});
+
+describe('extractPurposeExcerpt (unitAI-uvg4j)', () => {
+  it('takes the first meaningful line of SCOPE', () => {
+    expect(extractPurposeExcerpt(contract({ SCOPE: '\n  researching activation transport\nsecond line' }).description))
+      .toBe('researching activation transport');
+  });
+
+  it('falls back to SUCCESS when SCOPE is blank', () => {
+    const description = ['SCOPE', '', 'SUCCESS', 'activation transport works'].join('\n');
+    expect(extractPurposeExcerpt(description)).toBe('activation transport works');
+  });
+
+  it('collapses whitespace to a single line bounded at PURPOSE_EXCERPT_MAX', () => {
+    const long = `word  ${'x '.repeat(100)}`;
+    const excerpt = extractPurposeExcerpt(contract({ SCOPE: long }).description)!;
+    expect(excerpt).not.toContain('\n');
+    expect(excerpt).not.toMatch(/  /);
+    expect(excerpt.length).toBeLessThanOrEqual(PURPOSE_EXCERPT_MAX);
+  });
+
+  it('returns undefined rather than fabricating when both sections are empty', () => {
+    expect(extractPurposeExcerpt('PROBLEM\nx')).toBeUndefined();
+    expect(extractPurposeExcerpt('')).toBeUndefined();
+  });
+
+  it('captures the excerpt on the snapshot once at dispatch', async () => {
+    const created = { count: 0 };
+    const bead = contract({ SCOPE: 'researching activation transport\nsecond line' });
+    const loader = { get: async () => ({
+      specialist: {
+        metadata: { name: 'researcher', version: '1.0.0', description: 'd', category: 'c' },
+        execution: { model: 'testprov/test-model', permission_required: 'READ_ONLY', response_format: 'text', output_type: 'research', bare: false },
+        prompt: { system: 'You are the researcher.', task_template: 'Do: {{bead_id}}' },
+      },
+    }) } as never;
+    const session = {
+      sessionId: 's1', messages: [], isIdle: true,
+      async prompt() {}, async steer() {}, async followUp() {}, async abort() {},
+      dispose() {},
+      subscribe() { return () => undefined; },
+      getActiveToolNames: () => [] as string[],
+      setActiveToolsByName() {},
+      async waitForIdle() {},
+    } as unknown as PiAgentSessionLike;
+    const sdk: PiSdk = {
+      createAgentSession: async () => { created.count += 1; return { session }; },
+      ModelRuntime: { create: async () => ({ hasConfiguredAuth: () => true }) },
+      resolveModelScopeWithDiagnostics: () => ({
+        scopedModels: [{ model: { id: 'test-model', provider: 'testprov' } }],
+        diagnostics: [],
+      }),
+      defineTool: (d) => d,
+    };
+    const host = new NativeActivationHost({
+      beadGate: NO_STATE,
+      loader,
+      beadsClient: { readBead: () => bead } as never,
+      loadSdk: async () => sdk,
+      forensics: { emit: () => {} },
+      cwd: process.cwd(),
+    });
+    const handle = await host.start({ specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator:test' });
+    expect(host.inspect(handle.activationId)?.purpose).toBe('researching activation transport');
   });
 });

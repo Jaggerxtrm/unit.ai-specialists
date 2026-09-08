@@ -47080,10 +47080,10 @@ class ChatStatus {
     const jobId = this.currentStatus.id;
     const beadId = this.currentStatus.bead_id ?? "-";
     const state = this.currentStatus.status;
-    const tokenUsage2 = this.currentStatus.metrics?.token_usage?.total_tokens;
+    const tokenUsage = this.currentStatus.metrics?.token_usage?.total_tokens;
     const model = formatModel(this.currentStatus);
     const specialist = this.currentStatus.specialist ?? "job";
-    const line = `${specialist}/${jobId}/${beadId} \xB7 ${state} \xB7 ${formatTokenCount(tokenUsage2)} tok \xB7 ${model}`;
+    const line = `${specialist}/${jobId}/${beadId} \xB7 ${state} \xB7 ${formatTokenCount(tokenUsage)} tok \xB7 ${model}`;
     return truncateToWidth(line, width);
   }
   async poll() {
@@ -54282,7 +54282,7 @@ function createPiJsonProjector(context) {
   let text = "";
   let model = context.model;
   let backend = context.backend;
-  let tokenUsage2;
+  let tokenUsage;
   let messageTimestamp = context.startedAtMs ?? 0;
   const toolArgs = new Map;
   const toolResults = [];
@@ -54291,7 +54291,7 @@ function createPiJsonProjector(context) {
     content: text ? [{ type: "text", text }] : [],
     ...backend ? { provider: backend } : {},
     ...modelName(model, backend) ? { model: modelName(model, backend) } : {},
-    ...usage3(tokenUsage2) ? { usage: usage3(tokenUsage2) } : {},
+    ...usage3(tokenUsage) ? { usage: usage3(tokenUsage) } : {},
     stopReason: cycleComplete ? "stop" : undefined,
     timestamp
   });
@@ -54323,7 +54323,7 @@ function createPiJsonProjector(context) {
     messageOpen = false;
     messageStarted = false;
     text = "";
-    tokenUsage2 = undefined;
+    tokenUsage = undefined;
     toolArgs.clear();
     toolResults.length = 0;
   };
@@ -54347,7 +54347,7 @@ function createPiJsonProjector(context) {
       return messageOpen && !messageStarted ? [...ensureStarted(event.t), ...ensureMessageStarted(event.t)] : [];
     }
     if (event.type === "token_usage") {
-      tokenUsage2 = event.token_usage;
+      tokenUsage = event.token_usage;
       return [];
     }
     if (event.type === "run_start")
@@ -54426,7 +54426,7 @@ function createPiJsonProjector(context) {
       const output2 = ensureStarted(event.t);
       model = event.model ?? model;
       backend = event.backend ?? backend;
-      tokenUsage2 = event.token_usage ?? event.metrics?.token_usage ?? tokenUsage2;
+      tokenUsage = event.token_usage ?? event.metrics?.token_usage ?? tokenUsage;
       text = event.output ?? text;
       cycleComplete = true;
       const message = assistantMessage2(event.t);
@@ -60911,8 +60911,8 @@ ${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job
   if (chainJobs.length > 1)
     console.log(`  chain     ${chainStr}`);
   console.log(`  elapsed   ${formatElapsed3(job.elapsed_s)}${job.metrics ? ` \xB7 ${job.metrics.turns ?? 0} turns \xB7 ${job.metrics.tool_calls ?? 0} tools` : ""}`);
-  const tokenUsage2 = job.metrics?.token_usage;
-  const tokenSummaryParts = formatTokenUsageSummary(tokenUsage2);
+  const tokenUsage = job.metrics?.token_usage;
+  const tokenSummaryParts = formatTokenUsageSummary(tokenUsage);
   if (tokenSummaryParts.length > 0) {
     console.log(`  tokens    ${tokenSummaryParts.join(" \xB7 ")}`);
   }
@@ -75964,6 +75964,19 @@ function extractSections(description) {
   flush();
   return sections;
 }
+var PURPOSE_EXCERPT_MAX = 60;
+function extractPurposeExcerpt(description) {
+  const sections = extractSections(description ?? "");
+  for (const name of ["SCOPE", "SUCCESS"]) {
+    const line = (sections.get(name) ?? "").split(`
+`).map((s) => s.trim()).find(Boolean);
+    if (!line)
+      continue;
+    const flat = line.replace(/\s+/g, " ");
+    return flat.length <= PURPOSE_EXCERPT_MAX ? flat : `${flat.slice(0, PURPOSE_EXCERPT_MAX - 1)}\u2026`;
+  }
+  return;
+}
 function scrutinyLevel(description) {
   const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-\u2014]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
   return match?.[1]?.toUpperCase();
@@ -76569,7 +76582,7 @@ function readLeaseFile(path) {
 
 // src/tools/specialist/activation.tool.ts
 init_zod();
-function toActivationView(snapshot) {
+function toActivationView(snapshot, nowMs = Date.now()) {
   return {
     activation_id: snapshot.activationId,
     participant_id: snapshot.participantId,
@@ -76583,7 +76596,12 @@ function toActivationView(snapshot) {
     ...snapshot.piSessionId ? { pi_session_id: snapshot.piSessionId } : {},
     ...snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {},
     resolved_model: snapshot.resolvedModel,
-    model_override: snapshot.modelOverride
+    model_override: snapshot.modelOverride,
+    elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
+    ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {},
+    ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+    ...snapshot.purpose ? { purpose: snapshot.purpose } : {},
+    last_activity_at: snapshot.lastActivityAt
   };
 }
 function toPendingAskView(ask) {
@@ -76774,7 +76792,7 @@ function createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher) 
         uncertain_workspaces = [];
       }
       const host = getHost?.();
-      const activations = host ? host.list().map(toActivationView) : [];
+      const activations = host ? host.list().map((s) => toActivationView(s)) : [];
       const pending_asks = host ? host.pendingAsks().map(toPendingAskView) : [];
       const activation_results = getPusher?.()?.allResults().map(toActivationResultView) ?? [];
       return {
@@ -77497,6 +77515,295 @@ async function loadPiSdk() {
   throw new PiSdkUnavailableError(attempted, lastError);
 }
 
+// src/specialist/native-activation-observability.ts
+init_timeline_events();
+var NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
+  activation_requested: "Dispatch intent precedes the legacy run_start boundary and has no timeline event.",
+  step_contract_compiled: "Step-contract compilation has no legacy AgentSession event.",
+  activation_admitted: "Admission metadata has no legacy timeline event; identity is projected on specialist_jobs.",
+  activation_starting: "Session construction has no legacy timeline event; run_start follows once construction succeeds.",
+  activation_resumed: "Resume-from-record has no legacy counterpart; the resumed run re-enters the shared stream at turn_start.",
+  output_validation_started: "Native result validation has no legacy timeline event kind.",
+  output_validation_passed: "Native result validation has no legacy timeline event kind.",
+  output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.",
+  activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.",
+  lease_released: "Workspace-lease teardown has no legacy timeline event.",
+  lease_reconciled: "Lease reconciliation has no legacy timeline event.",
+  clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  escalation_resolved: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
+  turn_started: "Suppressed compatibility alias; the raw Pi turn_start event is canonical.",
+  turn_completed: "Suppressed compatibility alias; the raw Pi turn_end event is canonical.",
+  retry_started: "Suppressed compatibility alias; the raw Pi auto_retry_start event is canonical.",
+  retry_completed: "Suppressed compatibility alias; the raw Pi auto_retry_end event is canonical.",
+  compaction_started: "Suppressed compatibility alias; the raw Pi compaction_start event is canonical.",
+  compaction_completed: "Suppressed compatibility alias; the raw Pi compaction_end event is canonical."
+});
+var NATIVE_SESSION_OBSERVABILITY_GAPS = Object.freeze({
+  agent_start: "turn_start is the canonical turn boundary.",
+  agent_end: "run_complete is emitted by the activation lifecycle; agent_end is not a run boundary.",
+  agent_settled: "The lifecycle activation_settled signal projects the waiting status.",
+  message_update: "Only thinking deltas are projected; text is persisted once at assistant message_end.",
+  message_user: "User and custom-message boundaries are not persisted by the legacy timeline mapper.",
+  queue_update: "The legacy runner does not persist Pi prompt-queue state.",
+  entry_appended: "Session transcript persistence is not a timeline event.",
+  session_info_changed: "Session display-name changes are not a timeline event.",
+  thinking_level_changed: "The legacy runner does not persist thinking-level changes.",
+  summarization_retry_scheduled: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_attempt_start: "The legacy runner has no summarization-retry timeline event.",
+  summarization_retry_finished: "The legacy runner has no summarization-retry timeline event.",
+  bash_execution_update: "The legacy runner does not persist streaming bash deltas."
+});
+function at(event, t) {
+  return { ...event, t };
+}
+function record3(value) {
+  return value !== null && typeof value === "object" ? value : undefined;
+}
+function stringField2(value) {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+function numberField2(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+function booleanField2(value) {
+  return typeof value === "boolean" ? value : undefined;
+}
+function messageRole(event) {
+  return stringField2(record3(event.message)?.role);
+}
+function assistantMessage(event) {
+  const message = record3(event.message);
+  return message?.role === "assistant" ? message : undefined;
+}
+function assistantText(event) {
+  const message = assistantMessage(event);
+  if (!message)
+    return;
+  const content = message.content;
+  if (typeof content === "string")
+    return content.trim().length > 0 ? content : undefined;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    const part = record3(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join("");
+  return text.trim().length > 0 ? text : undefined;
+}
+function nativeSessionTokenUsage(event) {
+  const usage = record3(assistantMessage(event)?.usage);
+  if (!usage)
+    return;
+  const projected = {
+    input_tokens: numberField2(usage.input),
+    output_tokens: numberField2(usage.output),
+    cache_creation_tokens: numberField2(usage.cacheWrite),
+    cache_read_tokens: numberField2(usage.cacheRead),
+    reasoning_tokens: numberField2(usage.reasoning),
+    total_tokens: numberField2(usage.totalTokens),
+    usage_source: "provider_usage"
+  };
+  return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
+}
+function resultContent(result) {
+  if (typeof result === "string")
+    return result;
+  const resultRecord = record3(result);
+  const content = resultRecord?.content;
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return;
+  const text = content.map((item) => {
+    if (typeof item === "string")
+      return item;
+    const part = record3(item);
+    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
+  }).join(`
+`);
+  return text.trim().length > 0 ? text : undefined;
+}
+function nativeAttemptNo(attemptId) {
+  const match = /:(\d+)$/.exec(attemptId);
+  if (!match)
+    return 1;
+  const parsed = Number(match[1]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+function nativeAttemptIdForNo(initialAttemptId, attemptNo) {
+  const safeAttemptNo = Number.isSafeInteger(attemptNo) && attemptNo > 0 ? attemptNo : 1;
+  return /:\d+$/.test(initialAttemptId) ? initialAttemptId.replace(/:\d+$/, `:${safeAttemptNo}`) : `${initialAttemptId}:${safeAttemptNo}`;
+}
+function mapNativeLifecycleEvent(event, context, t = Date.now()) {
+  switch (event.name) {
+    case "activation_started":
+      return at(createRunStartEvent(event.specialist, event.beadId, {
+        job_id: event.activationId,
+        specialist_name: event.specialist,
+        bead_id: event.beadId,
+        worktree_path: context.workspacePath
+      }), t);
+    case "activation_settled":
+      return at(createStatusChangeEvent("waiting", "running"), t);
+    case "activation_completed":
+      return at(createRunCompleteEvent("COMPLETE", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true,
+        metrics: {
+          token_usage: context.tokenUsage,
+          finish_reason: context.finishReason,
+          turns: context.turns,
+          tool_calls: context.toolCalls?.length,
+          tool_call_names: context.toolCalls,
+          auto_retries: context.autoRetries,
+          auto_compactions: context.autoCompactions
+        }
+      }), t);
+    case "lease_acquired":
+    case "lease_denied":
+    case "lease_uncertain":
+    case "tool_blocked":
+      return at(createControlSignalEvent(event.name, {
+        bead_id: event.beadId,
+        ...event.payload ?? {}
+      }), t);
+    case "activation_failed":
+    case "activation_rejected":
+      return at(createRunCompleteEvent("ERROR", Math.max(0, t - context.startedAtMs) / 1000, {
+        model: context.resolvedModel,
+        backend: context.resolvedModel?.split("/")[0],
+        bead_id: event.beadId,
+        error: stringField2(event.payload?.error) ?? stringField2(event.payload?.reason),
+        output: context.output,
+        token_usage: context.tokenUsage,
+        finish_reason: context.finishReason,
+        tool_calls: context.toolCalls,
+        final: true
+      }), t);
+    default:
+      return null;
+  }
+}
+function mapNativeSessionEvent(event, t = Date.now(), turnIndex = 0) {
+  const mapped = [];
+  const add = (timeline) => {
+    if (timeline)
+      mapped.push(at(timeline, t));
+  };
+  switch (event.type) {
+    case "turn_start":
+      add(mapCallbackEventToTimelineEvent("turn_start", {}));
+      break;
+    case "turn_end":
+      add(mapCallbackEventToTimelineEvent("turn_end", {}));
+      break;
+    case "message_start": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const message = assistantMessage(event);
+        const model = stringField2(message?.model);
+        const provider = stringField2(message?.provider);
+        if (model || provider)
+          mapped.push(at(createMetaEvent(model ?? "unknown", provider ?? "unknown"), t));
+        add(mapCallbackEventToTimelineEvent("message_start_assistant", {}));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_start_tool_result", {}));
+      break;
+    }
+    case "message_end": {
+      const role = messageRole(event);
+      if (role === "assistant") {
+        const text = assistantText(event);
+        const usage = nativeSessionTokenUsage(event);
+        const finishReason = stringField2(assistantMessage(event)?.stopReason);
+        if (text)
+          mapped.push({ t, type: TIMELINE_EVENT_TYPES.TEXT, char_count: text.length, content: text });
+        add(mapCallbackEventToTimelineEvent("message_end_assistant", {}));
+        if (usage)
+          mapped.push(at(createTokenUsageEvent(usage, "message_done"), t));
+        if (finishReason)
+          mapped.push(at(createFinishReasonEvent(finishReason, "message_done"), t));
+        mapped.push(at(createTurnSummaryEvent(turnIndex, usage, finishReason, text), t));
+      }
+      if (role === "toolResult")
+        add(mapCallbackEventToTimelineEvent("message_end_tool_result", {}));
+      break;
+    }
+    case "message_update": {
+      const update = record3(event.assistantMessageEvent);
+      if (update?.type === "thinking_delta") {
+        add(mapCallbackEventToTimelineEvent("thinking", { charCount: stringField2(update.delta)?.length }));
+      }
+      break;
+    }
+    case "tool_execution_start":
+      add(mapCallbackEventToTimelineEvent("tool_execution_start", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        args: record3(event.args)
+      }));
+      break;
+    case "tool_execution_update":
+      add(mapCallbackEventToTimelineEvent("tool_execution_update", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId)
+      }));
+      break;
+    case "tool_execution_end":
+      add(mapCallbackEventToTimelineEvent("tool_execution_end", {
+        tool: stringField2(event.toolName),
+        toolCallId: stringField2(event.toolCallId),
+        isError: booleanField2(event.isError),
+        resultContent: resultContent(event.result)
+      }));
+      break;
+    case "compaction_start":
+      add(mapCallbackEventToTimelineEvent("auto_compaction_start", {}));
+      break;
+    case "compaction_end": {
+      const result = record3(event.result);
+      add(mapCallbackEventToTimelineEvent("auto_compaction_end", {
+        compaction: {
+          tokensBefore: numberField2(result?.tokensBefore),
+          summary: stringField2(result?.summary),
+          firstKeptEntryId: stringField2(result?.firstKeptEntryId)
+        }
+      }));
+      break;
+    }
+    case "auto_retry_start":
+      add(mapCallbackEventToTimelineEvent("auto_retry_start", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          maxAttempts: numberField2(event.maxAttempts),
+          delayMs: numberField2(event.delayMs),
+          errorMessage: stringField2(event.errorMessage)
+        }
+      }));
+      break;
+    case "auto_retry_end":
+      add(mapCallbackEventToTimelineEvent("auto_retry_end", {
+        retry: {
+          attempt: numberField2(event.attempt),
+          errorMessage: stringField2(event.finalError)
+        }
+      }));
+      break;
+    default:
+      break;
+  }
+  return mapped;
+}
+
 // src/activation/model-gate.ts
 async function createGateModelRuntime(sdk) {
   return sdk.ModelRuntime.create({ allowModelNetwork: false });
@@ -77550,8 +77857,8 @@ async function validateModelAvailable(sdk, modelRuntime, requested) {
 // src/activation/registry.ts
 class FleetRegistry {
   records = new Map;
-  register(record3) {
-    this.records.set(record3.snapshot.activationId, record3);
+  register(record4) {
+    this.records.set(record4.snapshot.activationId, record4);
   }
   get(activationId) {
     return this.records.get(activationId);
@@ -77576,6 +77883,38 @@ function nextAttemptId(current) {
 var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
 
 // src/activation/native-host.ts
+var TOKEN_USAGE_KEYS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_creation_tokens",
+  "cache_read_tokens",
+  "reasoning_tokens",
+  "tool_tokens",
+  "total_tokens"
+];
+function extractTokenUsage(event) {
+  const nested = nativeSessionTokenUsage(event);
+  if (nested) {
+    const { usage_source: _ignored, ...usage } = nested;
+    if (Object.keys(usage).length > 0)
+      return usage;
+  }
+  const candidates = [event.token_usage, event.tokenUsage, event.usage];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object")
+      continue;
+    const record4 = candidate;
+    const usage = {};
+    for (const key of TOKEN_USAGE_KEYS) {
+      const value = record4[key];
+      if (typeof value === "number" && Number.isFinite(value))
+        usage[key] = value;
+    }
+    if (Object.keys(usage).length > 0)
+      return usage;
+  }
+  return;
+}
 var WRITE_TIERS = new Set(["MEDIUM", "HIGH"]);
 var NULL_FORENSIC_SINK = { emit: () => {} };
 
@@ -77749,15 +78088,15 @@ class NativeActivationHost {
       self: participantId,
       parent: request.requestedByParticipantId,
       onAsk: (kind, body) => {
-        const record3 = this.registry.get(activationId);
-        if (record3)
-          record3.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
+        const record4 = this.registry.get(activationId);
+        if (record4)
+          record4.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
         emit(kind === "escalation" ? "escalation_raised" : "clarification_requested", { body });
       },
       onAnswered: (kind) => {
-        const record3 = this.registry.get(activationId);
-        if (record3)
-          record3.snapshot.state = "running";
+        const record4 = this.registry.get(activationId);
+        if (record4)
+          record4.snapshot.state = "running";
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
@@ -77784,6 +78123,7 @@ class NativeActivationHost {
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
     });
+    const purpose = extractPurposeExcerpt(bead.description ?? "");
     const startedAt = this.now();
     const snapshot = {
       activationId,
@@ -77799,6 +78139,8 @@ class NativeActivationHost {
       requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
+      ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...purpose ? { purpose } : {},
       startedAt,
       lastActivityAt: startedAt
     };
@@ -77821,6 +78163,9 @@ class NativeActivationHost {
   }
   onSessionEvent(snapshot, event, emit) {
     snapshot.lastActivityAt = this.now();
+    const usage = extractTokenUsage(event);
+    if (usage)
+      snapshot.tokenUsage = { ...snapshot.tokenUsage, ...usage };
     this.forensics.sessionEvent?.({
       activationId: snapshot.activationId,
       attemptId: snapshot.attemptId,
@@ -77975,21 +78320,21 @@ class NativeActivationHost {
     }
   }
   admitToolCall(activationId, toolName) {
-    const record3 = this.registry.get(activationId);
-    if (!record3)
+    const record4 = this.registry.get(activationId);
+    if (!record4)
       return { allow: false, reason: `unknown activation ${activationId}` };
     const verdict = admitToolCall({
       toolName,
-      workspace: record3.snapshot.workspace,
+      workspace: record4.snapshot.workspace,
       activationId
     });
     if (!verdict.allow) {
       this.forensics.emit({
         activationId,
-        attemptId: record3.snapshot.attemptId,
-        participantId: record3.snapshot.participantId,
-        specialist: record3.snapshot.specialist,
-        beadId: record3.snapshot.beadId,
+        attemptId: record4.snapshot.attemptId,
+        participantId: record4.snapshot.participantId,
+        specialist: record4.snapshot.specialist,
+        beadId: record4.snapshot.beadId,
         name: "tool_blocked",
         payload: { tool: toolName, note: verdict.reason }
       });
@@ -78001,6 +78346,18 @@ class NativeActivationHost {
   }
   inspect(activationId) {
     return this.registry.projection(activationId);
+  }
+  liveStats(activationId) {
+    const snapshot = this.registry.projection(activationId);
+    if (!snapshot)
+      return;
+    return {
+      activationId: snapshot.activationId,
+      elapsed_s: Math.max(0, Math.floor((this.now() - snapshot.startedAt) / 1000)),
+      last_activity_at: snapshot.lastActivityAt,
+      ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+      ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {}
+    };
   }
   wirePeerDelivery(peer) {
     const repoRoot = peer.repoRoot ?? this.cwd;
@@ -78020,23 +78377,23 @@ class NativeActivationHost {
     return this.registry.list();
   }
   async stop(activationId, reason = "operator request") {
-    const record3 = this.registry.get(activationId);
-    if (!record3)
+    const record4 = this.registry.get(activationId);
+    if (!record4)
       return;
-    record3.snapshot.state = "stopping";
+    record4.snapshot.state = "stopping";
     try {
-      await record3.session.abort();
+      await record4.session.abort();
     } finally {
-      record3.unsubscribe();
-      record3.session.dispose();
-      record3.snapshot.state = "stopped";
-      this.releaseIfWriter(record3.snapshot, reason);
+      record4.unsubscribe();
+      record4.session.dispose();
+      record4.snapshot.state = "stopped";
+      this.releaseIfWriter(record4.snapshot, reason);
       this.forensics.emit({
         activationId,
-        attemptId: record3.snapshot.attemptId,
-        participantId: record3.snapshot.participantId,
-        specialist: record3.snapshot.specialist,
-        beadId: record3.snapshot.beadId,
+        attemptId: record4.snapshot.attemptId,
+        participantId: record4.snapshot.participantId,
+        specialist: record4.snapshot.specialist,
+        beadId: record4.snapshot.beadId,
         name: "activation_disposed",
         payload: { reason }
       });
@@ -78044,42 +78401,42 @@ class NativeActivationHost {
     }
   }
   attach(activationId, listener) {
-    const record3 = this.registry.get(activationId);
-    if (!record3)
+    const record4 = this.registry.get(activationId);
+    if (!record4)
       return;
-    return { snapshot: record3.snapshot, detach: record3.session.subscribe(listener) };
+    return { snapshot: record4.snapshot, detach: record4.session.subscribe(listener) };
   }
   return(attachment) {
     attachment.detach();
   }
   async resume(activationId, prompt) {
-    const record3 = this.registry.get(activationId);
-    if (!record3) {
+    const record4 = this.registry.get(activationId);
+    if (!record4) {
       throw new DispatchRejectedError("unknown_activation", { activationId });
     }
-    if (!RESUMABLE_STATES.has(record3.snapshot.state)) {
+    if (!RESUMABLE_STATES.has(record4.snapshot.state)) {
       throw new DispatchRejectedError("not_resumable", {
         activationId,
-        note: `state is "${record3.snapshot.state}"`
+        note: `state is "${record4.snapshot.state}"`
       });
     }
-    const attemptId = nextAttemptId(record3.snapshot.attemptId);
-    if (record3.snapshot.access === "write") {
+    const attemptId = nextAttemptId(record4.snapshot.attemptId);
+    if (record4.snapshot.access === "write") {
       try {
         acquire({
-          workspace: record3.snapshot.workspace,
+          workspace: record4.snapshot.workspace,
           activationId,
           attemptId,
-          specialist: record3.snapshot.specialist
+          specialist: record4.snapshot.specialist
         });
       } catch (error2) {
         if (error2 instanceof DispatchRejectedError) {
           this.forensics.emit({
             activationId,
             attemptId,
-            participantId: record3.snapshot.participantId,
-            specialist: record3.snapshot.specialist,
-            beadId: record3.snapshot.beadId,
+            participantId: record4.snapshot.participantId,
+            specialist: record4.snapshot.specialist,
+            beadId: record4.snapshot.beadId,
             name: "lease_denied",
             payload: { reason: error2.reason, note: error2.detail.holder, on: "resume" }
           });
@@ -78087,36 +78444,36 @@ class NativeActivationHost {
         throw error2;
       }
     }
-    record3.snapshot.attemptId = attemptId;
-    record3.snapshot.state = "starting";
+    record4.snapshot.attemptId = attemptId;
+    record4.snapshot.state = "starting";
     const emit = (name, payload) => this.forensics.emit({
       activationId,
       attemptId,
-      participantId: record3.snapshot.participantId,
-      specialist: record3.snapshot.specialist,
-      beadId: record3.snapshot.beadId,
+      participantId: record4.snapshot.participantId,
+      specialist: record4.snapshot.specialist,
+      beadId: record4.snapshot.beadId,
       name,
       payload
     });
     emit("activation_resumed", {
-      requested_model: record3.snapshot.requestedModel,
-      resolved_model: record3.snapshot.resolvedModel,
-      model_override: record3.snapshot.modelOverride
+      requested_model: record4.snapshot.requestedModel,
+      resolved_model: record4.snapshot.resolvedModel,
+      model_override: record4.snapshot.modelOverride
     });
-    record3.unsubscribe();
-    record3.unsubscribe = record3.session.subscribe((event) => this.onSessionEvent(record3.snapshot, event, emit));
-    const result = this.runToSettled(record3.snapshot, record3.session, prompt, emit);
-    record3.result = result;
+    record4.unsubscribe();
+    record4.unsubscribe = record4.session.subscribe((event) => this.onSessionEvent(record4.snapshot, event, emit));
+    const result = this.runToSettled(record4.snapshot, record4.session, prompt, emit);
+    record4.result = result;
     return {
       activationId,
-      participantId: record3.snapshot.participantId,
+      participantId: record4.snapshot.participantId,
       attemptId,
-      specialist: record3.snapshot.specialist,
-      beadId: record3.snapshot.beadId,
-      access: record3.snapshot.access,
-      workspace: record3.snapshot.workspace,
-      resolvedModel: record3.snapshot.resolvedModel,
-      stepContract: record3.stepContract,
+      specialist: record4.snapshot.specialist,
+      beadId: record4.snapshot.beadId,
+      access: record4.snapshot.access,
+      workspace: record4.snapshot.workspace,
+      resolvedModel: record4.snapshot.resolvedModel,
+      stepContract: record4.stepContract,
       result
     };
   }
@@ -78202,295 +78559,6 @@ class RuntimeEventPusher {
 }
 function completionBody(result) {
   return JSON.stringify(result);
-}
-
-// src/specialist/native-activation-observability.ts
-init_timeline_events();
-var NATIVE_LIFECYCLE_OBSERVABILITY_GAPS = Object.freeze({
-  activation_requested: "Dispatch intent precedes the legacy run_start boundary and has no timeline event.",
-  step_contract_compiled: "Step-contract compilation has no legacy AgentSession event.",
-  activation_admitted: "Admission metadata has no legacy timeline event; identity is projected on specialist_jobs.",
-  activation_starting: "Session construction has no legacy timeline event; run_start follows once construction succeeds.",
-  activation_resumed: "Resume-from-record has no legacy counterpart; the resumed run re-enters the shared stream at turn_start.",
-  output_validation_started: "Native result validation has no legacy timeline event kind.",
-  output_validation_passed: "Native result validation has no legacy timeline event kind.",
-  output_validation_failed: "Native result validation has no legacy timeline event kind; terminal failure is run_complete.",
-  activation_disposed: "In-memory session disposal after a terminal event has no legacy timeline event.",
-  lease_released: "Workspace-lease teardown has no legacy timeline event.",
-  lease_reconciled: "Lease reconciliation has no legacy timeline event.",
-  clarification_requested: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
-  clarification_answered: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
-  escalation_raised: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
-  escalation_resolved: "Peer interaction has no legacy timeline event; interactions persist as files, not timeline rows.",
-  turn_started: "Suppressed compatibility alias; the raw Pi turn_start event is canonical.",
-  turn_completed: "Suppressed compatibility alias; the raw Pi turn_end event is canonical.",
-  retry_started: "Suppressed compatibility alias; the raw Pi auto_retry_start event is canonical.",
-  retry_completed: "Suppressed compatibility alias; the raw Pi auto_retry_end event is canonical.",
-  compaction_started: "Suppressed compatibility alias; the raw Pi compaction_start event is canonical.",
-  compaction_completed: "Suppressed compatibility alias; the raw Pi compaction_end event is canonical."
-});
-var NATIVE_SESSION_OBSERVABILITY_GAPS = Object.freeze({
-  agent_start: "turn_start is the canonical turn boundary.",
-  agent_end: "run_complete is emitted by the activation lifecycle; agent_end is not a run boundary.",
-  agent_settled: "The lifecycle activation_settled signal projects the waiting status.",
-  message_update: "Only thinking deltas are projected; text is persisted once at assistant message_end.",
-  message_user: "User and custom-message boundaries are not persisted by the legacy timeline mapper.",
-  queue_update: "The legacy runner does not persist Pi prompt-queue state.",
-  entry_appended: "Session transcript persistence is not a timeline event.",
-  session_info_changed: "Session display-name changes are not a timeline event.",
-  thinking_level_changed: "The legacy runner does not persist thinking-level changes.",
-  summarization_retry_scheduled: "The legacy runner has no summarization-retry timeline event.",
-  summarization_retry_attempt_start: "The legacy runner has no summarization-retry timeline event.",
-  summarization_retry_finished: "The legacy runner has no summarization-retry timeline event.",
-  bash_execution_update: "The legacy runner does not persist streaming bash deltas."
-});
-function at(event, t) {
-  return { ...event, t };
-}
-function record3(value) {
-  return value !== null && typeof value === "object" ? value : undefined;
-}
-function stringField2(value) {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-function numberField2(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-function booleanField2(value) {
-  return typeof value === "boolean" ? value : undefined;
-}
-function messageRole(event) {
-  return stringField2(record3(event.message)?.role);
-}
-function assistantMessage(event) {
-  const message = record3(event.message);
-  return message?.role === "assistant" ? message : undefined;
-}
-function assistantText(event) {
-  const message = assistantMessage(event);
-  if (!message)
-    return;
-  const content = message.content;
-  if (typeof content === "string")
-    return content.trim().length > 0 ? content : undefined;
-  if (!Array.isArray(content))
-    return;
-  const text = content.map((item) => {
-    const part = record3(item);
-    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
-  }).join("");
-  return text.trim().length > 0 ? text : undefined;
-}
-function tokenUsage(event) {
-  const usage = record3(assistantMessage(event)?.usage);
-  if (!usage)
-    return;
-  const projected = {
-    input_tokens: numberField2(usage.input),
-    output_tokens: numberField2(usage.output),
-    cache_creation_tokens: numberField2(usage.cacheWrite),
-    cache_read_tokens: numberField2(usage.cacheRead),
-    reasoning_tokens: numberField2(usage.reasoning),
-    total_tokens: numberField2(usage.totalTokens),
-    usage_source: "provider_usage"
-  };
-  return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
-}
-function resultContent(result) {
-  if (typeof result === "string")
-    return result;
-  const resultRecord = record3(result);
-  const content = resultRecord?.content;
-  if (typeof content === "string")
-    return content;
-  if (!Array.isArray(content))
-    return;
-  const text = content.map((item) => {
-    if (typeof item === "string")
-      return item;
-    const part = record3(item);
-    return part?.type === "text" ? stringField2(part.text) ?? "" : "";
-  }).join(`
-`);
-  return text.trim().length > 0 ? text : undefined;
-}
-function nativeAttemptNo(attemptId) {
-  const match = /:(\d+)$/.exec(attemptId);
-  if (!match)
-    return 1;
-  const parsed = Number(match[1]);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
-}
-function nativeAttemptIdForNo(initialAttemptId, attemptNo) {
-  const safeAttemptNo = Number.isSafeInteger(attemptNo) && attemptNo > 0 ? attemptNo : 1;
-  return /:\d+$/.test(initialAttemptId) ? initialAttemptId.replace(/:\d+$/, `:${safeAttemptNo}`) : `${initialAttemptId}:${safeAttemptNo}`;
-}
-function mapNativeLifecycleEvent(event, context, t = Date.now()) {
-  switch (event.name) {
-    case "activation_started":
-      return at(createRunStartEvent(event.specialist, event.beadId, {
-        job_id: event.activationId,
-        specialist_name: event.specialist,
-        bead_id: event.beadId,
-        worktree_path: context.workspacePath
-      }), t);
-    case "activation_settled":
-      return at(createStatusChangeEvent("waiting", "running"), t);
-    case "activation_completed":
-      return at(createRunCompleteEvent("COMPLETE", Math.max(0, t - context.startedAtMs) / 1000, {
-        model: context.resolvedModel,
-        backend: context.resolvedModel?.split("/")[0],
-        bead_id: event.beadId,
-        output: context.output,
-        token_usage: context.tokenUsage,
-        finish_reason: context.finishReason,
-        tool_calls: context.toolCalls,
-        final: true,
-        metrics: {
-          token_usage: context.tokenUsage,
-          finish_reason: context.finishReason,
-          turns: context.turns,
-          tool_calls: context.toolCalls?.length,
-          tool_call_names: context.toolCalls,
-          auto_retries: context.autoRetries,
-          auto_compactions: context.autoCompactions
-        }
-      }), t);
-    case "lease_acquired":
-    case "lease_denied":
-    case "lease_uncertain":
-    case "tool_blocked":
-      return at(createControlSignalEvent(event.name, {
-        bead_id: event.beadId,
-        ...event.payload ?? {}
-      }), t);
-    case "activation_failed":
-    case "activation_rejected":
-      return at(createRunCompleteEvent("ERROR", Math.max(0, t - context.startedAtMs) / 1000, {
-        model: context.resolvedModel,
-        backend: context.resolvedModel?.split("/")[0],
-        bead_id: event.beadId,
-        error: stringField2(event.payload?.error) ?? stringField2(event.payload?.reason),
-        output: context.output,
-        token_usage: context.tokenUsage,
-        finish_reason: context.finishReason,
-        tool_calls: context.toolCalls,
-        final: true
-      }), t);
-    default:
-      return null;
-  }
-}
-function mapNativeSessionEvent(event, t = Date.now(), turnIndex = 0) {
-  const mapped = [];
-  const add = (timeline) => {
-    if (timeline)
-      mapped.push(at(timeline, t));
-  };
-  switch (event.type) {
-    case "turn_start":
-      add(mapCallbackEventToTimelineEvent("turn_start", {}));
-      break;
-    case "turn_end":
-      add(mapCallbackEventToTimelineEvent("turn_end", {}));
-      break;
-    case "message_start": {
-      const role = messageRole(event);
-      if (role === "assistant") {
-        const message = assistantMessage(event);
-        const model = stringField2(message?.model);
-        const provider = stringField2(message?.provider);
-        if (model || provider)
-          mapped.push(at(createMetaEvent(model ?? "unknown", provider ?? "unknown"), t));
-        add(mapCallbackEventToTimelineEvent("message_start_assistant", {}));
-      }
-      if (role === "toolResult")
-        add(mapCallbackEventToTimelineEvent("message_start_tool_result", {}));
-      break;
-    }
-    case "message_end": {
-      const role = messageRole(event);
-      if (role === "assistant") {
-        const text = assistantText(event);
-        const usage = tokenUsage(event);
-        const finishReason = stringField2(assistantMessage(event)?.stopReason);
-        if (text)
-          mapped.push({ t, type: TIMELINE_EVENT_TYPES.TEXT, char_count: text.length, content: text });
-        add(mapCallbackEventToTimelineEvent("message_end_assistant", {}));
-        if (usage)
-          mapped.push(at(createTokenUsageEvent(usage, "message_done"), t));
-        if (finishReason)
-          mapped.push(at(createFinishReasonEvent(finishReason, "message_done"), t));
-        mapped.push(at(createTurnSummaryEvent(turnIndex, usage, finishReason, text), t));
-      }
-      if (role === "toolResult")
-        add(mapCallbackEventToTimelineEvent("message_end_tool_result", {}));
-      break;
-    }
-    case "message_update": {
-      const update = record3(event.assistantMessageEvent);
-      if (update?.type === "thinking_delta") {
-        add(mapCallbackEventToTimelineEvent("thinking", { charCount: stringField2(update.delta)?.length }));
-      }
-      break;
-    }
-    case "tool_execution_start":
-      add(mapCallbackEventToTimelineEvent("tool_execution_start", {
-        tool: stringField2(event.toolName),
-        toolCallId: stringField2(event.toolCallId),
-        args: record3(event.args)
-      }));
-      break;
-    case "tool_execution_update":
-      add(mapCallbackEventToTimelineEvent("tool_execution_update", {
-        tool: stringField2(event.toolName),
-        toolCallId: stringField2(event.toolCallId)
-      }));
-      break;
-    case "tool_execution_end":
-      add(mapCallbackEventToTimelineEvent("tool_execution_end", {
-        tool: stringField2(event.toolName),
-        toolCallId: stringField2(event.toolCallId),
-        isError: booleanField2(event.isError),
-        resultContent: resultContent(event.result)
-      }));
-      break;
-    case "compaction_start":
-      add(mapCallbackEventToTimelineEvent("auto_compaction_start", {}));
-      break;
-    case "compaction_end": {
-      const result = record3(event.result);
-      add(mapCallbackEventToTimelineEvent("auto_compaction_end", {
-        compaction: {
-          tokensBefore: numberField2(result?.tokensBefore),
-          summary: stringField2(result?.summary),
-          firstKeptEntryId: stringField2(result?.firstKeptEntryId)
-        }
-      }));
-      break;
-    }
-    case "auto_retry_start":
-      add(mapCallbackEventToTimelineEvent("auto_retry_start", {
-        retry: {
-          attempt: numberField2(event.attempt),
-          maxAttempts: numberField2(event.maxAttempts),
-          delayMs: numberField2(event.delayMs),
-          errorMessage: stringField2(event.errorMessage)
-        }
-      }));
-      break;
-    case "auto_retry_end":
-      add(mapCallbackEventToTimelineEvent("auto_retry_end", {
-        retry: {
-          attempt: numberField2(event.attempt),
-          errorMessage: stringField2(event.finalError)
-        }
-      }));
-      break;
-    default:
-      break;
-  }
-  return mapped;
 }
 
 // src/activation/forensic-sink.ts

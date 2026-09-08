@@ -159,15 +159,17 @@ function makeFakePi({ flags = {} } = {}) {
  * the way they would if each lane kept its own.
  */
 function makeFakeCtx({ hasUI = true, mode = 'tui', sessionId = 'sess-1' } = {}) {
-  const painted = { widgets: {}, statuses: {}, notices: [] };
+  const painted = { widgets: {}, widgetOptions: {}, statuses: {}, notices: [], customs: [] };
   return {
     hasUI,
     mode,
     sessionManager: { getSessionId: () => sessionId },
     ui: {
-      setWidget: (key, content) => { painted.widgets[key] = content; },
+      setWidget: (key, content, options) => { painted.widgets[key] = content; painted.widgetOptions[key] = options; },
       setStatus: (key, text) => { painted.statuses[key] = text; },
       notify: (message, level = 'info') => { painted.notices.push([message, level]); },
+      // Default: RPC degrade — custom() returns undefined like rpc-mode.ts.
+      custom: (...args) => { painted.customs.push(args); return Promise.resolve(undefined); },
     },
     painted,
     get notices() { return painted.notices; },
@@ -746,42 +748,157 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
   afterEach(() => { vi.useRealTimers(); });
 
   /** Boot the extension with a live host and a UI context already captured. */
-  async function boot(ctxOptions) {
+  async function boot(ctxOptions, extOptions = {}) {
     const mod = await loadExtension();
     const pi = makeFakePi();
     const { host, calls } = makeFakeHost();
-    mod.default(pi, { createHost: () => host });
+    mod.default(pi, { createHost: () => host, ...extOptions });
     const ctx = makeFakeCtx(ctxOptions);
     await pi.fire('session_start', { type: 'session_start' }, ctx);
     const command = (name) => pi.commands.find((c) => c.name === name);
-    return { pi, host, calls, ctx, command };
+    return { pi, host, calls, ctx, command, mod };
   }
 
-  it('registers the three operator commands', async () => {
+  it('registers the /specialists operator commands with /fleet compat aliases', async () => {
     const { pi } = await boot();
-    expect(pi.commands.map((c) => c.name)).toEqual(['fleet', 'fleet:reply', 'fleet:stop']);
+    expect(pi.commands.map((c) => c.name)).toEqual(['specialists', 'fleet', 'specialists:reply', 'fleet:reply', 'specialists:stop', 'fleet:stop', 'specialists:resume', 'fleet:resume']);
   });
 
-  it('paints the Fleet and pending asks into a widget without a tool call', async () => {
-    const { pi, host, ctx } = await boot();
-    // The host exists only after a tool call, so the operator's first paint is
-    // empty — this is the state the bead reported as "nothing rendered".
-    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+  it('names /specialists in help and collapsed hints, never /fleet (unitAI-beqby.6)', async () => {
+    const { pi, mod } = await boot();
+    for (const cmd of pi.commands) {
+      expect(cmd.description).not.toContain('/fleet');
+    }
+    expect(mod.renderCollapsedLine({ activations: [], asks: [] })).not.toContain('/fleet');
+    const asking = {
+      activations: [{
+        activation_id: 'act:aaaa', participant_id: 'p', attempt_id: 'a',
+        specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+        resolved_model: 'm', elapsed_s: 5, last_activity_at: Math.floor(Date.now() / 1000),
+      }],
+      asks: [{ message_id: 'msg:1', kind: 'question', activation_id: 'act:aaaa', from: 'x', body: 'Which?' }],
+    };
+    expect(mod.renderCollapsedLine(asking)).not.toContain('/fleet');
+    expect(mod.renderCollapsedLine(asking)).toContain('/specialists:reply');
+  });
 
+  it('/fleet aliases still reach the /specialists handlers (unitAI-beqby.6)', async () => {
+    const { pi, host, ctx, command } = await boot({ hasUI: true, mode: 'tui' });
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    await command('fleet').handler('inspect', ctx);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
+    const fleetReply = pi.commands.find((c) => c.name === 'fleet:reply');
+    host.answer.mockResolvedValueOnce({ messageId: 'msg:1', activationId: 'act:aaaa' });
+    await fleetReply.handler('msg:1 alias answer', ctx);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('Answered msg:1');
+  });
+
+  it('/specialists:resume resumes in place and refuses an unknown id (unitAI-beqby.6, unitAI-beqby.7)', async () => {
+    const { host, calls, ctx, command } = await boot();
+    await command('specialists:resume').handler('act:aaaa continue with option two', ctx);
+    expect(calls.resume).toEqual([['act:aaaa', 'continue with option two']]);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('Resumed act:aaaa');
+
+    host.inspect.mockReturnValueOnce(undefined);
+    await command('specialists:resume').handler('act:zzzz anything', ctx);
+    expect(calls.resume).toHaveLength(1);
+    expect(ctx.painted.notices.at(-1)).toEqual(['Unknown activation: act:zzzz', 'warning']);
+
+    await command('specialists:resume').handler('act:aaaa', ctx);
+    expect(calls.resume).toHaveLength(1);
+    expect(ctx.painted.notices.at(-1)[1]).toBe('warning');
+  });
+
+  it('registers a footer section when the seam exists, and paints no widget and no setStatus', async () => {
+    const sections = new Map();
+    const registerFooterSection = (key, renderBelow) => { sections.set(key, renderBelow); return () => { sections.delete(key); }; };
+    const { pi, ctx } = await boot(undefined, { registerFooterSection });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});   // specialist_status creates the host
     await command_tick();
+    expect(sections.has('specialist-fleet')).toBe(true);
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+    const lines = sections.get('specialist-fleet')(80);
+    expect(lines[0]).toContain('specialists');
+    expect(lines[0]).toContain('need reply');
+  });
 
+  it('registers through the globalThis hook when present (core custom-footer loaded)', async () => {
+    const sections = new Map();
+    const prev = (globalThis as any).__registerFooterSection;
+    (globalThis as any).__registerFooterSection = (key, renderBelow) => { sections.set(key, renderBelow); return () => { sections.delete(key); }; };
+    try {
+      const { pi, ctx } = await boot();   // no options seam: the global hook is the only path
+      await toolNamed(pi, 'specialist_status').execute('tc0', {});
+      await command_tick();
+      expect(sections.has('specialist-fleet')).toBe(true);
+      expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+      expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+      const lines = sections.get('specialist-fleet')(80);
+      expect(lines[0]).toContain('specialists');
+      expect(lines[0]).toContain('need reply');
+    } finally {
+      if (prev === undefined) delete (globalThis as any).__registerFooterSection;
+      else (globalThis as any).__registerFooterSection = prev;
+    }
+  });
+
+  it('falls back to a belowEditor mirror when the seam is absent, never aboveEditor', async () => {
+    const { pi, ctx } = await boot();
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    await command_tick();
     const lines = ctx.painted.widgets['specialist-fleet'];
     expect(lines).toBeDefined();
-    expect(lines[0]).toContain('1 activation(s), 1 pending ask(s)');
-    expect(lines.join('\n')).toContain('explorer');
-    expect(lines.join('\n')).toContain('act:aaaa');
-    expect(lines.join('\n')).toContain('Which option?');
-    expect(lines.join('\n')).toContain('/fleet:reply msg:1');
-    expect(ctx.painted.statuses['specialist-fleet']).toBe('specialists: 1 · 1 waiting');
-    // The projection is re-read every paint, never cached.
-    expect(host.list).toHaveBeenCalled();
-    expect(host.pendingAsks).toHaveBeenCalled();
+    expect(lines[0]).toContain('specialists');
+    expect(ctx.painted.widgetOptions['specialist-fleet']).toMatchObject({ placement: 'belowEditor' });
+    expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+  });
+
+  it('collapsed line prioritises needs-reply and row lines carry no forensic ids', async () => {
+    const { mod } = await boot();
+    // unitAI-4n9of: hint names only working triggers, never arrow keys.
+    const idle = mod.renderCollapsedLine({ activations: [], asks: [] });
+    expect(idle).toContain('idle');
+    expect(idle).toContain('/specialists inspect');
+    expect(idle).not.toContain('↓');
+    expect(idle).not.toContain('←');
+    const fleet = {
+      activations: [{
+        activation_id: 'act:aaaa', participant_id: 'p', attempt_id: 'a',
+        specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+        resolved_model: 'm', thinking_level: 'high', elapsed_s: 180,
+        token_usage: { input: 800, output: 400, cache: 0 }, last_activity_at: Math.floor(Date.now() / 1000),
+      }],
+      asks: [{ message_id: 'msg:1', kind: 'question', activation_id: 'act:aaaa', from: 'x', body: 'Which option?' }],
+    };
+    expect(mod.renderCollapsedLine(fleet)).toContain('1 need reply');
+    expect(mod.renderCollapsedLine(fleet)).toContain('/specialists inspect');
+    expect(mod.renderCollapsedLine(fleet)).toContain('/specialists:reply');
+    expect(mod.renderCollapsedLine(fleet)).not.toContain('↓');
+    expect(mod.renderCollapsedLine(fleet)).not.toContain('←');
+    const rows = mod.renderSectionLines(fleet, { expanded: true });
+    expect(rows[1]).toContain('explorer');
+    expect(rows[1]).toContain('bd-1');
+    expect(rows[1]).not.toContain('act:aaaa');
+    expect(rows[1]).not.toContain('msg:1');
+  });
+
+  it('bounds expanded rows with an overflow line', async () => {
+    const { mod } = await boot();
+    const activations = Array.from({ length: mod.FLEET_MAX_ROWS + 3 }, (_, i) => ({
+      activation_id: `act:${i}`, specialist: `spec-${i}`, bead_id: 'bd-1', state: 'running',
+      resolved_model: 'm', elapsed_s: 10,
+    }));
+    const lines = mod.renderSectionLines({ activations, asks: [] }, { expanded: true });
+    expect(lines).toHaveLength(mod.FLEET_MAX_ROWS + 2); // collapsed + rows + overflow
+    expect(lines.at(-1)).toContain('+3 more');
+  });
+
+  it('/specialists inspect degrades to text when ui.custom is unavailable (RPC)', async () => {
+    const { command, ctx } = await boot({ hasUI: true, mode: 'tui' });
+    ctx.ui.custom = undefined;
+    await command('specialists').handler('inspect', ctx);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
   });
 
   it('clears the widget when the Fleet is empty rather than painting a bare header', async () => {
@@ -794,54 +911,233 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
   });
 
-  it('/fleet hide stops painting and /fleet show resumes it', async () => {
+  it('/specialists hide stops painting and /specialists show resumes it', async () => {
     const { pi, ctx, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    await command('fleet').handler('hide', ctx);
+    await command('specialists').handler('hide', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
-    await command('fleet').handler('show', ctx);
+    await command('specialists').handler('show', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
   });
 
-  it('/fleet reports in text too, so json and print modes are not blind', async () => {
-    const { pi, ctx, command } = await boot();
+  it('/specialists inspect prints the expanded text report and never mounts ui.custom (unitAI-nmxhg)', async () => {
+    const { pi, ctx, command } = await boot({ hasUI: true, mode: 'tui' });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    await command('fleet').handler('', ctx);
-    expect(ctx.painted.notices.at(-1)[0]).toContain('1 activation(s), 1 pending ask(s)');
+    const custom = vi.fn((...args) => { ctx.painted.customs.push(args); return Promise.resolve(undefined); });
+    ctx.ui.custom = custom;
+    await command('specialists').handler('inspect', ctx);
+    expect(custom).not.toHaveBeenCalled(); // no custom-pane mount anywhere on the specialists path
+    const text = ctx.painted.notices.at(-1)[0];
+    expect(text).toContain('specialists');
+    expect(text).toContain('explorer'); // expanded rows, not the collapsed line alone
   });
 
-  it('/fleet:reply answers by message_id and reports an unknown id instead of silently passing', async () => {
+  it('renders expanded rows by default; /specialists collapse opts out, /specialists expand is a no-op', async () => {
+    const { pi, ctx, command, mod } = await boot({ hasUI: true, mode: 'tui' });
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    // Unit default: no opts means expanded.
+    const fleet = {
+      activations: [{
+        activation_id: 'act:aaaa', specialist: 'researcher', bead_id: 'ISSUE-92',
+        state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+        elapsed_s: 47, token_usage: { input: 1500, output: 600, cache: 0 },
+        last_activity_at: Math.floor(Date.now() / 1000),
+      }],
+      asks: [],
+    };
+    const lines = mod.renderSectionLines(fleet);
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[1]).toMatch(/● researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k · working/);
+    expect(lines[1]).not.toContain('spent');
+    // Command default: /specialists with no action reports the expanded rows.
+    await command('specialists').handler('', ctx);
+    expect(ctx.painted.notices.at(-1)[0].split('\n').length).toBeGreaterThan(1);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('explorer');
+    // Opt-out: collapse drops to the single line.
+    await command('specialists').handler('collapse', ctx);
+    expect(ctx.painted.notices.at(-1)[0].split('\n')).toHaveLength(1);
+    // Expand restores the default rows (no-op when already expanded).
+    await command('specialists').handler('expand', ctx);
+    expect(ctx.painted.notices.at(-1)[0].split('\n').length).toBeGreaterThan(1);
+  });
+
+  it('specialists mapping never yields index-derived elapsed (unitAI-d99hb)', async () => {
+    const { pi, ctx, host } = await boot();
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    const startedAt = Date.now() - 41000;
+    host.list.mockReturnValue([0, 1].map((i) => ({
+      ...SNAPSHOT,
+      activationId: `act:live${i}`,
+      specialist: `spec-${i}`,
+      startedAt,
+      lastActivityAt: Math.floor(Date.now() / 1000),
+    })));
+    host.pendingAsks.mockReturnValue([]);
+    await command_tick();
+    const text = (ctx.painted.widgets['specialist-fleet'] ?? []).join('\n');
+    // Bare `.map(toActivationView)` passed the element index as nowMs, freezing
+    // every row at 0s. Both rows must show live elapsed, neither 0s.
+    expect(text).toMatch(/spec-0.*4[12]s/);
+    expect(text).toMatch(/spec-1.*4[12]s/);
+    expect(text).not.toMatch(/running 0s/);
+  });
+
+  it('zero/absent tokens render as nothing with no "spent" word (unitAI-d99hb)', async () => {
+    const { mod } = await boot();
+    const base = {
+      activation_id: 'act:x', specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+      resolved_model: 'm', elapsed_s: 41, last_activity_at: Math.floor(Date.now() / 1000),
+    };
+    expect(mod.formatSpendShort(undefined)).toBe('');
+    expect(mod.formatSpendShort({ input_tokens: 0, output_tokens: 0 })).toBe('');
+    for (const view of [base, { ...base, token_usage: { input_tokens: 0, output_tokens: 0 } }]) {
+      const row = mod.renderFleetRowLine(view);
+      expect(row).toBe('    ● explorer (m) · bd-1 · running 41s · working');
+      expect(row).not.toContain('spent');
+    }
+  });
+
+  it('renders live snake_case token usage as a bare count (unitAI-d99hb)', async () => {
+    const { mod } = await boot();
+    expect(mod.formatSpendShort({ input_tokens: 1500, output_tokens: 600 })).toBe('2.1k');
+    const row = mod.renderFleetRowLine({
+      activation_id: 'act:x', specialist: 'researcher', bead_id: 'ISSUE-92',
+      state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+      elapsed_s: 47, token_usage: { input_tokens: 1500, output_tokens: 600 },
+      last_activity_at: Math.floor(Date.now() / 1000),
+    });
+    expect(row).toMatch(/running 47s · 2\.1k · working/);
+    expect(row).not.toContain('spent');
+  });
+
+  it('rows carry the purpose excerpt, truncated to the row budget (unitAI-uvg4j)', async () => {
+    const { mod } = await boot();
+    const base = {
+      activation_id: 'act:x', specialist: 'researcher', bead_id: 'ISSUE-92',
+      state: 'running', resolved_model: 'm', elapsed_s: 47,
+      last_activity_at: Math.floor(Date.now() / 1000),
+    };
+    expect(mod.renderFleetRowLine({ ...base, purpose: 'researching activation transport' }))
+      .toBe('    ● researcher (m) · ISSUE-92 · researching activation transport · running 47s · working');
+    const long = mod.renderFleetRowLine({ ...base, purpose: `${'p '.repeat(100)}` });
+    expect(long.slice(4)).not.toMatch(/  /); // skip the four-space row indent
+    expect(long.split(' · ')[2].length).toBeLessThanOrEqual(mod.PURPOSE_ROW_MAX);
+    expect(mod.renderFleetRowLine(base))
+      .toBe('    ● researcher (m) · ISSUE-92 · running 47s · working');
+  });
+
+  it('elapsed always renders in seconds and settled rows keep token totals (unitAI-uvg4j)', async () => {
+    const { mod } = await boot();
+    expect(mod.formatElapsedShort(243)).toBe('243s');
+    expect(mod.formatElapsedShort(3700)).toBe('3700s');
+    const settled = mod.renderFleetRowLine({
+      activation_id: 'act:x', specialist: 'researcher', bead_id: 'ISSUE-92',
+      state: 'settled', resolved_model: 'm', elapsed_s: 243,
+      token_usage: { input_tokens: 1500, output_tokens: 600 },
+      last_activity_at: Math.floor(Date.now() / 1000),
+    });
+    expect(settled).toContain('243s');
+    expect(settled).toMatch(/2\.1k/);
+    expect(settled).not.toContain('4m');
+  });
+
+  it('needs-reply rows render with a ! marker and sort before idle rows (unitAI-nmxhg)', async () => {
+    const { mod } = await boot();
+    const now = Math.floor(Date.now() / 1000);
+    const fleet = {
+      activations: [
+        {
+          activation_id: 'act:idle', specialist: 'researcher', bead_id: 'ISSUE-92',
+          state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+          elapsed_s: 47, token_usage: { input: 1500, output: 600, cache: 0 },
+          last_activity_at: now,
+        },
+        {
+          activation_id: 'act:ask', specialist: 'reviewer', bead_id: 'ISSUE-92',
+          state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+          elapsed_s: 90, token_usage: { input: 500, output: 200, cache: 0 },
+          last_activity_at: now,
+        },
+      ],
+      asks: [{
+        message_id: 'msg:1', kind: 'question', activation_id: 'act:ask',
+        from: 'x', body: 'Which option?', asked_at: now - 31,
+      }],
+    };
+    const lines = mod.renderSectionLines(fleet);
+    expect(lines[1]).toMatch(/! reviewer \(gpt-5\.6-sol high\) · ISSUE-92 · needs reply 31s/);
+    expect(lines[2]).toContain('● researcher');
+    expect(lines.join('\n')).not.toContain('act:ask'); // no forensic ids in rows
+  });
+
+  it('fleet chrome is lowercase with tree indentation (unitAI-beqby.5)', async () => {
+    const { mod } = await boot();
+    const now = Math.floor(Date.now() / 1000);
+    const fleet = {
+      activations: [{
+        activation_id: 'act:aaaa', specialist: 'researcher', bead_id: 'ISSUE-92',
+        state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+        elapsed_s: 47, token_usage: { input: 1500, output: 600, cache: 0 },
+        last_activity_at: now,
+      }],
+      asks: [],
+    };
+    // Collapsed: two-space tree branch, chrome lowercase, identifiers canonical.
+    expect(mod.renderCollapsedLine(fleet))
+      .toBe('  └ specialists · 1 active · 0 waiting · /specialists inspect');
+    expect(mod.renderCollapsedLine({ activations: [], asks: [] }))
+      .toBe('  └ specialists · idle · /specialists inspect');
+    // Execution row: four-space indent, ● marker, canonical identifier case.
+    expect(mod.renderSectionLines(fleet)[1])
+      .toBe('    ● researcher (gpt-5.6-sol high) · ISSUE-92 · running 47s · 2.1k · working');
+    // Ask row: four-space indent with ! marker (seconds elided: wall-clock flake).
+    const askRow = mod.renderFleetRowLine(
+      { activation_id: 'act:q', specialist: 'reviewer', bead_id: 'ISSUE-92' },
+      [{ activation_id: 'act:q', asked_at: now - 31 }],
+    );
+    expect(askRow.startsWith('    ! reviewer (?model) · ISSUE-92 · needs reply ')).toBe(true);
+    expect(askRow.endsWith('s')).toBe(true);
+  });
+
+  it('/specialists reports in text too, so json and print modes are not blind', async () => {
+    const { pi, ctx, command } = await boot();
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    await command('specialists').handler('', ctx);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
+  });
+
+  it('/specialists:reply answers by message_id and reports an unknown id instead of silently passing', async () => {
     const { host, ctx, command } = await boot();
     // mockResolvedValueOnce replaces the implementation, so assert on the spy's
     // arguments rather than on the recorder the default implementation feeds.
     host.answer.mockResolvedValueOnce({ messageId: 'msg:1', activationId: 'act:aaaa' });
-    await command('fleet:reply').handler('msg:1 use the second option', ctx);
+    await command('specialists:reply').handler('msg:1 use the second option', ctx);
     expect(host.answer).toHaveBeenCalledWith('msg:1', 'use the second option');
     expect(ctx.painted.notices.at(-1)[0]).toContain('Answered msg:1');
 
     // host.answer returns undefined for an unknown id.
-    await command('fleet:reply').handler('msg:nope anything', ctx);
+    await command('specialists:reply').handler('msg:nope anything', ctx);
     expect(ctx.painted.notices.at(-1)).toEqual([
       expect.stringContaining("No outstanding ask with message_id 'msg:nope'"),
       'warning',
     ]);
   });
 
-  it('/fleet:reply rejects a missing body rather than answering with an empty string', async () => {
+  it('/specialists:reply rejects a missing body rather than answering with an empty string', async () => {
     const { calls, ctx, command } = await boot();
-    await command('fleet:reply').handler('msg:1', ctx);
-    await command('fleet:reply').handler('msg:1    ', ctx);
+    await command('specialists:reply').handler('msg:1', ctx);
+    await command('specialists:reply').handler('msg:1    ', ctx);
     expect(calls.answer).toEqual([]);
     expect(ctx.painted.notices.at(-1)[1]).toBe('warning');
   });
 
-  it('/fleet:stop disposes a known activation and refuses an unknown one', async () => {
+  it('/specialists:stop disposes a known activation and refuses an unknown one', async () => {
     const { host, calls, ctx, command } = await boot();
-    await command('fleet:stop').handler('act:aaaa operator changed their mind', ctx);
+    await command('specialists:stop').handler('act:aaaa operator changed their mind', ctx);
     expect(calls.stop).toEqual([['act:aaaa', 'operator changed their mind']]);
 
     host.inspect.mockReturnValueOnce(undefined);
-    await command('fleet:stop').handler('act:zzzz', ctx);
+    await command('specialists:stop').handler('act:zzzz', ctx);
     expect(calls.stop).toHaveLength(1);
     expect(ctx.painted.notices.at(-1)).toEqual(['Unknown activation: act:zzzz', 'warning']);
   });
@@ -849,16 +1145,16 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
   it('completes message ids and activation ids from live host state', async () => {
     const { pi, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    expect(command('fleet:reply').getArgumentCompletions('msg').map((i) => i.value)).toEqual(['msg:1']);
-    expect(command('fleet:stop').getArgumentCompletions('act').map((i) => i.value)).toEqual(['act:aaaa']);
-    expect(command('fleet:reply').getArgumentCompletions('nomatch')).toBeNull();
-    expect(command('fleet').getArgumentCompletions('h').map((i) => i.value)).toEqual(['hide']);
+    expect(command('specialists:reply').getArgumentCompletions('msg').map((i) => i.value)).toEqual(['msg:1']);
+    expect(command('specialists:stop').getArgumentCompletions('act').map((i) => i.value)).toEqual(['act:aaaa']);
+    expect(command('specialists:reply').getArgumentCompletions('nomatch')).toBeNull();
+    expect(command('specialists').getArgumentCompletions('h').map((i) => i.value)).toEqual(['hide']);
   });
 
   it('does not install the view without UI, and never throws there', async () => {
     const { pi, ctx, command } = await boot({ hasUI: false, mode: 'print' });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    await command('fleet').handler('', ctx);
+    await command('specialists').handler('', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
     expect(ctx.painted.notices).toEqual([]);   // report() falls back to console
   });
@@ -1176,5 +1472,270 @@ describe('settlement wake — a finished child notifies its coordinator (unitAI-
     mod.default(pi, { createHost: () => makeFakeHost().host });
     const flag = pi.registeredFlags['no-specialist-wake'];
     expect(flag.description).toMatch(/finishes or fails/i);
+  });
+});
+
+describe('build identity on every outcome surface (unitAI-rrdnt.55)', () => {
+  // The pinned requirement: identity rides the refusal, the status read, and the
+  // successful dispatch alike — the incident behind the bead was a successful
+  // dispatch whose build the coordinator could not name.
+
+  it('a bead-path refusal carries the loaded build, matching the file on disk', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    host.start.mockRejectedValueOnce(new DispatchRejectedError('bead_contract_incomplete', {
+      specialist: 'explorer',
+      beadId: 'bd-draft',
+      missing: ['VALIDATION', 'OUTPUT'],
+    }));
+    mod.default(pi, { createHost: () => host });
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', { specialist: 'explorer', bead_id: 'bd-draft' }));
+    expect(out.status).toBe('rejected');
+    expect(out.build).toContain('build: ');
+    // The test process loaded this same dist file, so loaded and on-disk agree.
+    expect(out.build).toContain('(loaded module matches the file on disk)');
+  });
+
+  it('an inline-contract refusal carries the build identity too', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', {
+      specialist: 'explorer',
+      contract: 'PROBLEM\nMissing everything else.',
+    }));
+    expect(out.status).toBe('rejected');
+    expect(out.build).toContain('build: ');
+  });
+
+  it('a successful dispatch result carries the build identity', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' }));
+    expect(out.status).toBe('dispatched');
+    expect(out.build).toContain('build: ');
+  });
+
+  it('specialist_status carries the build identity', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const out = resultText(await toolNamed(pi, 'specialist_status').execute('tc1', {}));
+    expect(out.build).toContain('build: ');
+  });
+
+  it('annexBuildIdentity names staleness when the on-disk build moved', async () => {
+    const mod = await loadExtension();
+    const out = mod.annexBuildIdentity({ status: 'rejected' }, 'aaaabbbbcccc', 'ddddffff0000');
+    expect(out.status).toBe('rejected');
+    expect(out.build).toContain('module loaded aaaabbbbcccc, file on disk ddddffff0000');
+    expect(out.build).toContain('rebuilt after');
+  });
+});
+
+describe('duty to stop unneeded activations (unitAI-llvfi)', () => {
+  // A settled activation keeps its session and Fleet entry until explicitly
+  // stopped — nothing expires it. The descriptions must say so normatively.
+  // Proven by the smoke-test activation that sat in the Fleet until ordered out.
+
+  it('specialist_stop_activation states the duty normatively', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const desc = toolNamed(pi, 'specialist_stop_activation').description;
+    expect(desc).toContain('You MUST stop every activation you are unlikely');
+    expect(desc).toContain('until YOU stop it');
+    expect(desc).toContain('nothing expires it for you');
+  });
+
+  it('specialist_status says entries persist until stopped', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const desc = toolNamed(pi, 'specialist_status').description;
+    expect(desc).toContain('stay listed until stopped');
+    expect(desc).toContain('every activation you will not resume');
+  });
+
+  it('specialist_dispatch states ownership of the activation', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const desc = toolNamed(pi, 'specialist_dispatch').description;
+    expect(desc).toContain('creates a persistent activation YOU own');
+    expect(desc).toContain('specialist_stop_activation when you are done');
+  });
+});
+
+describe('human-readable tool-result views (unitAI-55yjs)', () => {
+  // renderResult changes only what the operator SEES: content[].text stays the
+  // byte-identical machine JSON the coordinator parses. Every test below asserts
+  // both halves — the human line renders, and resultText() round-trips unchanged.
+  async function setup() {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    return { pi, host };
+  }
+
+  function linesOf(tool: { renderResult?: Function }, result: unknown, expanded = false) {
+    expect(typeof tool.renderResult).toBe('function');
+    const component = tool.renderResult(result, { expanded }, {}, {});
+    const lines = component.render(80);
+    expect(Array.isArray(lines)).toBe(true);
+    return (lines as string[]).join('\n');
+  }
+
+  function expectMachineJsonUnchanged(result: { content: { type: string; text: string }[] }) {
+    const before = result.content[0].text;
+    expect(() => JSON.parse(before)).not.toThrow();
+    return before;
+  }
+
+  it('specialist_dispatch renders a dispatched line', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_dispatch');
+    const result = await tool.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' });
+    const raw = expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('dispatched');
+    const text = linesOf(tool, result);
+    expect(text).toContain('Dispatched explorer on bd-1');
+    expect(text).toContain('act:aaaa');
+    expect(result.content[0].text).toBe(raw);
+  });
+
+  it('specialist_dispatch renders a rejection reason', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_dispatch');
+    const result = await tool.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1', contract: 'x' });
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('rejected');
+    expect(linesOf(tool, result)).toContain('Rejected:');
+  });
+
+  it('specialist_status renders fleet counts and rows', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_status');
+    const result = await tool.execute('tc1', {});
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).activations).toHaveLength(1);
+    const text = linesOf(tool, result);
+    expect(text).toContain('Fleet: 1 activation(s), 1 pending ask(s)');
+    expect(text).toContain('explorer on bd-1');
+    expect(text).toContain('msg:1');
+  });
+
+  it('specialist_reply renders answered and error outcomes', async () => {
+    const { pi, host } = await setup();
+    const tool = toolNamed(pi, 'specialist_reply');
+    host.answer = vi.fn(async (messageId: string) => ({
+      messageId, inReplyTo: null, activationId: 'act:aaaa', attemptId: 'att:aaaa:1',
+    }));
+    const answered = await tool.execute('tc1', { message_id: 'msg:1', body: 'Option A' });
+    expectMachineJsonUnchanged(answered);
+    expect(resultText(answered).status).toBe('answered');
+    expect(linesOf(tool, answered)).toContain('Answered msg:1 for act:aaaa');
+    host.answer = vi.fn(async () => undefined);
+    const missing = await tool.execute('tc2', { message_id: 'msg:9', body: 'x' });
+    expectMachineJsonUnchanged(missing);
+    expect(resultText(missing).status).toBe('error');
+    expect(linesOf(tool, missing)).toContain('msg:9');
+  });
+
+  it('specialist_resume renders the attempt advance', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_resume');
+    const result = await tool.execute('tc1', { activation_id: 'act:aaaa', prompt: 'more work' });
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('resumed');
+    expect(linesOf(tool, result)).toContain('Resumed act:aaaa');
+  });
+
+  it('specialist_stop_activation renders the stopped id', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_stop_activation');
+    const result = await tool.execute('tc1', { activation_id: 'act:aaaa', reason: 'done' });
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('stopped');
+    expect(linesOf(tool, result)).toContain('Stopped act:aaaa');
+  });
+
+  it('specialist_list renders registry counts and rows', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_list');
+    const result = await tool.execute('tc1', {});
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).detail).toBe('compact');
+    expect(linesOf(tool, result)).toContain('Registry:');
+  });
+
+  it('expanded view appends the full JSON under the summary', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_dispatch');
+    const result = await tool.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' });
+    const collapsed = linesOf(tool, result, false);
+    expect(collapsed).not.toContain('"status": "dispatched"');
+    const expanded = linesOf(tool, result, true);
+    expect(expanded).toContain('Dispatched explorer on bd-1');
+    expect(expanded).toContain('"status": "dispatched"');
+  });
+});
+
+describe('renderer component contract (unitAI-q02sz)', () => {
+  // pi wraps every tool renderResult/renderCall in a MouseRegion and walks
+  // invalidate() on theme/resume. A renderer object without a callable
+  // invalidate kills the session (this.child.invalidate is not a function).
+  // Every custom renderer in the extension must satisfy this contract.
+  async function setup() {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    return { pi, host };
+  }
+
+  const TOOL_CASES = [
+    ['specialist_dispatch', { specialist: 'explorer', bead_id: 'bd-1' }],
+    ['specialist_status', {}],
+    ['specialist_reply', { message_id: 'msg:1', body: 'x' }],
+    ['specialist_resume', { activation_id: 'act:aaaa', prompt: 'more' }],
+    ['specialist_stop_activation', { activation_id: 'act:aaaa' }],
+    ['specialist_list', {}],
+  ] as const;
+
+  it.each(TOOL_CASES)('%s renderResult exposes dispose/invalidate and array render', async (name, params) => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, name);
+    expect(typeof tool.renderResult).toBe('function');
+    const result = await tool.execute('tc1', params);
+    const component = tool.renderResult(result, { expanded: false }, {}, {});
+    expect(typeof component.dispose).toBe('function');
+    expect(typeof component.invalidate).toBe('function');
+    expect(() => component.invalidate()).not.toThrow();
+    const lines = component.render(80);
+    expect(Array.isArray(lines)).toBe(true);
+    // Recomputed per render call: repeated renders agree (no first-call capture).
+    expect(component.render(80)).toEqual(lines);
+  });
+
+  it.each([
+    ['specialist_dispatch', { specialist: 'explorer', bead_id: 'bd-1' }],
+    ['specialist_reply', { message_id: 'msg:1', body: 'x' }],
+    ['specialist_resume', { activation_id: 'act:aaaa', prompt: 'more' }],
+    ['specialist_stop_activation', { activation_id: 'act:aaaa' }],
+  ] as const)('%s renderCall exposes dispose/invalidate and array render', async (name, params) => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, name);
+    expect(typeof tool.renderCall).toBe('function');
+    const component = tool.renderCall(params, {}, {}, {});
+    expect(typeof component.dispose).toBe('function');
+    expect(typeof component.invalidate).toBe('function');
+    expect(() => component.invalidate()).not.toThrow();
+    expect(Array.isArray(component.render(80))).toBe(true);
   });
 });

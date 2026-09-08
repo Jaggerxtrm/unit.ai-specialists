@@ -86,6 +86,16 @@ export { resolveObservabilityDbLocation } from './specialist/observability-db.js
 // exposed so a frontend can gate an inline dispatch contract BEFORE creating a
 // bead — a refused dispatch must leave the board unchanged.
 export { evaluateBeadReadiness, extractSections } from './activation/bead-gate.js';
+// Build identity for the stale-build refusal (unitAI-rrdnt.55): the single
+// source of the identity wording every frontend uses.
+export {
+  describeBuildIdentity,
+  hashFileBytes,
+  readBuildId,
+  shortBuildId,
+  BUILD_ID_BYTES,
+  UNKNOWN_BUILD_ID,
+} from './activation/build-identity.js';
 export type { BeadRecord } from './specialist/beads.js';
 
 // K4 (unitAI-e67up.4): Core K2 launcher-outcome consumer contract surface.

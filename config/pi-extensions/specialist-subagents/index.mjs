@@ -32,10 +32,12 @@
 // budget >= 3 minutes of polling before concluding an activation is stuck.
 
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
 import {
   createActivationForensicSink,
   createObservabilitySqliteClientAtPath,
+  describeBuildIdentity,
   DispatchRejectedError,
   evaluateBeadReadiness,
   extractSections,
@@ -46,6 +48,7 @@ import {
   SpecialistLoader,
   admitCoordinatorToolCall,
   leaseScopeFor,
+  readBuildId,
   toActivationResultView,
   toActivationView,
   toPendingAskView,
@@ -93,6 +96,99 @@ export function installCoordinatorFence(pi, deps = {}) {
 
 /** Default coordinator ParticipantId: <participant_kind>::<participant_role>, matching MCP. */
 export const DEFAULT_REQUESTED_BY = 'adapter::pi-extension';
+
+export const FLEET_MAX_ROWS = 8;
+
+export function fleetSummaryOf({ activations, asks }) {
+  const act = activations ?? [];
+  const pending = asks ?? [];
+  const active = act.filter((v) => v.state === 'running').length;
+  return { active, waiting: act.length - active, needsReply: pending.length, total: act.length };
+}
+
+export function formatElapsedShort(elapsedS) {
+  return `${Math.max(0, Math.floor(elapsedS ?? 0))}s`;
+}
+
+/** Row-budget purpose excerpt: single line, whitespace-collapsed, bounded. */
+export const PURPOSE_ROW_MAX = 60;
+
+export function formatPurposeShort(purpose) {
+  const flat = String(purpose ?? '').replace(/\s+/g, ' ').trim();
+  if (!flat) return '';
+  return flat.length <= PURPOSE_ROW_MAX ? flat : `${flat.slice(0, PURPOSE_ROW_MAX - 1)}…`;
+}
+
+// Spend counts only. Window-context % is coordinator-owned and out of scope;
+// never fabricated here (unitAI-beqby.3).
+export function formatSpendShort(tokenUsage) {
+  if (!tokenUsage) return '';
+  // Snapshot keys are snake_case (input_tokens, output_tokens, ...); the short
+  // camel keys below are the legacy test/fixture shape. total_tokens is a rollup,
+  // never a summand — adding it would double-count (unitAI-d99hb).
+  const total = ['input_tokens', 'output_tokens', 'cache_creation_tokens', 'cache_read_tokens', 'reasoning_tokens', 'tool_tokens']
+    .reduce((n, k) => n + (tokenUsage[k] ?? 0), 0)
+    + (tokenUsage.input ?? 0) + (tokenUsage.output ?? 0) + (tokenUsage.cache ?? 0);
+  if (total <= 0) return '';
+  if (total < 1000) return `${total}`;
+  if (total < 10000) return `${(total / 1000).toFixed(1)}k`;
+  return `${Math.round(total / 1000)}k`;
+}
+
+/** Collapsed line. Needs-reply outranks idle: always shown when nonzero.
+ * Names only triggers that work (unitAI-4n9of): arrow keys cannot reach a
+ * passive pi extension, so no arrow promise of any kind. */
+export function renderCollapsedLine({ activations, asks }) {
+  const { active, waiting, needsReply, total } = fleetSummaryOf({ activations, asks });
+  if (total === 0 && needsReply === 0) return '  └ specialists · idle · /specialists inspect';
+  const parts = [`${active} active`, `${waiting} waiting`];
+  if (needsReply > 0) parts.push(`${needsReply} need reply`);
+  const hint = needsReply > 0 ? '/specialists inspect · /specialists:reply' : '/specialists inspect';
+  return `  └ specialists · ${parts.join(' · ')} · ${hint}`;
+}
+
+/** One row per specialist. Forensic IDs never appear here. An activation with a
+ * pending ask renders as a needs-reply row (`!` marker) outranking idle rows. */
+export function renderFleetRowLine(view, asks = []) {
+  const model = view.thinking_level
+    ? `${view.resolved_model ?? '?model'} ${view.thinking_level}`
+    : (view.resolved_model ?? '?model');
+  const ask = (asks ?? []).find((a) => a.activation_id === view.activation_id);
+  if (ask) {
+    const waiting = formatElapsedShort(Date.now() / 1000 - (ask.asked_at ?? Date.now() / 1000));
+    return `    ! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`;
+  }
+  const elapsed = formatElapsedShort(view.elapsed_s);
+  const tokens = formatSpendShort(view.token_usage);
+  const purpose = formatPurposeShort(view.purpose);
+  const idleS = view.last_activity_at != null
+    ? Math.max(0, Math.floor(Date.now() / 1000) - view.last_activity_at)
+    : null;
+  const activity = view.state === 'running'
+    ? (idleS != null && idleS > 30 ? `idle ${formatElapsedShort(idleS)}` : 'working')
+    : view.state;
+  // Zero/absent tokens render as nothing: no "0", no "spent" word (unitAI-d99hb).
+  // Spend renders for every state, not only running: final spend stays visible after settle.
+  const spend = tokens ? ` · ${tokens}` : '';
+  const why = purpose ? ` · ${purpose}` : '';
+  return `    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
+}
+
+/** Footer-section lines: collapsed + bounded expanded rows with overflow.
+ * Expanded by default; needs-reply rows sort first. */
+export function renderSectionLines({ activations, asks }, { expanded = true } = {}) {
+  const lines = [renderCollapsedLine({ activations, asks })];
+  if (!expanded) return lines;
+  const askIds = new Set((asks ?? []).map((a) => a.activation_id));
+  const ordered = [...(activations ?? [])].sort(
+    (a, b) => Number(askIds.has(b.activation_id)) - Number(askIds.has(a.activation_id)),
+  );
+  const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks));
+  lines.push(...rows);
+  const overflow = (activations ?? []).length - rows.length;
+  if (overflow > 0) lines.push(`    +${overflow} more`);
+  return lines;
+}
 
 // ── Forensic wiring (unitAI-rrdnt.37.1) ──────────────────────────────────────
 //
@@ -382,28 +478,132 @@ export function createBeadFromContract(contract, title) {
   }
 }
 
+// Build identity (unitAI-rrdnt.55): which dist artifact this session loaded vs what
+// is on disk now. The static dist import below is what keeps one session on one
+// gate, so staleness is structural — the only fix is making it visible. The loaded
+// id is hashed once at extension load; the on-disk id is re-read on every outcome
+// (a sub-millisecond hash of one file, never a re-import).
+const DIST_LIB_PATH = fileURLToPath(new URL('../../../dist/lib.js', import.meta.url));
+const LOADED_BUILD_ID = readBuildId(DIST_LIB_PATH);
+
+/**
+ * Attach the loaded-vs-on-disk build identity to an outcome payload. Exported
+ * (pure given explicit ids) for tests; the live path always uses the load-time
+ * id and a fresh on-disk read.
+ */
+export function annexBuildIdentity(
+  payload,
+  loadedId = LOADED_BUILD_ID,
+  onDiskId = readBuildId(DIST_LIB_PATH),
+) {
+  return { ...payload, build: describeBuildIdentity(loadedId, onDiskId) };
+}
+
 /** Render an inline-contract gate refusal as a structured tool result. */
 function inlineRejectionResult(reason, missing, note) {
-  return {
+  return annexBuildIdentity({
     status: 'rejected',
     reason,
     ...(missing?.length ? { missing } : {}),
     ...(note ? { note } : {}),
-  };
+  });
 }
 
 /** Render a host-thrown `DispatchRejectedError` as a structured tool result. */
 function rejectionResult(error) {
-  return {
+  return annexBuildIdentity({
     status: 'rejected',
     reason: error.message,
     detail: error.detail,
-  };
+  });
 }
 
 /** Wrap a payload into the pi AgentToolResult shape. */
 function resultOf(payload) {
   return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }], details: {} };
+}
+
+// ── Human-readable tool-result views (unitAI-55yjs) ──────────────────────────
+//
+// Every specialist_* tool result carries byte-identical machine JSON in
+// content[].text (the coordinator JSON.parses it); renderResult only changes what
+// the operator SEES. Each summary below reads ONLY fields the tools already emit
+// — never forensic internals. Unknown shapes fall back to the raw JSON lines, and
+// the expanded view always appends the full JSON underneath.
+function summarizePayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  if (Array.isArray(payload.activations)) {
+    const lines = [`Fleet: ${payload.activations.length} activation(s), ${(payload.pending_asks ?? []).length} pending ask(s)`];
+    for (const a of payload.activations) {
+      lines.push(`- ${a.specialist ?? '?'} on ${a.bead_id ?? '?'} — ${a.state ?? '?'} (${a.activation_id ?? '?'})${a.resolved_model ? ` [${a.resolved_model}]` : ''}${a.result ? ` → ${a.result.status ?? 'settled'}` : ''}`);
+    }
+    for (const ask of payload.pending_asks ?? []) {
+      lines.push(`? ${ask.kind ?? 'ask'} from ${ask.activation_id ?? '?'} (${ask.message_id ?? '?'}): ${(ask.body ?? '').split('\n')[0]}`);
+    }
+    return lines;
+  }
+  if (Array.isArray(payload.specialists)) {
+    const rows = payload.specialists;
+    const und = rows.filter((r) => r.dispatchable === false).length;
+    const lines = [`Registry: ${payload.count ?? rows.length} specialist(s)${und ? `, ${und} undispatchable` : ''}`];
+    for (const r of rows) {
+      lines.push(`- ${r.name ?? '?'} [${r.tier ?? r.permission_required ?? '?'}]${r.category ? ` (${r.category})` : ''}${r.dispatchable === false ? ` — not dispatchable: ${r.reason ?? 'unknown reason'}` : ''}`);
+    }
+    return lines;
+  }
+  if (payload.specialist && typeof payload.specialist === 'object') {
+    const s = payload.specialist;
+    return [`${s.name ?? '?'} [${s.permission_required ?? s.tier ?? '?'}]${s.category ? ` (${s.category})` : ''}${s.dispatchable === false ? ` — not dispatchable: ${s.reason ?? 'unknown reason'}` : ''}`];
+  }
+  switch (payload.status) {
+    case 'dispatched':
+      return [
+        `Dispatched ${payload.specialist ?? '?'} on ${payload.bead_id ?? '?'} — ${payload.state ?? 'started'} as ${payload.activation_id ?? '?'}` +
+        `${payload.resolved_model ? ` [${payload.resolved_model}]` : ''}` +
+        `${payload.created_bead_id ? ` (created bead ${payload.created_bead_id})` : ''}`,
+      ];
+    case 'answered':
+      return [`Answered ${payload.message_id ?? '?'} for ${payload.activation_id ?? '?'}`];
+    case 'resumed':
+      return [`Resumed ${payload.activation_id ?? '?'} (${payload.specialist ?? '?'}) — attempt ${payload.previous_attempt_id ?? '?'} → ${payload.attempt_id ?? '?'}`];
+    case 'stopped':
+      return [`Stopped ${payload.activation_id ?? '?'}`];
+    case 'rejected':
+      return [`Rejected: ${payload.reason ?? 'no reason given'}${payload.missing?.length ? ` (missing: ${payload.missing.join(', ')})` : ''}`];
+    case 'error':
+      return [`Error: ${payload.error ?? 'unknown error'}`];
+    default:
+      return null;
+  }
+}
+
+/** Build a renderResult that shows the human summary, with full JSON on expand. */
+function humanResultOf() {
+  return (result, { expanded } = {}) => {
+    // Recomputed per render call: pi re-invokes render() as its own state
+    // changes, so closing over first-call lines could go stale.
+    const render = () => {
+      const raw = (result?.content ?? []).find((c) => c?.type === 'text')?.text ?? '';
+      let payload = null;
+      try { payload = JSON.parse(raw); } catch { /* fall through to raw lines */ }
+      const summary = payload ? summarizePayload(payload) : null;
+      const lines = summary ?? (raw ? raw.split('\n') : ['(empty result)']);
+      return summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
+    };
+    // pi wraps every tool renderer in a MouseRegion and walks invalidate()
+    // on theme/resume; a missing method kills the session (unitAI-q02sz).
+    // Every custom renderer object in this file must expose it.
+    return { dispose: () => {}, invalidate: () => {}, render };
+  };
+}
+
+/** Build a renderCall one-liner naming the tool and its key argument. */
+function humanCallOf(describe) {
+  return (args) => {
+    const line = describe(args ?? {});
+    // invalidate() required: see humanResultOf (unitAI-q02sz).
+    return { dispose: () => {}, invalidate: () => {}, render: () => [line] };
+  };
 }
 
 // ── Extension factory ────────────────────────────────────────────────────────
@@ -565,8 +765,12 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'specialist_reply. A draft or incomplete contract is refused here, before a model ' +
       'turn is spent guessing at scope it does not carry — fix the Bead (planning ' +
       'skill, /planning), not the dispatch. Write-capable Specialists (MEDIUM/HIGH ' +
-      'tiers) activate only when they can acquire the workspace lease.',
+      'tiers) activate only when they can acquire the workspace lease. Each dispatch ' +
+      'creates a persistent activation YOU own: stop it with ' +
+      'specialist_stop_activation when you are done with it.',
     promptSnippet: 'Dispatch an XTRM Specialist (specialist_dispatch: specialist, bead_id)',
+    renderCall: humanCallOf((args) => `Dispatch ${args.specialist ?? '?'} on ${args.bead_id || 'inline contract'}`),
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       specialist: Type.String({ description: 'Specialist name, e.g. codebase-explorer' }),
       bead_id: Type.Optional(
@@ -679,7 +883,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({
+            text: JSON.stringify(annexBuildIdentity({
               status: 'dispatched',
               ...view,
               // An inline contract creates a durable board record. Saying so in the RESULT
@@ -699,7 +903,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
                 inputs: handle.stepContract.inputs.length,
                 outputs: handle.stepContract.outputs.length,
               },
-            }, null, 2),
+            }), null, 2),
           }],
           details: {},
         };
@@ -722,20 +926,23 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'The Fleet: every native activation this process hosts, with its state, and ' +
       'every outstanding question or escalation it is waiting on (answer those with ' +
       'specialist_reply). Settled activations carry their validated ActivationResult. ' +
-      'No CLI background jobs are shown — this surface only hosts in-process ' +
-      'activations.',
+      'Activations stay listed until stopped: a settled entry is either waiting for ' +
+      'a follow-up or waiting to be stopped. Stop with specialist_stop_activation ' +
+      'every activation you will not resume. No CLI background jobs are shown — ' +
+      'this surface only hosts in-process activations.',
     promptSnippet: 'Show the Specialist Fleet (specialist_status)',
+    renderResult: humanResultOf(),
     parameters: Type.Object({}),
     async execute() {
       const h = getHost();
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({
+          text: JSON.stringify(annexBuildIdentity({
             activations: h.list().map((snapshot) =>
               withResult(toActivationView(snapshot), results.get(snapshot.activationId))),
             pending_asks: h.pendingAsks().map(toPendingAskView),
-          }, null, 2),
+          }), null, 2),
         }],
         details: {},
       };
@@ -752,6 +959,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'restarted with an answer pasted into a fresh prompt. An unknown or already ' +
       'answered message_id is reported, not silently accepted.',
     promptSnippet: 'Answer a Specialist question (specialist_reply: message_id, body)',
+    renderCall: humanCallOf((args) => `Reply to ${args.message_id ?? '?'}`),
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       message_id: Type.String({
         description:
@@ -809,6 +1018,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'A disposed activation cannot be resumed — that is what makes specialist_stop_activation ' +
       'the irreversible one.',
     promptSnippet: 'Resume a settled Specialist (specialist_resume: activation_id, prompt)',
+    renderCall: humanCallOf((args) => `Resume ${args.activation_id ?? '?'}`),
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       activation_id: Type.String({ description: 'The settled or waiting activation to resume.' }),
       prompt: Type.String({ description: 'The new instruction for the resumed Specialist.' }),
@@ -882,8 +1093,12 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'Stop and dispose a native activation. This is the only ordinary path to ' +
       'disposal — a settled Specialist is waiting and resumable, not finished. ' +
       'There is no child process to signal; disposal is a method call on the ' +
-      'in-process AgentSession.',
+      'in-process AgentSession. You MUST stop every activation you are unlikely ' +
+      'to use again: a settled or waiting activation keeps its session and Fleet ' +
+      'entry until YOU stop it — nothing expires it for you.',
     promptSnippet: 'Stop a Specialist (specialist_stop_activation: activation_id)',
+    renderCall: humanCallOf((args) => `Stop ${args.activation_id ?? '?'}`),
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       activation_id: Type.String({ description: 'Activation to stop and dispose.' }),
       reason: Type.Optional(Type.String({ description: 'Recorded forensically with the disposal.' })),
@@ -934,6 +1149,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'time. This extension is the dispatch surface: do not shell out to the specialists ' +
       'CLI to run a Specialist.',
     promptSnippet: 'List configured Specialists (specialist_list; name= for detail)',
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       name: Type.Optional(Type.String({
         description: 'Return the full record for this one specialist instead of the compact list.',
@@ -1084,7 +1300,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   const FLEET_WIDGET_KEY = 'specialist-fleet';
   const FLEET_POLL_MS = 1000;
 
-  /** Operator-facing toggle. The widget is shown by default; `/fleet hide` opts out. */
+  /** Operator-facing toggle. The widget is shown by default; `/specialists hide` opts out. */
   let fleetVisible = true;
   let fleetTimer = null;
 
@@ -1095,63 +1311,80 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     // database for a session that has not dispatched anything.
     if (!host) return { activations: [], asks: [] };
     return {
-      activations: host.list().map(toActivationView),
+      // Arrow form, never bare `.map(toActivationView)`: Array.map passes the
+      // element INDEX as nowMs, freezing every row at elapsed 0s (unitAI-d99hb).
+      activations: host.list().map((s) => toActivationView(s)),
       asks: host.pendingAsks().map(toPendingAskView),
     };
   };
 
-  /** One line per activation, then one per outstanding ask. Nothing else fits. */
-  const renderFleetLines = ({ activations, asks }) => {
-    const lines = [`Specialists — ${activations.length} activation(s), ${asks.length} pending ask(s)`];
-    for (const view of activations) {
-      lines.push(
-        `  ${view.state.padEnd(9)} ${view.specialist} ${view.bead_id} ` +
-        `[${view.access}] ${view.activation_id}`,
-      );
-    }
-    for (const ask of asks) {
-      // The body is the operator's whole reason to look, but it must not push
-      // the editor off the screen; one truncated line keeps the panel bounded.
-      const body = ask.body.replace(/\s+/g, ' ').trim();
-      lines.push(
-        `  ASK ${ask.kind} ${ask.message_id} — ` +
-        `${body.length > 96 ? `${body.slice(0, 95)}…` : body}`,
-      );
-      lines.push(`      answer with: /fleet:reply ${ask.message_id} <your answer>`);
-    }
-    return lines;
+  /** Fleet view-model helper (projection-only; no cached state). */
+  const renderFleetSection = (fleet, opts) => renderSectionLines(fleet, opts);
+
+  // Operational fleet: the footer section below the statusline repaints on its
+  // own cycle. Rows render expanded one row per specialist by default;
+  // /specialists collapse opts out to the single line. No inspector: /specialists inspect
+  // prints the same expanded text report (the ui.custom path hard-locked the
+  // TUI in this pi version, unitAI-nmxhg — the interactive inspector stays
+  // deferred with UI-4 and the footer repaints on its own cycle). The section
+  // render is a projection: readFleet() afresh on every render, nothing cached.
+  let fleetExpanded = true;
+  let fleetUnregister = null;
+
+  const renderBelow = () => {
+    if (!fleetVisible) return [];
+    const fleet = readFleet();
+    if (fleet.activations.length === 0 && fleet.asks.length === 0) return [];
+    return renderFleetSection(fleet, { expanded: fleetExpanded });
   };
 
-  const paintFleet = () => {
+  // Seam lookup order: explicit test seam, then the core footer's global hook,
+  // then absent. The core module is not importable from this tree, so the
+  // runtime shares it via globalThis (set by custom-footer when loaded).
+  const findFooterSeam = () => {
+    if (typeof options.registerFooterSection === 'function') return options.registerFooterSection;
+    try {
+      const hook = globalThis.__registerFooterSection;
+      if (typeof hook === 'function') return hook;
+    } catch { /* no global — fallback decides */ }
+    return null;
+  };
+
+  const paintFleetFallback = () => {
     const ctx = liveContext({ requireUI: true });
     if (!ctx) return;
+    if (typeof ctx.ui?.setWidget !== 'function') return; // RPC/headless: silent skip
     const fleet = readFleet();
-    // An empty Fleet clears the panel rather than rendering a header for
-    // nothing — an operator with no activations should see their editor.
     const content =
       fleetVisible && (fleet.activations.length > 0 || fleet.asks.length > 0)
-        ? renderFleetLines(fleet)
+        ? renderFleetSection(fleet, { expanded: fleetExpanded })
         : undefined;
-    ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'aboveEditor' });
-    ctx.ui.setStatus(
-      FLEET_WIDGET_KEY,
-      fleet.asks.length > 0
-        ? `specialists: ${fleet.activations.length} · ${fleet.asks.length} waiting`
-        : fleet.activations.length > 0
-          ? `specialists: ${fleet.activations.length}`
-          : undefined,
-    );
+    try {
+      ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'belowEditor' });
+    } catch { /* a widget that cannot paint must not break the session */ }
+  };
+  const paintFleet = () => { if (!fleetUnregister) paintFleetFallback(); };
+
+  // Inspector deferred with UI-4 (unitAI-nmxhg): /specialists inspect prints the
+  // expanded text report instead of mounting a ui.custom pane.
+  const openFleetInspector = async (ctx) => {
+    report(ctx ?? { hasUI: false }, renderFleetSection(readFleet(), { expanded: true }).join('\n'));
+    return false;
   };
 
   pi.on('session_start', (_event, ctx) => {
     if (!ctx.hasUI) return;
+    const seam = findFooterSeam();
+    if (seam && !fleetUnregister) {
+      try { fleetUnregister = seam(FLEET_WIDGET_KEY, renderBelow) ?? null; }
+      catch { fleetUnregister = null; }
+    }
+    if (fleetUnregister) return; // section renders on the footer's own cycle
     if (fleetTimer) clearInterval(fleetTimer);
-    // The tick is a null check until the first dispatch creates a host, so an
-    // operator who never dispatches pays nothing for the surface being present.
-    fleetTimer = setInterval(paintFleet, FLEET_POLL_MS);
-    // Do not hold the event loop open on the poll alone.
+    // Fallback tick is a null check until the first dispatch creates a host.
+    fleetTimer = setInterval(paintFleetFallback, FLEET_POLL_MS);
     fleetTimer.unref?.();
-    paintFleet();
+    paintFleetFallback();
   });
 
   /** Report to the operator on whichever surface the current mode actually has. */
@@ -1160,38 +1393,48 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     else console.log(message);
   };
 
-  pi.registerCommand('fleet', {
-    description: 'Show the Specialist Fleet and any pending asks. Usage: /fleet [show|hide]',
-    getArgumentCompletions: (prefix) => {
-      const normalized = prefix.trim().toLowerCase();
-      const items = ['show', 'hide']
-        .filter((value) => value.startsWith(normalized))
-        .map((value) => ({
-          value,
-          label: value,
-          description: value === 'show' ? 'Show the Fleet panel.' : 'Hide the Fleet panel.',
-        }));
-      return items.length > 0 ? items : null;
-    },
-    handler: async (args, ctx) => {
+  const specialistsHandler = async (args, ctx) => {
       const action = args.trim().split(/\s+/, 1)[0] ?? '';
       if (action === 'hide') fleetVisible = false;
       else if (action === 'show') fleetVisible = true;
+      else if (action === 'expand') fleetExpanded = true;
+      else if (action === 'collapse') fleetExpanded = false;
+      else if (action === 'inspect') { await openFleetInspector(ctx); return; }
       else if (action !== '') {
-        report(ctx, 'Usage: /fleet [show|hide]', 'warning');
+        report(ctx, 'Usage: /specialists [show|hide|inspect|expand|collapse]', 'warning');
         return;
       }
       // The panel is only half the answer: in json/print mode there is no
       // widget at all, so the command always reports the Fleet in text too.
-      report(ctx, renderFleetLines(readFleet()).join('\n'));
+      report(ctx, renderFleetSection(readFleet(), { expanded: fleetExpanded }).join('\n'));
       paintFleet();
-    },
+    };
+  const specialistsCompletions = (prefix) => {
+      const normalized = prefix.trim().toLowerCase();
+      const items = ['show', 'hide', 'inspect', 'expand', 'collapse']
+        .filter((value) => value.startsWith(normalized))
+        .map((value) => ({
+          value,
+          label: value,
+          description: value === 'show' ? 'Show the Fleet panel.' : value === 'hide' ? 'Hide the Fleet panel.' : value === 'inspect' ? 'Print the expanded Fleet report.' : value === 'expand' ? 'Expand rows in the footer section.' : 'Collapse to one line.',
+        }));
+      return items.length > 0 ? items : null;
+  };
+  pi.registerCommand('specialists', {
+    description: 'Show the Specialist Fleet and any pending asks. Usage: /specialists [show|hide|inspect|expand|collapse]',
+    getArgumentCompletions: specialistsCompletions,
+    handler: specialistsHandler,
+  });
+  pi.registerCommand('fleet', {
+    description: 'Compat alias for /specialists. Usage: /specialists [show|hide|inspect|expand|collapse]',
+    getArgumentCompletions: specialistsCompletions,
+    handler: specialistsHandler,
   });
 
-  pi.registerCommand('fleet:reply', {
+  pi.registerCommand('specialists:reply', {
     description:
       'Answer an outstanding Specialist question or escalation. ' +
-      'Usage: /fleet:reply <message_id> <answer>',
+      'Usage: /specialists:reply <message_id> <answer>',
     getArgumentCompletions: (prefix) => {
       // Completing the message id is the whole point — an operator cannot be
       // expected to retype one off the panel.
@@ -1210,13 +1453,13 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       const trimmed = args.trim();
       const split = trimmed.indexOf(' ');
       if (split === -1) {
-        report(ctx, 'Usage: /fleet:reply <message_id> <answer>', 'warning');
+        report(ctx, 'Usage: /specialists:reply <message_id> <answer>', 'warning');
         return;
       }
       const messageId = trimmed.slice(0, split);
       const body = trimmed.slice(split + 1).trim();
       if (!body) {
-        report(ctx, 'Usage: /fleet:reply <message_id> <answer>', 'warning');
+        report(ctx, 'Usage: /specialists:reply <message_id> <answer>', 'warning');
         return;
       }
       const message = await getHost().answer(messageId, body);
@@ -1230,28 +1473,33 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         return;
       }
       report(ctx, `Answered ${message.messageId} on activation ${message.activationId}.`);
-      paintFleet();
+      paintFleetFallback();
     },
   });
+  pi.registerCommand('fleet:reply', {
+    description:
+      'Compat alias for /specialists:reply. ' +
+      'Usage: /specialists:reply <message_id> <answer>',
+    getArgumentCompletions: (prefix) => pi.commands.find((c) => c.name === 'specialists:reply')?.getArgumentCompletions?.(prefix) ?? null,
+    handler: (args, ctx) => pi.commands.find((c) => c.name === 'specialists:reply').handler(args, ctx),
+  });
 
-  pi.registerCommand('fleet:stop', {
-    description: 'Stop and dispose a native activation. Usage: /fleet:stop <activation_id> [reason]',
-    getArgumentCompletions: (prefix) => {
-      const normalized = prefix.trim();
-      if (normalized.includes(' ')) return null;
-      const items = readFleet().activations
-        .filter((view) => view.activation_id.startsWith(normalized))
-        .map((view) => ({
-          value: view.activation_id,
-          label: view.activation_id,
-          description: `${view.specialist} · ${view.state}`,
-        }));
-      return items.length > 0 ? items : null;
-    },
-    handler: async (args, ctx) => {
+  const activationCompletions = (prefix) => {
+    const normalized = prefix.trim();
+    if (normalized.includes(' ')) return null;
+    const items = readFleet().activations
+      .filter((view) => view.activation_id.startsWith(normalized))
+      .map((view) => ({
+        value: view.activation_id,
+        label: view.activation_id,
+        description: `${view.specialist} · ${view.state}`,
+      }));
+    return items.length > 0 ? items : null;
+  };
+  const stopHandler = async (args, ctx) => {
       const trimmed = args.trim();
       if (!trimmed) {
-        report(ctx, 'Usage: /fleet:stop <activation_id> [reason]', 'warning');
+        report(ctx, 'Usage: /specialists:stop <activation_id> [reason]', 'warning');
         return;
       }
       const split = trimmed.indexOf(' ');
@@ -1263,9 +1511,53 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       }
       await disposeActivation(activationId, reason || 'pi operator request');
       report(ctx, `Stopped ${activationId}.`);
-      paintFleet();
-
-    },
+      paintFleetFallback();
+  };
+  const resumeHandler = async (args, ctx) => {
+    const trimmed = args.trim();
+    const split = trimmed.indexOf(' ');
+    if (split === -1) {
+      report(ctx, 'Usage: /specialists:resume <activation_id> <prompt>', 'warning');
+      return;
+    }
+    const activationId = trimmed.slice(0, split);
+    const prompt = trimmed.slice(split + 1).trim();
+    if (!prompt) {
+      report(ctx, 'Usage: /specialists:resume <activation_id> <prompt>', 'warning');
+      return;
+    }
+    if (!getHost().inspect(activationId)) {
+      report(ctx, `Unknown activation: ${activationId}`, 'warning');
+      return;
+    }
+    try {
+      await getHost().resume(activationId, prompt);
+    } catch (err) {
+      report(ctx, `Resume refused for ${activationId}: ${err?.message ?? err}`, 'warning');
+      return;
+    }
+    report(ctx, `Resumed ${activationId}.`);
+    paintFleetFallback();
+  };
+  pi.registerCommand('specialists:stop', {
+    description: 'Stop and dispose a native activation. Usage: /specialists:stop <activation_id> [reason]',
+    getArgumentCompletions: activationCompletions,
+    handler: stopHandler,
+  });
+  pi.registerCommand('fleet:stop', {
+    description: 'Compat alias for /specialists:stop. Usage: /specialists:stop <activation_id> [reason]',
+    getArgumentCompletions: activationCompletions,
+    handler: stopHandler,
+  });
+  pi.registerCommand('specialists:resume', {
+    description: 'Resume a settled or waiting activation with a new prompt. Usage: /specialists:resume <activation_id> <prompt>',
+    getArgumentCompletions: activationCompletions,
+    handler: resumeHandler,
+  });
+  pi.registerCommand('fleet:resume', {
+    description: 'Compat alias for /specialists:resume. Usage: /specialists:resume <activation_id> <prompt>',
+    getArgumentCompletions: activationCompletions,
+    handler: resumeHandler,
   });
 
   // A child must never outlive the coordinator process. Best-effort: stop and
@@ -1275,6 +1567,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       clearInterval(fleetTimer);
       fleetTimer = null;
     }
+    try { fleetUnregister?.(); } catch {}
+    fleetUnregister = null;
     if (!host) return;
     if (!host) return;
     for (const snapshot of host.list()) {

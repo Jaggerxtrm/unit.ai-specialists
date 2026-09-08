@@ -38,7 +38,7 @@ import { type BeadGateOptions } from './bead-gate.js';
 import { type InteractionMessage, type PendingAsk } from './interaction.js';
 import { PeerAdapter, type TransportForensicEvent } from './transport/peer-adapter.js';
 import { type PiSdk, type PiAgentSessionEvent } from './pi-sdk.js';
-import { type ActivationHandle, type ActivationRequest, type ActivationSnapshot } from './types.js';
+import { type ActivationHandle, type ActivationRequest, type ActivationSnapshot, type LiveActivationStats } from './types.js';
 /**
  * Sink for activation forensics.
  *
@@ -219,6 +219,11 @@ export declare class NativeActivationHost {
     pendingAsks(): PendingAsk[];
     /** Current state of one activation, or undefined if unknown to this host. */
     inspect(activationId: string): ActivationSnapshot | undefined;
+    /**
+     * Live per-activation stats over existing in-memory state: one Map read plus
+     * arithmetic, never an observability.db query, so the 1s widget tick stays cheap.
+     */
+    liveStats(activationId: string): LiveActivationStats | undefined;
     /**
      * Build the delivery hook for a configured coordinator.
      *

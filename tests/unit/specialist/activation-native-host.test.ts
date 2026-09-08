@@ -644,6 +644,50 @@ describe('NativeActivationHost — raw session event hook', () => {
   });
 });
 
+describe('snapshot tokenUsage (unitAI-crjh7)', () => {
+  it('populates snapshot.tokenUsage from the nested message.usage short-key shape', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record, holdOpen: true });
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      forensics: { emit: () => {} },
+      cwd: hostWorkspace(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+
+    expect(host.inspect(handle.activationId)?.tokenUsage).toBeUndefined();
+
+    // Realistic message_end: usage nests under event.message with short keys, and no
+    // top-level token_usage/tokenUsage/usage exists — the shape the old extractor read.
+    session.emit({
+      type: 'message_end',
+      message: {
+        role: 'assistant', provider: 'provider', model: 'model', stopReason: 'stop',
+        usage: { input: 12000, output: 1500, cacheWrite: 200, cacheRead: 100, reasoning: 52, totalTokens: 13852 },
+        content: [{ type: 'text', text: 'answer' }],
+      },
+    } as never);
+
+    expect(host.inspect(handle.activationId)?.tokenUsage).toEqual({
+      input_tokens: 12000,
+      output_tokens: 1500,
+      cache_creation_tokens: 200,
+      cache_read_tokens: 100,
+      reasoning_tokens: 52,
+      total_tokens: 13852,
+    });
+    expect(host.liveStats(handle.activationId)?.token_usage?.total_tokens).toBe(13852);
+  });
+});
+
 /**
  * unitAI-rrdnt.40. `reject()` takes `Record<string, unknown>`, so passing a key that
  * `DispatchRejectedError` does not render compiles cleanly and the explanation is dropped.
