@@ -133,11 +133,17 @@ export function renderCollapsedLine({ activations, asks }) {
   return `SPECIALISTS · ${parts.join(' · ')} · ↓/← inspect`;
 }
 
-/** One row per specialist. Forensic IDs stay in the inspector, never here. */
-export function renderFleetRowLine(view) {
+/** One row per specialist. Forensic IDs never appear here. An activation with a
+ * pending ask renders as a needs-reply row (`!` marker) outranking idle rows. */
+export function renderFleetRowLine(view, asks = []) {
   const model = view.thinking_level
-    ? `${view.resolved_model ?? '?model'}/${view.thinking_level}`
+    ? `${view.resolved_model ?? '?model'} ${view.thinking_level}`
     : (view.resolved_model ?? '?model');
+  const ask = (asks ?? []).find((a) => a.activation_id === view.activation_id);
+  if (ask) {
+    const waiting = formatElapsedShort(Date.now() / 1000 - (ask.asked_at ?? Date.now() / 1000));
+    return `! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`;
+  }
   const elapsed = formatElapsedShort(view.elapsed_s);
   const tokens = formatSpendShort(view.token_usage);
   const idleS = view.last_activity_at != null
@@ -146,14 +152,19 @@ export function renderFleetRowLine(view) {
   const activity = view.state === 'running'
     ? (idleS != null && idleS > 30 ? `idle ${formatElapsedShort(idleS)}` : 'working')
     : view.state;
-  return `${view.specialist} ${model} ${view.bead_id ?? '—'} ${view.state} ${elapsed} ${tokens} ${activity}`;
+  return `● ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · ${view.state} ${elapsed} · ${tokens} spent · ${activity}`;
 }
 
-/** Footer-section lines: collapsed + bounded expanded rows with overflow. */
-export function renderSectionLines({ activations, asks }, { expanded = false } = {}) {
+/** Footer-section lines: collapsed + bounded expanded rows with overflow.
+ * Expanded by default; needs-reply rows sort first. */
+export function renderSectionLines({ activations, asks }, { expanded = true } = {}) {
   const lines = [renderCollapsedLine({ activations, asks })];
   if (!expanded) return lines;
-  const rows = (activations ?? []).slice(0, FLEET_MAX_ROWS).map(renderFleetRowLine);
+  const askIds = new Set((asks ?? []).map((a) => a.activation_id));
+  const ordered = [...(activations ?? [])].sort(
+    (a, b) => Number(askIds.has(b.activation_id)) - Number(askIds.has(a.activation_id)),
+  );
+  const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks));
   lines.push(...rows.map((r) => `  ${r}`));
   const overflow = (activations ?? []).length - rows.length;
   if (overflow > 0) lines.push(`  +${overflow} more`);
@@ -1193,27 +1204,20 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     };
   };
 
-  /** Fleet view-model helpers (projection-only; no cached state). */
-  const fleetSummary = ({ activations, asks }) => fleetSummaryOf({ activations, asks });
-  const formatFleetElapsed = (s) => formatElapsedShort(s);
-  const formatFleetTokens = (u) => formatSpendShort(u);
-  const renderFleetCollapsed = (fleet) => renderCollapsedLine(fleet);
-  const renderFleetRow = (view) => renderFleetRowLine(view);
+  /** Fleet view-model helper (projection-only; no cached state). */
   const renderFleetSection = (fleet, opts) => renderSectionLines(fleet, opts);
 
-  // UI-1..UI-7 operational fleet (unitAI-beqby.4). Footer section below the
-  // statusline is primary; belowEditor mirror is fallback only when the seam
-  // is absent; silent skip when neither exists. No setStatus line. The section
+  // Operational fleet: the footer section below the statusline repaints on its
+  // own cycle. Rows render expanded one row per specialist by default;
+  // /fleet collapse opts out to the single line. No inspector: /fleet inspect
+  // prints the same expanded text report (the ui.custom path hard-locked the
+  // TUI in this pi version, unitAI-nmxhg — the interactive inspector stays
+  // deferred with UI-4 and the footer repaints on its own cycle). The section
   // render is a projection: readFleet() afresh on every render, nothing cached.
-  let fleetExpanded = false;
+  let fleetExpanded = true;
   let fleetUnregister = null;
-  // While the keyboard inspector owns the screen, background repaints must
-  // stand down: the 1s fallback tick and the footer cycle otherwise fight the
-  // modal pane over renders every second (unitAI-z49s2 flicker).
-  let fleetInspectorOpen = false;
 
   const renderBelow = () => {
-    if (fleetInspectorOpen) return [];
     if (!fleetVisible) return [];
     const fleet = readFleet();
     if (fleet.activations.length === 0 && fleet.asks.length === 0) return [];
@@ -1233,7 +1237,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   };
 
   const paintFleetFallback = () => {
-    if (fleetInspectorOpen) return; // inspector mounted: its own render owns the screen
     const ctx = liveContext({ requireUI: true });
     if (!ctx) return;
     if (typeof ctx.ui?.setWidget !== 'function') return; // RPC/headless: silent skip
@@ -1248,70 +1251,11 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   };
   const paintFleet = () => { if (!fleetUnregister) paintFleetFallback(); };
 
-  // Inspector: keyboard navigator over the live projection. TUI-only; under
-  // RPC/headless ui.custom is absent or returns undefined — degrade to text.
+  // Inspector deferred with UI-4 (unitAI-nmxhg): /fleet inspect prints the
+  // expanded text report instead of mounting a ui.custom pane.
   const openFleetInspector = async (ctx) => {
-    const fleet = readFleet();
-    const detail = (view) => {
-      const lines = [
-        `${view.specialist} · ${view.state}`,
-        `model: ${view.resolved_model ?? '?'}${view.thinking_level ? `/${view.thinking_level}` : ''}`,
-        `bead: ${view.bead_id ?? '—'} · elapsed: ${formatFleetElapsed(view.elapsed_s)} · tokens: ${formatFleetTokens(view.token_usage)}`,
-        `activation_id: ${view.activation_id}`,
-        `participant_id: ${view.participant_id ?? '—'} · attempt_id: ${view.attempt_id ?? '—'}`,
-      ];
-      const ask = fleet.asks.find((a) => a.activation_id === view.activation_id);
-      if (ask) lines.push(`ask ${ask.kind} ${ask.message_id}: ${String(ask.body ?? '').slice(0, 200)}`);
-      return lines.join('\n');
-    };
-    if (!ctx?.hasUI || ctx?.mode === 'print' || ctx?.mode === 'json' || typeof ctx?.ui?.custom !== 'function') {
-      report(ctx ?? { hasUI: false }, renderFleetSection(fleet, { expanded: true }).join('\n'));
-      return false;
-    }
-    let selected = 0;
-    const count = () => Math.max(1, fleet.activations.length);
-    fleetInspectorOpen = true;
-    try {
-      const result = await ctx.ui.custom((tui, theme, keybindings, done) => {
-        const render = (width) => {
-          if (typeof width === 'number' && width < 1) return [];
-          return renderFleetSection(readFleet(), { expanded: true })
-            .map((line, i) => (i === selected + 1 ? `▸ ${line.trim()}` : line));
-        };
-        const move = (d) => { selected = (selected + d + count()) % count(); try { tui.requestRender?.(); } catch {} };
-        const attachSelected = () => {
-          const views = readFleet().activations;
-          const view = views[selected];
-          if (!view || !host) { done(undefined); return; }
-          try {
-            const attachment = host.attach?.(view.activation_id, () => {});
-            if (attachment) { try { attachment.detach(); } catch {} }
-          } catch {}
-          report(ctx, detail(view));
-        };
-        try {
-          keybindings?.register?.('fleet-down', ['down', 'j'], () => move(1));
-          keybindings?.register?.('fleet-up', ['up', 'k'], () => move(-1));
-          keybindings?.register?.('fleet-attach', ['enter'], () => attachSelected());
-          keybindings?.register?.('fleet-back', ['escape'], () => done(undefined));
-        } catch {}
-        try { tui.onKey?.((key) => {
-          if (key === 'down' || key === 'j') move(1);
-          else if (key === 'up' || key === 'k') move(-1);
-          else if (key === 'enter') attachSelected();
-          else if (key === 'escape') done(undefined);
-        }); } catch {}
-        return { dispose() {}, render };
-      }, { overlay: false });
-      void result;
-      return true;
-    } catch {
-      report(ctx, renderFleetSection(fleet, { expanded: true }).join('\n'));
-      return false;
-    } finally {
-      fleetInspectorOpen = false;
-      paintFleetFallback(); // resume live updates the moment the inspector closes
-    }
+    report(ctx ?? { hasUI: false }, renderFleetSection(readFleet(), { expanded: true }).join('\n'));
+    return false;
   };
 
   pi.on('session_start', (_event, ctx) => {
@@ -1344,7 +1288,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         .map((value) => ({
           value,
           label: value,
-          description: value === 'show' ? 'Show the Fleet panel.' : value === 'hide' ? 'Hide the Fleet panel.' : value === 'inspect' ? 'Open the keyboard inspector.' : value === 'expand' ? 'Expand rows in the footer section.' : 'Collapse to one line.',
+          description: value === 'show' ? 'Show the Fleet panel.' : value === 'hide' ? 'Hide the Fleet panel.' : value === 'inspect' ? 'Print the expanded Fleet report.' : value === 'expand' ? 'Expand rows in the footer section.' : 'Collapse to one line.',
         }));
       return items.length > 0 ? items : null;
     },

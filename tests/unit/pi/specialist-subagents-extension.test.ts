@@ -866,63 +866,73 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
   });
 
-  it('/fleet inspect suspends the background repaint while mounted and resumes on close (unitAI-z49s2)', async () => {
-    const { pi, ctx, command } = await boot();
+  it('/fleet inspect prints the expanded text report and never mounts ui.custom (unitAI-nmxhg)', async () => {
+    const { pi, ctx, command } = await boot({ hasUI: true, mode: 'tui' });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    await command_tick();
-    expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
-
-    // Hold the inspector open: capture the custom pane and resolve only on release.
-    const customs = [];
-    let release;
-    ctx.ui.custom = (render, opts) => {
-      customs.push([render, opts]);
-      return new Promise((resolve) => { release = () => resolve(undefined); });
-    };
-    let paints = 0;
-    const origSetWidget = ctx.ui.setWidget;
-    ctx.ui.setWidget = (...args) => { paints++; return origSetWidget(...args); };
-
-    const inspected = command('fleet').handler('inspect', ctx);
-    expect(customs).toHaveLength(1); // handler reaches ui.custom synchronously
-    const pane = customs[0][0]({ requestRender: vi.fn(), onKey: vi.fn() }, {}, { register: vi.fn() }, () => {});
-    expect(pane.render(80).join('\n')).toContain('SPECIALISTS'); // inspector owns the screen
-
-    await command_tick();
-    await command_tick();
-    await command_tick();
-    expect(paints).toBe(0); // three poll intervals, zero background repaints
-
-    release();
-    await inspected; // handler returns undefined; the assertions below are the contract
-    expect(paints).toBeGreaterThan(0); // close resumes live updates
+    const custom = vi.fn((...args) => { ctx.painted.customs.push(args); return Promise.resolve(undefined); });
+    ctx.ui.custom = custom;
+    await command('fleet').handler('inspect', ctx);
+    expect(custom).not.toHaveBeenCalled(); // no custom-pane mount anywhere on the fleet path
+    const text = ctx.painted.notices.at(-1)[0];
+    expect(text).toContain('SPECIALISTS');
+    expect(text).toContain('explorer'); // expanded rows, not the collapsed line alone
   });
 
-  it('/fleet inspect pane render(width) returns string[] per the pi custom() contract (unitAI-dygdq)', async () => {
-    const { pi, ctx, command } = await boot();
-    const customs = [];
-    let release;
-    ctx.ui.custom = (render, opts) => {
-      customs.push([render, opts]);
-      return new Promise((resolve) => { release = () => resolve(undefined); });
-    };
-    const inspected = command('fleet').handler('inspect', ctx);
-    const pane = customs[0][0]({ requestRender: vi.fn(), onKey: vi.fn() }, {}, { register: vi.fn() }, () => {});
-    // Empty fleet: array of lines, not a joined string (pi iterates a string char-wise).
-    const empty = pane.render(80);
-    expect(Array.isArray(empty)).toBe(true);
-    expect(empty.length).toBeGreaterThan(0);
-    expect(empty.join('\n')).toContain('SPECIALISTS');
-    // Populated fleet renders one normal row per line.
+  it('renders expanded rows by default; /fleet collapse opts out, /fleet expand is a no-op', async () => {
+    const { pi, ctx, command, mod } = await boot({ hasUI: true, mode: 'tui' });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    const rows = pane.render(80);
-    expect(Array.isArray(rows)).toBe(true);
-    expect(rows.every((r) => typeof r === 'string')).toBe(true);
-    expect(rows.join('\n')).toContain('SPECIALISTS');
-    // Tiny widths degrade to empty rather than garbage.
-    expect(pane.render(0)).toEqual([]);
-    release();
-    await inspected;
+    // Unit default: no opts means expanded.
+    const fleet = {
+      activations: [{
+        activation_id: 'act:aaaa', specialist: 'researcher', bead_id: 'ISSUE-92',
+        state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+        elapsed_s: 47, token_usage: { input: 1500, output: 600, cache: 0 },
+        last_activity_at: Math.floor(Date.now() / 1000),
+      }],
+      asks: [],
+    };
+    const lines = mod.renderSectionLines(fleet);
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[1]).toMatch(/● researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k spent · working/);
+    // Command default: /fleet with no action reports the expanded rows.
+    await command('fleet').handler('', ctx);
+    expect(ctx.painted.notices.at(-1)[0].split('\n').length).toBeGreaterThan(1);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('explorer');
+    // Opt-out: collapse drops to the single line.
+    await command('fleet').handler('collapse', ctx);
+    expect(ctx.painted.notices.at(-1)[0].split('\n')).toHaveLength(1);
+    // Expand restores the default rows (no-op when already expanded).
+    await command('fleet').handler('expand', ctx);
+    expect(ctx.painted.notices.at(-1)[0].split('\n').length).toBeGreaterThan(1);
+  });
+
+  it('needs-reply rows render with a ! marker and sort before idle rows (unitAI-nmxhg)', async () => {
+    const { mod } = await boot();
+    const now = Math.floor(Date.now() / 1000);
+    const fleet = {
+      activations: [
+        {
+          activation_id: 'act:idle', specialist: 'researcher', bead_id: 'ISSUE-92',
+          state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+          elapsed_s: 47, token_usage: { input: 1500, output: 600, cache: 0 },
+          last_activity_at: now,
+        },
+        {
+          activation_id: 'act:ask', specialist: 'reviewer', bead_id: 'ISSUE-92',
+          state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
+          elapsed_s: 90, token_usage: { input: 500, output: 200, cache: 0 },
+          last_activity_at: now,
+        },
+      ],
+      asks: [{
+        message_id: 'msg:1', kind: 'question', activation_id: 'act:ask',
+        from: 'x', body: 'Which option?', asked_at: now - 31,
+      }],
+    };
+    const lines = mod.renderSectionLines(fleet);
+    expect(lines[1]).toMatch(/! reviewer \(gpt-5\.6-sol high\) · ISSUE-92 · needs reply 31s/);
+    expect(lines[2]).toContain('● researcher');
+    expect(lines.join('\n')).not.toContain('act:ask'); // no forensic ids in rows
   });
 
   it('/fleet reports in text too, so json and print modes are not blind', async () => {
