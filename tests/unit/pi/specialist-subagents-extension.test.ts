@@ -759,9 +759,54 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     return { pi, host, calls, ctx, command, mod };
   }
 
-  it('registers the three operator commands', async () => {
+  it('registers the /specialists operator commands with /fleet compat aliases', async () => {
     const { pi } = await boot();
-    expect(pi.commands.map((c) => c.name)).toEqual(['fleet', 'fleet:reply', 'fleet:stop']);
+    expect(pi.commands.map((c) => c.name)).toEqual(['specialists', 'fleet', 'specialists:reply', 'fleet:reply', 'specialists:stop', 'fleet:stop', 'specialists:resume', 'fleet:resume']);
+  });
+
+  it('names /specialists in help and collapsed hints, never /fleet (unitAI-beqby.6)', async () => {
+    const { pi, mod } = await boot();
+    for (const cmd of pi.commands) {
+      expect(cmd.description).not.toContain('/fleet');
+    }
+    expect(mod.renderCollapsedLine({ activations: [], asks: [] })).not.toContain('/fleet');
+    const asking = {
+      activations: [{
+        activation_id: 'act:aaaa', participant_id: 'p', attempt_id: 'a',
+        specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+        resolved_model: 'm', elapsed_s: 5, last_activity_at: Math.floor(Date.now() / 1000),
+      }],
+      asks: [{ message_id: 'msg:1', kind: 'question', activation_id: 'act:aaaa', from: 'x', body: 'Which?' }],
+    };
+    expect(mod.renderCollapsedLine(asking)).not.toContain('/fleet');
+    expect(mod.renderCollapsedLine(asking)).toContain('/specialists:reply');
+  });
+
+  it('/fleet aliases still reach the /specialists handlers (unitAI-beqby.6)', async () => {
+    const { pi, host, ctx, command } = await boot({ hasUI: true, mode: 'tui' });
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    await command('fleet').handler('inspect', ctx);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
+    const fleetReply = pi.commands.find((c) => c.name === 'fleet:reply');
+    host.answer.mockResolvedValueOnce({ messageId: 'msg:1', activationId: 'act:aaaa' });
+    await fleetReply.handler('msg:1 alias answer', ctx);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('Answered msg:1');
+  });
+
+  it('/specialists:resume resumes in place and refuses an unknown id (unitAI-beqby.6, unitAI-beqby.7)', async () => {
+    const { host, calls, ctx, command } = await boot();
+    await command('specialists:resume').handler('act:aaaa continue with option two', ctx);
+    expect(calls.resume).toEqual([['act:aaaa', 'continue with option two']]);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('Resumed act:aaaa');
+
+    host.inspect.mockReturnValueOnce(undefined);
+    await command('specialists:resume').handler('act:zzzz anything', ctx);
+    expect(calls.resume).toHaveLength(1);
+    expect(ctx.painted.notices.at(-1)).toEqual(['Unknown activation: act:zzzz', 'warning']);
+
+    await command('specialists:resume').handler('act:aaaa', ctx);
+    expect(calls.resume).toHaveLength(1);
+    expect(ctx.painted.notices.at(-1)[1]).toBe('warning');
   });
 
   it('registers a footer section when the seam exists, and paints no widget and no setStatus', async () => {
@@ -814,7 +859,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     // unitAI-4n9of: hint names only working triggers, never arrow keys.
     const idle = mod.renderCollapsedLine({ activations: [], asks: [] });
     expect(idle).toContain('idle');
-    expect(idle).toContain('/fleet inspect');
+    expect(idle).toContain('/specialists inspect');
     expect(idle).not.toContain('↓');
     expect(idle).not.toContain('←');
     const fleet = {
@@ -827,8 +872,8 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       asks: [{ message_id: 'msg:1', kind: 'question', activation_id: 'act:aaaa', from: 'x', body: 'Which option?' }],
     };
     expect(mod.renderCollapsedLine(fleet)).toContain('1 need reply');
-    expect(mod.renderCollapsedLine(fleet)).toContain('/fleet inspect');
-    expect(mod.renderCollapsedLine(fleet)).toContain('/fleet:reply');
+    expect(mod.renderCollapsedLine(fleet)).toContain('/specialists inspect');
+    expect(mod.renderCollapsedLine(fleet)).toContain('/specialists:reply');
     expect(mod.renderCollapsedLine(fleet)).not.toContain('↓');
     expect(mod.renderCollapsedLine(fleet)).not.toContain('←');
     const rows = mod.renderSectionLines(fleet, { expanded: true });
@@ -849,10 +894,10 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(lines.at(-1)).toContain('+3 more');
   });
 
-  it('/fleet inspect degrades to text when ui.custom is unavailable (RPC)', async () => {
+  it('/specialists inspect degrades to text when ui.custom is unavailable (RPC)', async () => {
     const { command, ctx } = await boot({ hasUI: true, mode: 'tui' });
     ctx.ui.custom = undefined;
-    await command('fleet').handler('inspect', ctx);
+    await command('specialists').handler('inspect', ctx);
     expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
   });
 
@@ -866,28 +911,28 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
   });
 
-  it('/fleet hide stops painting and /fleet show resumes it', async () => {
+  it('/specialists hide stops painting and /specialists show resumes it', async () => {
     const { pi, ctx, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    await command('fleet').handler('hide', ctx);
+    await command('specialists').handler('hide', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
-    await command('fleet').handler('show', ctx);
+    await command('specialists').handler('show', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
   });
 
-  it('/fleet inspect prints the expanded text report and never mounts ui.custom (unitAI-nmxhg)', async () => {
+  it('/specialists inspect prints the expanded text report and never mounts ui.custom (unitAI-nmxhg)', async () => {
     const { pi, ctx, command } = await boot({ hasUI: true, mode: 'tui' });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     const custom = vi.fn((...args) => { ctx.painted.customs.push(args); return Promise.resolve(undefined); });
     ctx.ui.custom = custom;
-    await command('fleet').handler('inspect', ctx);
-    expect(custom).not.toHaveBeenCalled(); // no custom-pane mount anywhere on the fleet path
+    await command('specialists').handler('inspect', ctx);
+    expect(custom).not.toHaveBeenCalled(); // no custom-pane mount anywhere on the specialists path
     const text = ctx.painted.notices.at(-1)[0];
     expect(text).toContain('specialists');
     expect(text).toContain('explorer'); // expanded rows, not the collapsed line alone
   });
 
-  it('renders expanded rows by default; /fleet collapse opts out, /fleet expand is a no-op', async () => {
+  it('renders expanded rows by default; /specialists collapse opts out, /specialists expand is a no-op', async () => {
     const { pi, ctx, command, mod } = await boot({ hasUI: true, mode: 'tui' });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     // Unit default: no opts means expanded.
@@ -904,19 +949,19 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(lines.length).toBeGreaterThan(1);
     expect(lines[1]).toMatch(/● researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k · working/);
     expect(lines[1]).not.toContain('spent');
-    // Command default: /fleet with no action reports the expanded rows.
-    await command('fleet').handler('', ctx);
+    // Command default: /specialists with no action reports the expanded rows.
+    await command('specialists').handler('', ctx);
     expect(ctx.painted.notices.at(-1)[0].split('\n').length).toBeGreaterThan(1);
     expect(ctx.painted.notices.at(-1)[0]).toContain('explorer');
     // Opt-out: collapse drops to the single line.
-    await command('fleet').handler('collapse', ctx);
+    await command('specialists').handler('collapse', ctx);
     expect(ctx.painted.notices.at(-1)[0].split('\n')).toHaveLength(1);
     // Expand restores the default rows (no-op when already expanded).
-    await command('fleet').handler('expand', ctx);
+    await command('specialists').handler('expand', ctx);
     expect(ctx.painted.notices.at(-1)[0].split('\n').length).toBeGreaterThan(1);
   });
 
-  it('fleet mapping never yields index-derived elapsed (unitAI-d99hb)', async () => {
+  it('specialists mapping never yields index-derived elapsed (unitAI-d99hb)', async () => {
     const { pi, ctx, host } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     const startedAt = Date.now() - 41000;
@@ -1039,9 +1084,9 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     };
     // Collapsed: two-space tree branch, chrome lowercase, identifiers canonical.
     expect(mod.renderCollapsedLine(fleet))
-      .toBe('  └ specialists · 1 active · 0 waiting · /fleet inspect');
+      .toBe('  └ specialists · 1 active · 0 waiting · /specialists inspect');
     expect(mod.renderCollapsedLine({ activations: [], asks: [] }))
-      .toBe('  └ specialists · idle · /fleet inspect');
+      .toBe('  └ specialists · idle · /specialists inspect');
     // Execution row: four-space indent, ● marker, canonical identifier case.
     expect(mod.renderSectionLines(fleet)[1])
       .toBe('    ● researcher (gpt-5.6-sol high) · ISSUE-92 · running 47s · 2.1k · working');
@@ -1054,45 +1099,45 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(askRow.endsWith('s')).toBe(true);
   });
 
-  it('/fleet reports in text too, so json and print modes are not blind', async () => {
+  it('/specialists reports in text too, so json and print modes are not blind', async () => {
     const { pi, ctx, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    await command('fleet').handler('', ctx);
+    await command('specialists').handler('', ctx);
     expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
   });
 
-  it('/fleet:reply answers by message_id and reports an unknown id instead of silently passing', async () => {
+  it('/specialists:reply answers by message_id and reports an unknown id instead of silently passing', async () => {
     const { host, ctx, command } = await boot();
     // mockResolvedValueOnce replaces the implementation, so assert on the spy's
     // arguments rather than on the recorder the default implementation feeds.
     host.answer.mockResolvedValueOnce({ messageId: 'msg:1', activationId: 'act:aaaa' });
-    await command('fleet:reply').handler('msg:1 use the second option', ctx);
+    await command('specialists:reply').handler('msg:1 use the second option', ctx);
     expect(host.answer).toHaveBeenCalledWith('msg:1', 'use the second option');
     expect(ctx.painted.notices.at(-1)[0]).toContain('Answered msg:1');
 
     // host.answer returns undefined for an unknown id.
-    await command('fleet:reply').handler('msg:nope anything', ctx);
+    await command('specialists:reply').handler('msg:nope anything', ctx);
     expect(ctx.painted.notices.at(-1)).toEqual([
       expect.stringContaining("No outstanding ask with message_id 'msg:nope'"),
       'warning',
     ]);
   });
 
-  it('/fleet:reply rejects a missing body rather than answering with an empty string', async () => {
+  it('/specialists:reply rejects a missing body rather than answering with an empty string', async () => {
     const { calls, ctx, command } = await boot();
-    await command('fleet:reply').handler('msg:1', ctx);
-    await command('fleet:reply').handler('msg:1    ', ctx);
+    await command('specialists:reply').handler('msg:1', ctx);
+    await command('specialists:reply').handler('msg:1    ', ctx);
     expect(calls.answer).toEqual([]);
     expect(ctx.painted.notices.at(-1)[1]).toBe('warning');
   });
 
-  it('/fleet:stop disposes a known activation and refuses an unknown one', async () => {
+  it('/specialists:stop disposes a known activation and refuses an unknown one', async () => {
     const { host, calls, ctx, command } = await boot();
-    await command('fleet:stop').handler('act:aaaa operator changed their mind', ctx);
+    await command('specialists:stop').handler('act:aaaa operator changed their mind', ctx);
     expect(calls.stop).toEqual([['act:aaaa', 'operator changed their mind']]);
 
     host.inspect.mockReturnValueOnce(undefined);
-    await command('fleet:stop').handler('act:zzzz', ctx);
+    await command('specialists:stop').handler('act:zzzz', ctx);
     expect(calls.stop).toHaveLength(1);
     expect(ctx.painted.notices.at(-1)).toEqual(['Unknown activation: act:zzzz', 'warning']);
   });
@@ -1100,16 +1145,16 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
   it('completes message ids and activation ids from live host state', async () => {
     const { pi, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    expect(command('fleet:reply').getArgumentCompletions('msg').map((i) => i.value)).toEqual(['msg:1']);
-    expect(command('fleet:stop').getArgumentCompletions('act').map((i) => i.value)).toEqual(['act:aaaa']);
-    expect(command('fleet:reply').getArgumentCompletions('nomatch')).toBeNull();
-    expect(command('fleet').getArgumentCompletions('h').map((i) => i.value)).toEqual(['hide']);
+    expect(command('specialists:reply').getArgumentCompletions('msg').map((i) => i.value)).toEqual(['msg:1']);
+    expect(command('specialists:stop').getArgumentCompletions('act').map((i) => i.value)).toEqual(['act:aaaa']);
+    expect(command('specialists:reply').getArgumentCompletions('nomatch')).toBeNull();
+    expect(command('specialists').getArgumentCompletions('h').map((i) => i.value)).toEqual(['hide']);
   });
 
   it('does not install the view without UI, and never throws there', async () => {
     const { pi, ctx, command } = await boot({ hasUI: false, mode: 'print' });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
-    await command('fleet').handler('', ctx);
+    await command('specialists').handler('', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
     expect(ctx.painted.notices).toEqual([]);   // report() falls back to console
   });
