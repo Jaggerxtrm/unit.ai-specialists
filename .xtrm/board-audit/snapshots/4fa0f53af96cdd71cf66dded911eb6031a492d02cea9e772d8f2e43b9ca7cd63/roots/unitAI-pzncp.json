@@ -1,0 +1,1 @@
+{"issue_ids":["unitAI-pzncp"],"open_issue_count":1,"root_id":"unitAI-pzncp","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"bf12db8538ba2d203ef7b06610330976f3084f9d66c220be84be56418013aed0","title":"Loader merge preserves package fallback_model when override sets fallback_models (plural-wins violated)"}

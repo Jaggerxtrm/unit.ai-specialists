@@ -1,0 +1,67 @@
+{
+  "content_sha256": "aa806e50abb651c0567117089a4638229af16761702f9c25f27d521ddef4b49f",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-03T00:34:08Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-641h0.1",
+        "issue_id": "unitAI-hwb24",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-hwb24",
+      "source_field": "dependencies",
+      "target": "unitAI-641h0.1",
+      "target_present_in_snapshot": true,
+      "target_title": "fail closed when runtime tool catalog cannot resolve",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-hwb24"
+  },
+  "issues": {
+    "unitAI-hwb24": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-03T00:34:08Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-03T00:34:08Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-641h0.1",
+            "issue_id": "unitAI-hwb24",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Deterministic pre-existing failure reproduced on merged PR #278 head cd4be6bf and current master base a360b912: SPECIALISTS_TEST_QUARANTINED=1 bun --bun vitest run tests/unit/specialist/script-runner.test.ts -t 'optional nonzero' fails because the optional nonzero pre-script executes and captures stdout but the rendered prompt omits <pre_flight_context>. The test is excluded from supported bun run test. Diagnose whether runScriptSpecialist must append pre_script_output when templates omit the placeholder or whether the fixture contract is stale. Do not weaken required pre-script fail-closed behavior.",
+        "id": "unitAI-hwb24",
+        "issue_type": "bug",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Fix optional pre-script injection quarantine regression",
+        "updated_at": "2026-09-03T00:34:08Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-hwb24",
+  "root_title": "Fix optional pre-script injection quarantine regression",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

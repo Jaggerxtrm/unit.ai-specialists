@@ -1,0 +1,90 @@
+{
+  "content_sha256": "b9bacadffd91edb7eb958955ffd5055d3fdc664786efd0f4e0318ddd44eb7e55",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-15T23:00:31Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-gp7nq.9",
+        "issue_id": "unitAI-pzncp",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-pzncp",
+      "source_field": "dependencies",
+      "target": "unitAI-gp7nq.9",
+      "target_present_in_snapshot": true,
+      "target_title": "Test: Phase 2 — fallback chains schema + runtime walk + fallback_step telemetry",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-15T23:00:32Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-gp7nq",
+        "issue_id": "unitAI-pzncp",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-pzncp",
+      "source_field": "dependencies",
+      "target": "unitAI-gp7nq",
+      "target_present_in_snapshot": true,
+      "target_title": "Expand global user config: broaden allowlist + model chains + preset references",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-pzncp"
+  },
+  "issues": {
+    "unitAI-pzncp": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-15T21:00:21Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-15T23:00:32Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-gp7nq",
+            "issue_id": "unitAI-pzncp",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-15T23:00:31Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-gp7nq.9",
+            "issue_id": "unitAI-pzncp",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: When the global user.json overlay sets execution.fallback_models = [\"a\",\"b\"], the merged spec still retains spec.specialist.execution.fallback_model = \"<package legacy value>\" from the package canonical layer. Plural override should clear (or override semantics on) the legacy singular field. Runtime chain walk in src/specialist/runner.ts may pick the wrong model when both fields coexist.\n\nSUCCESS: The loader merge clears spec.specialist.execution.fallback_model when a higher-priority layer sets execution.fallback_models. resolveModelChain returns only the plural chain, not legacy + plural mixed.\n\nSCRUTINY: medium (model resolution path; wrong-model dispatch on first-attempt failure is observable to operator).\n\nSCOPE: src/specialist/loader.ts merge path. Possibly src/specialist/model-chain.ts if the resolver is the right home for the precedence rule.\n\nNON_GOALS: do not add new schema fields. Do not change run-time chain walk semantics.\n\nCONSTRAINTS: legacy singular still works when only it is set. Plural takes precedence when both layers contribute.\n\nVALIDATION: flip the it.skip on tests/unit/specialist/loader.test.ts:698 (\"global plural fallback_models wins over package singular fallback_model\") to it; case must pass. Run bun --bun vitest run tests/unit/specialist/loader.test.ts.\n\nOUTPUT: merge fix + green test + bd close referencing unitAI-gp7nq.9 and this bead.\n\nDISCOVERED FROM: unitAI-gp7nq.9 test-engineer chain (job b821af).",
+        "id": "unitAI-pzncp",
+        "issue_type": "bug",
+        "priority": 3,
+        "status": "open",
+        "title": "Loader merge preserves package fallback_model when override sets fallback_models (plural-wins violated)",
+        "updated_at": "2026-06-15T21:00:21Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-pzncp",
+  "root_title": "Loader merge preserves package fallback_model when override sets fallback_models (plural-wins violated)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

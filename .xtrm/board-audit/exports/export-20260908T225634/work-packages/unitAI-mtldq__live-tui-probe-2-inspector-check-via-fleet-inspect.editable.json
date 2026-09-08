@@ -1,0 +1,82 @@
+{
+  "content_sha256": "ac5be87f284e01f358bdd3e488d89274dfd8bf3efbd26b997f4b27b973bd1789",
+  "desired_issues": {
+    "unitAI-mtldq": {
+      "_type": "issue",
+      "assignee": "jaggerxtrm",
+      "comment_count": 0,
+      "created_at": "2026-09-08T19:14:42Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: The operator needs a second live activation to try /fleet inspect (keyboard navigator, Enter-attach) after arrow activation proved dead.\n\nSUCCESS: An explorer activation runs for one to three minutes while the operator opens the inspector with /fleet inspect and reports what works.\n\nSCOPE: One read-only explorer run: list the five largest files under src/ with one line each on what it does, under 120 words. No edits.\n\nNON_GOALS: No implementation, no fixes -- observations become follow-ups.\n\nCONSTRAINTS: READ_ONLY. Short run only.\n\nVALIDATION: Activation settles PASS; operator reports inspector behavior.\n\nOUTPUT: Micro-report plus operator observation in bead notes.\n\nSCRUTINY: low\n",
+      "heartbeat_at": "2026-09-08T19:14:47Z",
+      "id": "unitAI-mtldq",
+      "issue_type": "task",
+      "labels": [
+        "contract:ready"
+      ],
+      "lease_expires_at": "2026-09-08T19:19:47Z",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "started_at": "2026-09-08T19:14:47Z",
+      "status": "in_progress",
+      "title": "Live-TUI probe 2: inspector check via /fleet inspect",
+      "updated_at": "2026-09-08T19:14:47Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-mtldq"
+  },
+  "issues": {
+    "unitAI-mtldq": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-08T19:14:42Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The operator needs a second live activation to try /fleet inspect (keyboard navigator, Enter-attach) after arrow activation proved dead.\n\nSUCCESS: An explorer activation runs for one to three minutes while the operator opens the inspector with /fleet inspect and reports what works.\n\nSCOPE: One read-only explorer run: list the five largest files under src/ with one line each on what it does, under 120 words. No edits.\n\nNON_GOALS: No implementation, no fixes -- observations become follow-ups.\n\nCONSTRAINTS: READ_ONLY. Short run only.\n\nVALIDATION: Activation settles PASS; operator reports inspector behavior.\n\nOUTPUT: Micro-report plus operator observation in bead notes.\n\nSCRUTINY: low\n",
+        "heartbeat_at": "2026-09-08T19:14:47Z",
+        "id": "unitAI-mtldq",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "lease_expires_at": "2026-09-08T19:19:47Z",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-08T19:14:47Z",
+        "status": "in_progress",
+        "title": "Live-TUI probe 2: inspector check via /fleet inspect",
+        "updated_at": "2026-09-08T19:14:47Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-mtldq",
+  "root_title": "Live-TUI probe 2: inspector check via /fleet inspect",
+  "roundtrip": {
+    "base_package_sha256": "ac5be87f284e01f358bdd3e488d89274dfd8bf3efbd26b997f4b27b973bd1789",
+    "base_record_sha256": {
+      "unitAI-mtldq": "12bf05eeba71a59a244e600d5913ca8cfbb6d4858d65e406e59e59e90143c20f"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-08T20:56:37Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

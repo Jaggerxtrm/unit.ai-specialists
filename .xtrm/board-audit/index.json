@@ -1,0 +1,1248 @@
+{
+  "open_issues": {
+    "infra-lbyw": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/infra-lbyw.json",
+      "root_id": "infra-lbyw",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "8a18b48899f469e23c96baf852909a412789d67d67bf41016022fdb6d01dbbb7",
+      "state": "open"
+    },
+    "specialists-83y": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/specialists-83y.json",
+      "root_id": "unitAI-z2vpq",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "ba98cc4d2e3e8c6fb4936442c64d4526800c8f5be43bec15280ea0ed7302b424",
+      "state": "open"
+    },
+    "unitAI-0eymv": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-0eymv.json",
+      "root_id": "unitAI-0eymv",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "409e1ca9726b80874a4be0b8327cbd3c9150815cc4df351cd2d87ed0294c4571",
+      "state": "open"
+    },
+    "unitAI-0jc35.3": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-0jc35.3.json",
+      "root_id": "unitAI-0jc35",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "d5e34ccb4edc3e919d24a67b678d0105558560f1db648b7863bc4caeb02b3aac",
+      "state": "open"
+    },
+    "unitAI-13xox": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-13xox.json",
+      "root_id": "unitAI-13xox",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "ba8cbb457f34a8f164de2f321fbc5108ae6ceb96f26176c6ce061c51ab59889f",
+      "state": "open"
+    },
+    "unitAI-1p0s5": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-1p0s5.json",
+      "root_id": "unitAI-kj651",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "266b65292fde93dde9b8bcf6aecd3f50c5f0a94af9f0cfdabc0035050df211ca",
+      "state": "open"
+    },
+    "unitAI-1s8xs": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-1s8xs.json",
+      "root_id": "unitAI-1s8xs",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "5fe8173f9b53af18176f0dbf8494b0c9c21914ba761c7ebc31a4367c83670043",
+      "state": "open"
+    },
+    "unitAI-22pcx": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-22pcx.json",
+      "root_id": "unitAI-22pcx",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "eda9d12213d1114b232ba285472dd5c60e4026c5873573b9f6bfac5f1ba9ba1b",
+      "state": "open"
+    },
+    "unitAI-2m40v": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-2m40v.json",
+      "root_id": "unitAI-2m40v",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "5a2d407dca4d7aebd585065039170c405f3199c91898b6e25033d786d91da87b",
+      "state": "open"
+    },
+    "unitAI-4bbvv": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-4bbvv.json",
+      "root_id": "unitAI-4bbvv",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "ed1c158c34f977b351a25c77f087df5628bd618fe295ad4f270c16a9cb0794d6",
+      "state": "open"
+    },
+    "unitAI-4n9of": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-4n9of.json",
+      "root_id": "unitAI-4n9of",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "fae2afbd8eb68893a00f438bb1ba7c2090dd892c8974362d99d05bdbe17cc06a",
+      "state": "open"
+    },
+    "unitAI-4wlf3": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-4wlf3.json",
+      "root_id": "unitAI-4wlf3",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "77c45bcc3ee51455b2932b1af02b3bc63d380b334df57dc479d08618395cd69c",
+      "state": "open"
+    },
+    "unitAI-5tk56": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-5tk56.json",
+      "root_id": "unitAI-5tk56",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "e426ddff1b5c68aee2675d61ea2429d6db5312e3c33cd6a97b1cb1b462e8c0d9",
+      "state": "open"
+    },
+    "unitAI-6lr8l": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-6lr8l.json",
+      "root_id": "unitAI-6lr8l",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "59620a46867f479c7799f0d42c148ee1fe6ec616dc37ad6fe8d22d6d61c595ad",
+      "state": "open"
+    },
+    "unitAI-7osqy": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-7osqy.json",
+      "root_id": "unitAI-7osqy",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "f589781fa9b5bf78a0f0e7426191015486d20794cdf1673817a999ffc58c50ae",
+      "state": "open"
+    },
+    "unitAI-a5ys3": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-a5ys3.json",
+      "root_id": "unitAI-a5ys3",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "0e38e38227fb7e3d6e3ce4ec7586d83e332107d5635f9a952009b0885f4158f5",
+      "state": "open"
+    },
+    "unitAI-aceq": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-aceq.json",
+      "root_id": "unitAI-aceq",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "ae2273c67c548dbf99e15576608add0569b3b0311d5cbca8631de41a061ab7f7",
+      "state": "open"
+    },
+    "unitAI-anjk2": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-anjk2.json",
+      "root_id": "unitAI-anjk2",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "62d12fbf7d9be66023b6be2e5141ab5a836087659faa09c8e3c1d5221756a289",
+      "state": "open"
+    },
+    "unitAI-beqby": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-beqby.json",
+      "root_id": "unitAI-beqby",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "2ebec0c1d0c317635e944c592eaa3e6a0d87909393d467e5dd10be0f239ab85d",
+      "state": "open"
+    },
+    "unitAI-cn53w": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-cn53w.json",
+      "root_id": "unitAI-k5kap",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "8299d6214dc2269da60b9140f5d43620bde52991d8d18c1fdcc08b9e01aa433a",
+      "state": "open"
+    },
+    "unitAI-cwert": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-cwert.json",
+      "root_id": "unitAI-cwert",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "301b2be0ea6f1df6d9f3057e2fdb13292af3e07cc25298bc123a889e6429d3eb",
+      "state": "open"
+    },
+    "unitAI-dp3lg": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-dp3lg.json",
+      "root_id": "unitAI-dp3lg",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "39413da93523a2c590e521cabefdbef2104133b725cb84f30415139a39f41f7d",
+      "state": "open"
+    },
+    "unitAI-e67up": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-e67up.json",
+      "root_id": "unitAI-e67up",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "da7f9e4d8b4cb5c10efe35577983fbc30b1f6da95f7d75463bfd5f755c91ddab",
+      "state": "open"
+    },
+    "unitAI-e67up.5": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-e67up.5.json",
+      "root_id": "unitAI-e67up",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "138f8e6ccf4777d6a2e8746936e997e2621e4b31a51ad06779505e5f1f8f4778",
+      "state": "open"
+    },
+    "unitAI-e67up.7": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-e67up.7.json",
+      "root_id": "unitAI-e67up",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "a12ef24b5e758fe5e5fe6a0e4ef021694261101931fac6d0140168794703e7f8",
+      "state": "open"
+    },
+    "unitAI-e8eq2": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-e8eq2.json",
+      "root_id": "unitAI-e8eq2",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "d710d11ba1ebd233087ad837dfa4f552f7fe8dcacef099a7838e39774e49f0de",
+      "state": "open"
+    },
+    "unitAI-e9j4v": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-e9j4v.json",
+      "root_id": "unitAI-e9j4v",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "e443750f643fa739a7cf51a263664af024bd24b2b37de10c33ef09b5ce82e180",
+      "state": "open"
+    },
+    "unitAI-gvyb8": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-gvyb8.json",
+      "root_id": "unitAI-gvyb8",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "16278cbc3d1f4da816bc5845ed70793211a0de8274a8b048a2cc31830b8e24f9",
+      "state": "open"
+    },
+    "unitAI-h2o7u": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-h2o7u.json",
+      "root_id": "unitAI-k5kap",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "a9aa9b71fcc83a6c8b9eb27878c239dd8f51624340113261c21a120232005d43",
+      "state": "open"
+    },
+    "unitAI-hwb24": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-hwb24.json",
+      "root_id": "unitAI-hwb24",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "8bb4ef631778000e5edca0db768295a9880f1511466588a2dcf235de48d66fbc",
+      "state": "open"
+    },
+    "unitAI-ib5xc": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-ib5xc.json",
+      "root_id": "unitAI-ib5xc",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "700a122a3999ba513ceceb5caa8511fed63c9e08b66a53ef60927238639c583e",
+      "state": "open"
+    },
+    "unitAI-iob03": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-iob03.json",
+      "root_id": "unitAI-iob03",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "20e2bd79d43a70f8c23e9e107a147250b280a57aa278c9a0ece522732d4054d0",
+      "state": "open"
+    },
+    "unitAI-jbqg4": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-jbqg4.json",
+      "root_id": "unitAI-jbqg4",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "2bc0fbde24b5c447a5c2aab566dbe7e361d18e4e58dac5d221a5952f4a6b4406",
+      "state": "open"
+    },
+    "unitAI-jfqpy": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-jfqpy.json",
+      "root_id": "unitAI-jfqpy",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "6a45ee799a931edb5a8d2d0f2cf35c400f51ef752bd1581f435bb6ea50750727",
+      "state": "open"
+    },
+    "unitAI-jhhu4.7": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-jhhu4.7.json",
+      "root_id": "unitAI-jhhu4",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "c05fb8a02224d69ac0a140366f0f88281a476b6c93c8d1a66c3a0b33e324de68",
+      "state": "open"
+    },
+    "unitAI-jndsb": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-jndsb.json",
+      "root_id": "unitAI-jndsb",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "8e8bf8cb3cce32bf899f067bd4d63ea6cfe8f7389920ec701fcc9fff4c7b25c4",
+      "state": "open"
+    },
+    "unitAI-jndsb.13": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-jndsb.13.json",
+      "root_id": "unitAI-jndsb",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "9432ec79c7fff3d04728b26711abe8bfbaa418d341958b363c0fadf302b5272d",
+      "state": "open"
+    },
+    "unitAI-k2czn": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-k2czn.json",
+      "root_id": "unitAI-k2czn",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "fe678315b1cf154dc11ebbadf9e14c0e03e197fff058310c4e3c03424c556bb0",
+      "state": "open"
+    },
+    "unitAI-mqt73": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-mqt73.json",
+      "root_id": "unitAI-mqt73",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "819fb5dc45b2ea6609473a46e4dc01592a0ddd3492e2c45d57fde1def85c41e1",
+      "state": "open"
+    },
+    "unitAI-mtldq": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-mtldq.json",
+      "root_id": "unitAI-mtldq",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "12bf05eeba71a59a244e600d5913ca8cfbb6d4858d65e406e59e59e90143c20f",
+      "state": "open"
+    },
+    "unitAI-ng52n": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-ng52n.json",
+      "root_id": "unitAI-ng52n",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "7f3fbcaf81f8ff7df4396f7c0733ab77e8528efcf8726b0b32e1da4f6d27f85a",
+      "state": "open"
+    },
+    "unitAI-of6dw": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-of6dw.json",
+      "root_id": "unitAI-of6dw",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "d1124bfec878fd05f46c755920d662cff6f3950a3f09cb6942c76e898b5f8b15",
+      "state": "open"
+    },
+    "unitAI-ofn3k": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-ofn3k.json",
+      "root_id": "unitAI-ofn3k",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "414951395716d694d7036c161d6e13ec512eebe9d3236c582ebae668940f1c83",
+      "state": "open"
+    },
+    "unitAI-pg60e": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-pg60e.json",
+      "root_id": "unitAI-pg60e",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "989905315f187b307ccb41a04e049d3affeadc221eaf0bf74b55815967ae0766",
+      "state": "open"
+    },
+    "unitAI-pzncp": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-pzncp.json",
+      "root_id": "unitAI-pzncp",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "bf12db8538ba2d203ef7b06610330976f3084f9d66c220be84be56418013aed0",
+      "state": "open"
+    },
+    "unitAI-q02sz": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-q02sz.json",
+      "root_id": "unitAI-q02sz",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "c87eb9305c99b7396a8ee606912bbcde6d12f89fa3a98da9c3e0f1da507e7a8e",
+      "state": "open"
+    },
+    "unitAI-raxwi": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-raxwi.json",
+      "root_id": "unitAI-raxwi",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "71d8d2c7ab26768102f603bfa832a38f244603685d077df4086b5ecf22e2c64e",
+      "state": "open"
+    },
+    "unitAI-rrdnt": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "15553be64f9fc59d7376ff89a8a70412e980cdbf032bfe7592bfc305b8d3f63b",
+      "state": "open"
+    },
+    "unitAI-rrdnt.24": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.24.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "5bada9db5e6e81e54090877bfb3c9f50d5c7114013b86e188a70b194ed00250d",
+      "state": "open"
+    },
+    "unitAI-rrdnt.30": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.30.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "7569b6d160c6882707b098453761e9a68d7601f192b0733673c467e9ed9a97ca",
+      "state": "open"
+    },
+    "unitAI-rrdnt.38": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.38.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "e6fe2c1896c292a6b5e207c598aff7f49531d1da088aa48028b1950a8391c5d2",
+      "state": "open"
+    },
+    "unitAI-rrdnt.39": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.39.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "88a6f34c111cfe3de19827dd1151a35cab8797ebbbbffda3c8868e2a0462590d",
+      "state": "open"
+    },
+    "unitAI-rrdnt.50": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.50.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "f55365211fd34376c65b233fcfaae6e084d7e3d9dbe6038742f6acce45190991",
+      "state": "open"
+    },
+    "unitAI-rrdnt.50.1": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.50.1.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "577e06a09ed605713889b752e30ee86d2ea291e86e95173904a091ba0089fa19",
+      "state": "open"
+    },
+    "unitAI-rrdnt.56": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.56.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "ac746fd0d4d55c5caef7044ddcf29d7e95d056480bc85a14a5f74748533372b8",
+      "state": "open"
+    },
+    "unitAI-rrdnt.57": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.57.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "5b2bd7138c97c45c5001622e7b9eb02fcaae0bc70e60413f8038dff8b3786aaa",
+      "state": "open"
+    },
+    "unitAI-rrdnt.60": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.60.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "bd484de3533ebeeaf2118a0dcca8910bd8e1bd5be311f7bb59a25670ed48acb5",
+      "state": "open"
+    },
+    "unitAI-rrdnt.62": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.62.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "b0c72127c2b8407898be8b0786ca8ba62652413adf262044fa62389d3f3d94b4",
+      "state": "open"
+    },
+    "unitAI-rrdnt.63": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-rrdnt.63.json",
+      "root_id": "unitAI-rrdnt",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "44218238a600d9a6c952ff99f5730b8d6ea63042416113d88797bf042f080353",
+      "state": "open"
+    },
+    "unitAI-s15zn": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-s15zn.json",
+      "root_id": "unitAI-s15zn",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "4719ef717c5b7a21971676062b519bccbfd35dab674d282c86d2bd2906bac78d",
+      "state": "open"
+    },
+    "unitAI-shkwf": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-shkwf.json",
+      "root_id": "unitAI-shkwf",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "fc30c2a4174af6ac2bc209720441a8d8e54977f0810d2850f9a9b1185331ce36",
+      "state": "open"
+    },
+    "unitAI-t7rs8": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-t7rs8.json",
+      "root_id": "unitAI-t7rs8",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "5b5db3fd5a130ce34d48f8d5367990ece4fdebf8768601868780293c14c4870e",
+      "state": "open"
+    },
+    "unitAI-tdpnn": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-tdpnn.json",
+      "root_id": "unitAI-tdpnn",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "944f1ba73a0d240e3bf29d558d7e5cbef6c46babf25b92f9ac3c71d6a66bcbfc",
+      "state": "open"
+    },
+    "unitAI-tmeqw.12": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-tmeqw.12.json",
+      "root_id": "unitAI-tmeqw",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "183b9e2f74620a1d22a5c648bfdadea5f3862056245a278a89de5a409f3397b4",
+      "state": "open"
+    },
+    "unitAI-u13z2": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-u13z2.json",
+      "root_id": "unitAI-u13z2",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "b1615b7938927d5b13e0110eceef20a6f090b16c8775cc92a0b1493feddc8d92",
+      "state": "open"
+    },
+    "unitAI-u7fz3": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-u7fz3.json",
+      "root_id": "unitAI-u7fz3",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "076dac02f82d60dccb4ef52b4079eba2493e797e20a7d6b011a92634b13962f8",
+      "state": "open"
+    },
+    "unitAI-ucpcy": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-ucpcy.json",
+      "root_id": "unitAI-ucpcy",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "76267b32dec3a6e29f753b9115affb856d7c22c41d6462c6f77be488a4e0a5f3",
+      "state": "open"
+    },
+    "unitAI-uniab": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-uniab.json",
+      "root_id": "unitAI-uniab",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "42737a91f87b46f6a0335fe7e9922caa4a04b8762dfed715b29ddb5d5ff6c370",
+      "state": "open"
+    },
+    "unitAI-uvg4j": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-uvg4j.json",
+      "root_id": "unitAI-uvg4j",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "8bba31b466655fdb7ab185733b0f00c729f6a79eb4f428f18743c4aeb5f767b2",
+      "state": "open"
+    },
+    "unitAI-v0msh": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-v0msh.json",
+      "root_id": "unitAI-v0msh",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "a27d167d8937a20b7a29c0ed0e708eeed3b61401cd4183a2e3a0eca716837eb8",
+      "state": "open"
+    },
+    "unitAI-vaakk": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-vaakk.json",
+      "root_id": "unitAI-vaakk",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "62942119d4c1b3a1e202e18e1c978d7918cb5bc4bca574daec213406eaf50ec7",
+      "state": "open"
+    },
+    "unitAI-x84i8": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-x84i8.json",
+      "root_id": "unitAI-a2xm",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "62471ef16218cacdaed653ae511a57f6650c5e6507aae7b0aad46e825e297aa4",
+      "state": "open"
+    },
+    "unitAI-xqvut": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-xqvut.json",
+      "root_id": "unitAI-xqvut",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "86401e58f9645942901a2be1248a17e2702973502525acba62a2bc1f07c798ff",
+      "state": "open"
+    },
+    "unitAI-y53b5": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-y53b5.json",
+      "root_id": "unitAI-y53b5",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "b9b635ab41187bce904964a82d270f67d42782c1931ea50cc3d4ee029c52a5d8",
+      "state": "open"
+    },
+    "unitAI-yhb99": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-yhb99.json",
+      "root_id": "unitAI-yhb99",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "2cc7fbd8d048948d8aae1c31e822fd3e84a180dda5ae64ca2f61521ee9dec262",
+      "state": "open"
+    },
+    "unitAI-z2vpq": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-z2vpq.json",
+      "root_id": "unitAI-z2vpq",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "515ace7c3e75bd343b15dc71f39b14f231fa9302b521ba6ff071a041dd4b3481",
+      "state": "open"
+    },
+    "unitAI-z2vpq.10": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-z2vpq.10.json",
+      "root_id": "unitAI-z2vpq",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "8bf1868a9e68b009ba572f53d9a76c3318b0a4c06100cfb1ed085434fc815db7",
+      "state": "open"
+    },
+    "unitAI-z2vpq.11": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-z2vpq.11.json",
+      "root_id": "unitAI-z2vpq",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "3c280485e5177f6fe8e18a422f3ad05b1857a88716aa44e6140641eb0deb9d75",
+      "state": "open"
+    },
+    "unitAI-z2vpq.14": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-z2vpq.14.json",
+      "root_id": "unitAI-z2vpq",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "ba215467bd160201b093af819d6f8fa5f3e55d12a71e86f8ccd6cdf565d8f0e6",
+      "state": "open"
+    },
+    "unitAI-ziyjq": {
+      "file": "snapshots/4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63/issues/unitAI-ziyjq.json",
+      "root_id": "unitAI-ziyjq",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "source_sha256": "586b0e5a329dd6ac5a872adcd3c4c97909a30aa489ad0acd4e34c850adc6812c",
+      "state": "open"
+    }
+  },
+  "packages": {
+    "infra-lbyw": {
+      "base_package_sha256": "1e4873081fec6b4ea6311dbf5b9606494f0f2a30cf8cec985b5af6b5d2b38969",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/infra-lbyw__mirror-migrate-specialists-workflows-to-mercury-runner-classes.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/infra-lbyw__mirror-migrate-specialists-workflows-to-mercury-runner-classes.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:39Z"
+    },
+    "unitAI-0eymv": {
+      "base_package_sha256": "bf2e4f830657de29feb1abaa4ee3581595c76dda30a25e164ad654a5456fb23f",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-0eymv__cli-document-automate-reliable-job-completion-detection-ps-waiting-hides-finished-keep-alive-job.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-0eymv__cli-document-automate-reliable-job-completion-detection-ps-waiting-hides-finished-keep-alive-job.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:39Z"
+    },
+    "unitAI-0jc35": {
+      "base_package_sha256": "178f0d020349652871a1e218b2a415cb13478ad97643020a612bfd360c072ea7",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-0jc35__prepare-v3-18-2-patch-release-readiness.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-0jc35__prepare-v3-18-2-patch-release-readiness.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:39Z"
+    },
+    "unitAI-13xox": {
+      "base_package_sha256": "e69590aed0945e32a64d90036889f5ed5bd3e006a9c42cda11a20f942f1ecfc8",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-13xox__cli-document-automate-reliable-job-completion-detection-ps-waiting-hides-finished-keep-alive-job.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-13xox__cli-document-automate-reliable-job-completion-detection-ps-waiting-hides-finished-keep-alive-job.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:39Z"
+    },
+    "unitAI-1s8xs": {
+      "base_package_sha256": "3c1eacbc7bcab5fde89e9c302eb75b191461e70cb8b24dd0c00fecdf77457a0b",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-1s8xs__bug-specialist-stale-flag-can-t-be-cleared-by-same-day-metadata-updated-bump-date-vs-mtime-granu.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-1s8xs__bug-specialist-stale-flag-can-t-be-cleared-by-same-day-metadata-updated-bump-date-vs-mtime-granu.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-22pcx": {
+      "base_package_sha256": "9f10e0f5a49fdaf58f27700bee48801387bb7056c8f674bdfc920937c7236b54",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-22pcx__stabilize-stop-cli-terminal-alive-orphan-reaper-test.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-22pcx__stabilize-stop-cli-terminal-alive-orphan-reaper-test.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-2m40v": {
+      "base_package_sha256": "2261da3718df2ca77ad472a29e71251289a86a606d60809a70986fd4858ef7a5",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-2m40v__premortem-node-specialist-gated-on-conversations-md-v2.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-2m40v__premortem-node-specialist-gated-on-conversations-md-v2.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-4bbvv": {
+      "base_package_sha256": "85a254f635ad83751a5ab48793ba0f17433aa98f702668f2ac4c63007e55dcc4",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-4bbvv__sp-console-diffview-history-fallback-via-bd-id-grep-on-git-log.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-4bbvv__sp-console-diffview-history-fallback-via-bd-id-grep-on-git-log.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-4n9of": {
+      "base_package_sha256": "558d73371072a00668baeb7878ee685ff275f811e64a397e2a4cc8ab4f8e4b50",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-4n9of__collapsed-fleet-hint-promises-arrow-key-activation-that-cannot-exist.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-4n9of__collapsed-fleet-hint-promises-arrow-key-activation-that-cannot-exist.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-4wlf3": {
+      "base_package_sha256": "65c43e131c608f5c0b913617506e841f0625d8dbeda87c5fd449616fae06970c",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-4wlf3__investigate-why-pi-tools-yes-metadata-doesn-t-match-agentic-reality-for-some-models.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-4wlf3__investigate-why-pi-tools-yes-metadata-doesn-t-match-agentic-reality-for-some-models.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-5tk56": {
+      "base_package_sha256": "5fbb70150a6af6d4d2133b9bb54de5327875e4a4f3979bb2edcf2e37e25d171b",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-5tk56__bug-node-coordinator-specialist-json-lacks-prompt-output-schema.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-5tk56__bug-node-coordinator-specialist-json-lacks-prompt-output-schema.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-6lr8l": {
+      "base_package_sha256": "8a6b282dd0e6c7cc24966b115c68a60fb2e3886aadc8a2702ade50a31cb639bf",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-6lr8l__test-isolate-orphan-reaper-stop-test-from-host-pid-reuse.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-6lr8l__test-isolate-orphan-reaper-stop-test-from-host-pid-reuse.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-7osqy": {
+      "base_package_sha256": "d1e8bc0fb1e80e5e1ab3304ac5ff63ffd8a3f5d320622d0ecb48c8052d3bf3d6",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-7osqy__config-show-resolved-bypasses-specialistloader-global-overlay.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-7osqy__config-show-resolved-bypasses-specialistloader-global-overlay.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-a2xm": {
+      "base_package_sha256": "e456776b2de33561a11621cdffbc6036b0437bdb800565ebe40ed6a55521d3b8",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-a2xm__new-specialist-definitions.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-a2xm__new-specialist-definitions.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-a5ys3": {
+      "base_package_sha256": "db5aa3c217e9754d97956760995c8d94bb993714a0e7662ceece0f99f576e225",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-a5ys3__migrate-codebase-to-zod-4.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-a5ys3__migrate-codebase-to-zod-4.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-aceq": {
+      "base_package_sha256": "3a46c3555d0ec7e93fa6928b874a0d24be2ad5337ed2e6791bbde273bdc2541f",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-aceq__slim-down-agents-top-md-xtrm-workflow-instructions.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-aceq__slim-down-agents-top-md-xtrm-workflow-instructions.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-anjk2": {
+      "base_package_sha256": "2464553cc475c61f614dc0b7574b712259e6cf52e6a1072053cb09abd453cf16",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-anjk2__fix-sp-edit-fork-from-dry-run-and-help-parser-mismatch.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-anjk2__fix-sp-edit-fork-from-dry-run-and-help-parser-mismatch.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-beqby": {
+      "base_package_sha256": "f6491209a76ad564949f225a393682f075f767ee01d8bee9e34e0c9d3d049a8c",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-beqby__fleet-ui-operational-fleet-under-the-xtrm-statusline-ui-1-ui-7.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-beqby__fleet-ui-operational-fleet-under-the-xtrm-statusline-ui-1-ui-7.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-cwert": {
+      "base_package_sha256": "cd794444f3f3ea1cb9b16f0b2b5e3c561ce83bb41cd75d21e7f0dfb9325599d9",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-cwert__run-model-override-is-ignored-by-missing-model-preflight-gate.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-cwert__run-model-override-is-ignored-by-missing-model-preflight-gate.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-dp3lg": {
+      "base_package_sha256": "9f4fd00482b35f0ebba90986a539272c1101c8ddc0a19af53f7462e4e3d82728",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-dp3lg__investigate-xtrm-tools-post-fix-worktrees-still-spawning-per-worktree-dolt-servers.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-dp3lg__investigate-xtrm-tools-post-fix-worktrees-still-spawning-per-worktree-dolt-servers.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-e67up": {
+      "base_package_sha256": "cb98b6a5f2255e2dedc4e8cbfb90e440cf08aae51aa03b221b2ae8094d168eab",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-e67up__xt-codex-parity-specialists-native-surface-companion.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-e67up__xt-codex-parity-specialists-native-surface-companion.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-e8eq2": {
+      "base_package_sha256": "416aaccfc432adc46d074a4fb54eda00403685ee134ba49cfab09eab85743c41",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-e8eq2__test-issue-dependency-direction-blocks-impl-close-inverse-gate.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-e8eq2__test-issue-dependency-direction-blocks-impl-close-inverse-gate.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-e9j4v": {
+      "base_package_sha256": "a85c8728329225426b4485e695e724a9059c441f46fb6a15502f6a7ff17bb0df",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-e9j4v__reviewer-certify-exact-bead-id-in-turn-one-prompt.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-e9j4v__reviewer-certify-exact-bead-id-in-turn-one-prompt.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-gvyb8": {
+      "base_package_sha256": "71619f3db587cf22db0f84954c2de09cce135bfdd5e038871280573d171f3276",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-gvyb8__live-probe-ask-coordinator-held-fact-unitai-rrdnt-37-smoke.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-gvyb8__live-probe-ask-coordinator-held-fact-unitai-rrdnt-37-smoke.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-hwb24": {
+      "base_package_sha256": "aa806e50abb651c0567117089a4638229af16761702f9c25f27d521ddef4b49f",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-hwb24__fix-optional-pre-script-injection-quarantine-regression.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-hwb24__fix-optional-pre-script-injection-quarantine-regression.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-ib5xc": {
+      "base_package_sha256": "016e524b24fec3ae78756e00dae3d729ed82bfd346995fb085e2af5b874d3329",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ib5xc__evaluate-typescript-6-upgrade.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ib5xc__evaluate-typescript-6-upgrade.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-iob03": {
+      "base_package_sha256": "6092721f79c53fa99a73c4092e1d207efae48a04e1a8996e57a1da9a4632fa42",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-iob03__reviewer-v2-certify-fail-closed-extension-tool-policy-gate.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-iob03__reviewer-v2-certify-fail-closed-extension-tool-policy-gate.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-jbqg4": {
+      "base_package_sha256": "4faa1d534fd1b12c02684332bf5138b4e1391f54fc66dce92110e5a9143753fb",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-jbqg4__pin-telemetry-contract-workflow-actions-by-immutable-sha.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-jbqg4__pin-telemetry-contract-workflow-actions-by-immutable-sha.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-jfqpy": {
+      "base_package_sha256": "6ecf985d4d30a550bc75de1ec3b027cba587feffad368426373688925635c60c",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-jfqpy__ponytail-audit-verified-over-engineering-sweep-across-core-files-pilot-done-backlog.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-jfqpy__ponytail-audit-verified-over-engineering-sweep-across-core-files-pilot-done-backlog.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-jhhu4": {
+      "base_package_sha256": "780e76de4d5e8c238b79adac6f6696d74cbb48f6caf05baabe2cd4f552089744",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-jhhu4__epic-agent-guidance-reconciliation-pitfall-capture.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-jhhu4__epic-agent-guidance-reconciliation-pitfall-capture.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-jndsb": {
+      "base_package_sha256": "ba414cc85162bf3280c406ce3f2c0fac46351e6e004bef210e9f4530f5591dea",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-jndsb__ship-native-pi-extension-forwarding-in-specialists.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-jndsb__ship-native-pi-extension-forwarding-in-specialists.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-k2czn": {
+      "base_package_sha256": "c7c1004c2dd59924e2e10ef0031921b57954c71b70eaa4786114cc6ca2ecd8d8",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-k2czn__reviewer-sandbox-strips-dot-from-dotted-bead-ids-unitai-gp7nq-4-unitai-gp7nq4.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-k2czn__reviewer-sandbox-strips-dot-from-dotted-bead-ids-unitai-gp7nq-4-unitai-gp7nq4.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-k5kap": {
+      "base_package_sha256": "7bb112ab443fb2136440821830e5c9fb473db6cef3510eb784c3a1507ebec967",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-k5kap__epic-shared-lsp-serena-gateway-ide-like-single-server-per-branch-cache-substrate-gzrx-route-enfo.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-k5kap__epic-shared-lsp-serena-gateway-ide-like-single-server-per-branch-cache-substrate-gzrx-route-enfo.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-kj651": {
+      "base_package_sha256": "861fc18e3f08059dcc7e2e0668064b33fac44ee5452d68aae5ded90ca8203934",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-kj651__specialists-runtime-cleanup-substrate-alignment-head-epic-17-opportunities-8-phases-planner-pass.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-kj651__specialists-runtime-cleanup-substrate-alignment-head-epic-17-opportunities-8-phases-planner-pass.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-mqt73": {
+      "base_package_sha256": "bdf0df8169d027058bd1da595a09e84d65ff93fa45c283af1503d7558e3b103a",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-mqt73__gitnexus-analyze-terminal-event-collides-with-forensic-sequence.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-mqt73__gitnexus-analyze-terminal-event-collides-with-forensic-sequence.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-mtldq": {
+      "base_package_sha256": "ac5be87f284e01f358bdd3e488d89274dfd8bf3efbd26b997f4b27b973bd1789",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-mtldq__live-tui-probe-2-inspector-check-via-fleet-inspect.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-mtldq__live-tui-probe-2-inspector-check-via-fleet-inspect.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-ng52n": {
+      "base_package_sha256": "50a197bd23aabef0256b8261fd775bbe7380aadb12fd6e3373804c885048b485",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ng52n__triage-semgrep-findings-from-security-baseline.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ng52n__triage-semgrep-findings-from-security-baseline.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-of6dw": {
+      "base_package_sha256": "a9ace95b51b45aac739cbde5fc540fb06a5b814aa826a7eed56eb4dd07d792fb",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-of6dw__harden-researcher-agent-browser-usage-add-safe-default-flags-content-boundaries-max-output-allow.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-of6dw__harden-researcher-agent-browser-usage-add-safe-default-flags-content-boundaries-max-output-allow.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-ofn3k": {
+      "base_package_sha256": "67dedc61cc49cf9b4e5d528a0c27bd84f18285b5d181aa2c0cd13de8615a6467",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ofn3k__bead-vs-inline-dispatch-refusals-render-the-same-refusal-in-two-shapes.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ofn3k__bead-vs-inline-dispatch-refusals-render-the-same-refusal-in-two-shapes.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-pg60e": {
+      "base_package_sha256": "8517b43a4b7743634fcc67ec46778588cff51ad1c79e6fc6a10a4afd3bf77ec9",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-pg60e__approfondire-nvidia-nim-nemotron-chat-template-kwargs-minimax-m3-500-deepseek-v4-convergence-cur.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-pg60e__approfondire-nvidia-nim-nemotron-chat-template-kwargs-minimax-m3-500-deepseek-v4-convergence-cur.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-pzncp": {
+      "base_package_sha256": "b9bacadffd91edb7eb958955ffd5055d3fdc664786efd0f4e0318ddd44eb7e55",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-pzncp__loader-merge-preserves-package-fallback-model-when-override-sets-fallback-models-plural-wins-vio.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-pzncp__loader-merge-preserves-package-fallback-model-when-override-sets-fallback-models-plural-wins-vio.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-q02sz": {
+      "base_package_sha256": "d7162bcb57dbdff3230e0439124ff5c88947ddee14ea2fa52e700975d60c604f",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-q02sz__renderresult-rendercall-objects-lack-invalidate-crash-tui-on-resume.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-q02sz__renderresult-rendercall-objects-lack-invalidate-crash-tui-on-resume.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-raxwi": {
+      "base_package_sha256": "f6613f5c4828a6fe8ecf318fe629fe1ff760b728c331f1634ea76c038df53269",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-raxwi__security-audit-mutable-extension-sources-and-legacy-npm-identity-aliases.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-raxwi__security-audit-mutable-extension-sources-and-legacy-npm-identity-aliases.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-rrdnt": {
+      "base_package_sha256": "014f37dce6ff343ffb26eda86c8effc8571ac4f9de6d5e183433d5d13b78368c",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-rrdnt__native-interactive-xtrm-specialists-pi-agentsession-claude-code.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-rrdnt__native-interactive-xtrm-specialists-pi-agentsession-claude-code.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-s15zn": {
+      "base_package_sha256": "62a8531800c132350c0087c4b9810c30c23b9ae8c8b5db76116e70033bc94054",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-s15zn__live-tui-probe-3-inspector-rows-re-check-after-char-per-row-fix.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-s15zn__live-tui-probe-3-inspector-rows-re-check-after-char-per-row-fix.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-shkwf": {
+      "base_package_sha256": "4c475e58396dd7da9b8df73e88685075fa70275854bbf4d0d9e7cefbd7bc24ad",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-shkwf__sanitize-config-show-catalog-resolution-diagnostics.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-shkwf__sanitize-config-show-catalog-resolution-diagnostics.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-t7rs8": {
+      "base_package_sha256": "6aca8a55cdbb9a7fc133695c5ee23152fe0635492c3edc51afd361d1cbbb2b97",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-t7rs8__stale-header-comment-native-host-claims-no-release-on-settle-code-releases-at-l551-l618.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-t7rs8__stale-header-comment-native-host-claims-no-release-on-settle-code-releases-at-l551-l618.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-tdpnn": {
+      "base_package_sha256": "e1ee557366e08c257cdec73ff2cabf1b8738e2967287781af3db7858744d75c4",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-tdpnn__globalspecialistoverrideschema-rejects-sparse-execution-overrides-with-only-fallback-fields.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-tdpnn__globalspecialistoverrideschema-rejects-sparse-execution-overrides-with-only-fallback-fields.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-tmeqw": {
+      "base_package_sha256": "f0cfd525935702671de65fa60b42b3342f4a9cfa417d6bc0851ba3d841ef8f79",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-tmeqw__security-isolate-untrusted-pr-ci-from-self-hosted-runners.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-tmeqw__security-isolate-untrusted-pr-ci-from-self-hosted-runners.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-u13z2": {
+      "base_package_sha256": "2dfb9bdca7fd60dd72a7638fbe8e4d415d1dfe52cba832711ab5d233f143b45c",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-u13z2__native-activation-live-smoke-probe.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-u13z2__native-activation-live-smoke-probe.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-u7fz3": {
+      "base_package_sha256": "6c87b35a49d6668419f0a8db71cd12ab3574395bfb68315d41723ec0197507b1",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-u7fz3__native-activation-live-smoke-probe.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-u7fz3__native-activation-live-smoke-probe.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-ucpcy": {
+      "base_package_sha256": "d0ef85cab63ea2f3ebe9447d6c55d28ac3659c64576d6eb2a855167cd83ac632",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ucpcy__sp-init-global-should-not-bake-repo-local-specialists-user-specs-into-the-global-file.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ucpcy__sp-init-global-should-not-bake-repo-local-specialists-user-specs-into-the-global-file.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-uniab": {
+      "base_package_sha256": "0e965a13fa560f998f3f220359f626bfb424ba61c50a7f0f1a5c993803892f72",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-uniab__model-validation-guide-production-shape-prompts-not-smoke-tests.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-uniab__model-validation-guide-production-shape-prompts-not-smoke-tests.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-uvg4j": {
+      "base_package_sha256": "ed8f4d68c5d7a7229e6245f1d143cd805c61d619e16cf8f2a76e0ce281f770eb",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-uvg4j__fleet-rows-show-dispatch-reason-excerpted-from-the-bead.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-uvg4j__fleet-rows-show-dispatch-reason-excerpted-from-the-bead.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-v0msh": {
+      "base_package_sha256": "090fc21577b443308a2f33f74bc8c82dedd31c428c54afc527b90fc129010c18",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-v0msh__xt-pi-bead-stamps-the-claim-under-the-launching-session-blocking-the-launcher-s-own-commits.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-v0msh__xt-pi-bead-stamps-the-claim-under-the-launching-session-blocking-the-launcher-s-own-commits.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-vaakk": {
+      "base_package_sha256": "be224c68ae0c617259bfc612ac988c1b55f315ff930784c1e11664fb8348b4cb",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-vaakk__supervisor-ts-ponytail-tactical-cuts-f3-output-fetch-narrow-ignore-helper-l1241-l1299-lineage-as.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-vaakk__supervisor-ts-ponytail-tactical-cuts-f3-output-fetch-narrow-ignore-helper-l1241-l1299-lineage-as.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-xqvut": {
+      "base_package_sha256": "d38979c2af1bc71c011ded7ae23614a66eca8c85e36d88a19af28a995bacfdaf",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-xqvut__bug-seconder-gate-cannot-verdict-from-disk-on-net-new-file-diffs.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-xqvut__bug-seconder-gate-cannot-verdict-from-disk-on-net-new-file-diffs.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-y53b5": {
+      "base_package_sha256": "ac8a048fe5762ad1ce3289c38c72c0c720e12951ab2d3e50453cd3092985a43c",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-y53b5__reviewer-certify-active-tool-startup-advisory.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-y53b5__reviewer-certify-active-tool-startup-advisory.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-yhb99": {
+      "base_package_sha256": "e0defe06fd1794d9b20520f003358ef3ab95aceaedebf1f3bc696a458b54af63",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-yhb99__bd-auto-close-hook-fires-on-failed-seconder-reviewer-completion-no-verdict-gate.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-yhb99__bd-auto-close-hook-fires-on-failed-seconder-reviewer-completion-no-verdict-gate.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-z2vpq": {
+      "base_package_sha256": "2cacf311e2ff8cba22e2b5b89e45dfb18ec737fc8318ed2433e34a56dc854a69",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-z2vpq__epic-production-harden-script-service-specialists-and-evaluate-sdk-runner.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-z2vpq__epic-production-harden-script-service-specialists-and-evaluate-sdk-runner.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    },
+    "unitAI-ziyjq": {
+      "base_package_sha256": "0b18a0cf82c9e2b58806ea072f9fbe9e2c67168a00f2bcea5f121fda100a5539",
+      "branch": "board-audit/pr-296",
+      "editable": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ziyjq__reviewer-certify-unitai-34pyf-extension-tool-exposure-fix.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260908T225634",
+      "manifest": ".xtrm/board-audit/exports/export-20260908T225634/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260908T225634/work-packages/unitAI-ziyjq__reviewer-certify-unitai-34pyf-extension-tool-exposure-fix.json",
+      "selected_record_count": 80,
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:40Z"
+    }
+  },
+  "pr_checkpoints": {
+    "296": {
+      "branch": "board-audit/pr-296",
+      "handoff": "handoffs/pr-296.json",
+      "implementation_head_sha": "3f19e5a8863e69d2689d878a12c25766ac6ed7bc",
+      "snapshot_id": "4fa0f53af96cdd71cf66dded911eb6031a492d02cea9e772d8f2e43b9ca7cd63",
+      "state": "prepared",
+      "updated_at": "2026-09-08T20:56:28Z"
+    }
+  },
+  "schema_version": "xtrm.board-audit.index.v1"
+}

@@ -1,0 +1,1 @@
+{"issue_ids":["unitAI-13xox"],"open_issue_count":1,"root_id":"unitAI-13xox","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"ba8cbb457f34a8f164de2f321fbc5108ae6ceb96f26176c6ce061c51ab59889f","title":"cli: document/automate reliable job-completion detection (ps 'waiting' hides finished keep-alive jobs)"}

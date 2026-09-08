@@ -1,0 +1,71 @@
+{
+  "content_sha256": "ed8f4d68c5d7a7229e6245f1d143cd805c61d619e16cf8f2a76e0ce281f770eb",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-08T19:56:10Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby",
+        "issue_id": "unitAI-uvg4j",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-uvg4j",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby",
+      "target_present_in_snapshot": true,
+      "target_title": "Fleet UI: operational fleet under the XTRM statusline (UI-1..UI-7)",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-uvg4j"
+  },
+  "issues": {
+    "unitAI-uvg4j": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T19:56:09Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T19:56:10Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby",
+            "issue_id": "unitAI-uvg4j",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Fleet rows show identity (specialist, model, bead, state, elapsed, spend) but not intent -- an operator with three running specialists cannot tell WHY each was dispatched without opening each bead. The bead contract already states the reason (SCOPE/SUCCESS); it just never reaches the row.\n\nSUCCESS: Each fleet row carries a short purpose excerpt (e.g. `researcher (model) · ISSUE-92 · researching activation transport · running 47s ...`), truncated to fit the row budget (~60 chars), sourced from the bead at dispatch time.\n\nSCOPE: Specialists repo only: extract the excerpt in the bead-gate/dispatch path (which already holds the validated contract -- first meaningful line of SCOPE, falling back to SUCCESS), store on ActivationSnapshot as an optional purpose field, project through toActivationView, render truncated in renderFleetRowLine, unit tests.\n\nNON_GOALS: No per-tick bd subprocess (excerpt captured once at dispatch; tick stays an in-memory read); no full SCOPE text in rows; no Claude-side work.\n\nCONSTRAINTS: Excerpt must be cheap and bounded (truncate ~60 chars, single line, whitespace-collapsed). Absent/unreadable bead => field omitted, never fabricated. Suite green, tsc clean; dist rebuilt+committed only if src changes.\n\nVALIDATION: Unit tests (excerpt extraction, truncation, omission when absent, row contains excerpt); live row shows a purpose excerpt during a contracted dispatch.\n\nOUTPUT: Code + tests on a specialists branch, evidence in bead notes.\n\nSCRUTINY: low\n",
+        "id": "unitAI-uvg4j",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "SCOPE AMENDMENT 2026-09-08 (operator directive, joins the purpose-excerpt work in the same row renderer): (1) elapsed always renders in seconds (243s, never 4m3s); (2) token totals render for settled activations too, not only running ones -- final spend stays visible after settle. Both covered by the same row-format tests.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 3,
+        "status": "open",
+        "title": "Fleet rows show dispatch reason excerpted from the bead",
+        "updated_at": "2026-09-08T20:51:44Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-uvg4j",
+  "root_title": "Fleet rows show dispatch reason excerpted from the bead",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

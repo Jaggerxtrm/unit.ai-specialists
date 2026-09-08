@@ -1,0 +1,47 @@
+{
+  "content_sha256": "62a8531800c132350c0087c4b9810c30c23b9ae8c8b5db76116e70033bc94054",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-s15zn"
+  },
+  "issues": {
+    "unitAI-s15zn": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-08T19:38:23Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The operator needs a live activation to re-check /fleet inspect after the unitAI-dygdq fix (pane render returns string[]).\n\nSUCCESS: An explorer activation runs for one to three minutes while the operator opens /fleet inspect and confirms one-normal-row-per-line rendering (or reports otherwise).\n\nSCOPE: One read-only explorer run: count test files under tests/unit and report the three largest with one line each, under 120 words. No edits.\n\nNON_GOALS: No implementation, no fixes -- observations become follow-ups.\n\nCONSTRAINTS: READ_ONLY. Short run only.\n\nVALIDATION: Activation settles PASS; operator reports inspector rendering.\n\nOUTPUT: Micro-report plus operator observation in bead notes.\n\nSCRUTINY: low\n",
+        "heartbeat_at": "2026-09-08T19:38:29Z",
+        "id": "unitAI-s15zn",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "lease_expires_at": "2026-09-08T19:43:29Z",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-08T19:38:29Z",
+        "status": "in_progress",
+        "title": "Live-TUI probe 3: inspector rows re-check after char-per-row fix",
+        "updated_at": "2026-09-08T19:38:29Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-s15zn",
+  "root_title": "Live-TUI probe 3: inspector rows re-check after char-per-row fix",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,69 @@
+{
+  "content_sha256": "ac8a048fe5762ad1ce3289c38c72c0c720e12951ab2d3e50453cd3092985a43c",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-08-29T17:07:39Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-kaae7",
+        "issue_id": "unitAI-y53b5",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "unitAI-y53b5",
+      "source_field": "dependencies",
+      "target": "unitAI-kaae7",
+      "target_present_in_snapshot": true,
+      "target_title": "Advisory startup context for available extension tools",
+      "type": "validates"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-y53b5"
+  },
+  "issues": {
+    "unitAI-y53b5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "claude/1cf8b",
+        "comment_count": 0,
+        "created_at": "2026-08-29T17:07:39Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-29T17:07:39Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-kaae7",
+            "issue_id": "unitAI-y53b5",
+            "metadata": "{}",
+            "type": "validates"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Independent adversarial review of 2d9ba97f against base 333df3e5 for unitAI-kaae7. Verify advisory derives only from runtime getActiveTools after policy activation; static reviewed guidance only; no source-string prompt injection; configured-but-denied/inactive/unhealthy tools absent; no ceremonial-use mandate; system-prompt append preserves first role=user bead task; before_agent_start ordering is reliable; package session + direct script/serve parity; Core xt pi ambient behavior not duplicated; model-backed test is real; malformed/failed advisory remains non-fatal without altering permission gate. Verify clean pushed commit, full/focused/model evidence. READ-ONLY. Return PASS/PARTIAL/FAIL and blockers; do not merge.",
+        "id": "unitAI-y53b5",
+        "issue_type": "task",
+        "notes": "REVIEWER PASS (score 92) on cca1f3e1..c250936e (branch xt/advisory-active-tools-final). Prior F1 (renderer revert) resolved by restitch: base cca1f3e1 preserves i3u2e placeholder hygiene (5 grep hits + placeholder-hygiene.test.ts present) and edfjs bead-id fix. Advisory diff byte-equals prior-approved 3-file slice of 2d9ba97f. All 10 kaae7 requirements met. Caveat: focused/full/tsc + model-backed integration run logs not attached — test-runner gate, not a diff blocker. Do not merge without those logs. Scrutiny: high, no auto-escalation (Pi-extension + tests only).",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "reviewer: certify active-tool startup advisory",
+        "updated_at": "2026-08-29T17:15:05Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-y53b5",
+  "root_title": "reviewer: certify active-tool startup advisory",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

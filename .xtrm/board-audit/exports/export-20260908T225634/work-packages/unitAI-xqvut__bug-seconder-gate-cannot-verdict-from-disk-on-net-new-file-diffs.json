@@ -1,0 +1,66 @@
+{
+  "content_sha256": "d38979c2af1bc71c011ded7ae23614a66eca8c85e36d88a19af28a995bacfdaf",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-16T16:43:38Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-oeysi",
+        "issue_id": "unitAI-xqvut",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-xqvut",
+      "source_field": "dependencies",
+      "target": "unitAI-oeysi",
+      "target_present_in_snapshot": true,
+      "target_title": "[Phase C] benchmark module + agentic-followthrough probe suite",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-xqvut"
+  },
+  "issues": {
+    "unitAI-xqvut": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-16T14:43:17Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-16T16:43:38Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-oeysi",
+            "issue_id": "unitAI-xqvut",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM:\nThe seconder specialist (config/specialists/seconder.specialist.json) is configured READ_ONLY with worktree:none. When dispatched via sp run seconder --job <exec-job>, the runtime injects NO shell/read_file/bash tools (verified across 2 dispatches: jobs eff40d + 13e21b both completed 0 tool calls in 2 turns). Its only window into the writer's diff is the injected writer_diff payload component, which truncates for diffs ~600 lines (observed 2026-06-16 on unitAI-oeysi feature/unitAI-oeysi-executor with 6 files / +622 lines).\n\nResult: seconder cannot return PASS/FAIL on diffs above some size threshold — verdict is always UNCLEAR with 'truncation' as the cited cause. The mandatory seconder gate becomes structurally unreachable.\n\nSUCCESS:\nSeconder verdicts on representative production-size diffs (500-1500 lines) successfully — either by raising prompt_limit_bytes for the writer_diff component, or by giving seconder a minimal read_file/bash tool when running under READ_ONLY + reused worktree.\n\nSCRUTINY: medium\n\nSCOPE:\n- config/specialists/seconder.specialist.json (prompt_limit_bytes is currently 80000)\n- src/specialist/runner.ts or wherever writer_diff payload is composed (search for 'writer_diff')\n- Whatever permission gate filters tools for READ_ONLY worktree:none specialists\n\nNON_GOALS:\n- no full re-architecture of payload composition\n- no change to other READ_ONLY specialists unless they share the same path\n\nCONSTRAINTS:\n- READ_ONLY behavior preserved (no write/edit)\n- Per-spec opt-in if a runtime change to tool injection is needed\n\nVALIDATION:\n- Reproduce the failure: dispatch seconder against any diff > 500 lines, verdict comes back UNCLEAR/PARTIAL with no tool calls\n- After fix: same diff verdicts with PASS/FAIL and concrete file:line findings\n\nOUTPUT: bug fix + memory update on seconder runtime semantics.\n\nDISCOVERED-FROM: orchestration of unitAI-oeysi 2026-06-16, memory key 'seconder-gate-unreachable-on-net-new-file-diffs-2026-06-16'.",
+        "id": "unitAI-xqvut",
+        "issue_type": "bug",
+        "priority": 3,
+        "status": "open",
+        "title": "BUG: seconder gate cannot verdict from disk on net-new-file diffs",
+        "updated_at": "2026-06-16T14:43:17Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-xqvut",
+  "root_title": "BUG: seconder gate cannot verdict from disk on net-new-file diffs",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

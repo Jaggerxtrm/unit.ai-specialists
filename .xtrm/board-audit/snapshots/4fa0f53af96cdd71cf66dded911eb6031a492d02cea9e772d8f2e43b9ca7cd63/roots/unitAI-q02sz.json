@@ -1,0 +1,1 @@
+{"issue_ids":["unitAI-q02sz"],"open_issue_count":1,"root_id":"unitAI-q02sz","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"c87eb9305c99b7396a8ee606912bbcde6d12f89fa3a98da9c3e0f1da507e7a8e","title":"renderResult/renderCall objects lack invalidate(), crash TUI on resume"}

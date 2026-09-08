@@ -1,0 +1,91 @@
+{
+  "content_sha256": "8a6b282dd0e6c7cc24966b115c68a60fb2e3886aadc8a2702ade50a31cb639bf",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-03T07:11:37Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-53ieb",
+        "issue_id": "unitAI-6lr8l",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-6lr8l",
+      "source_field": "dependencies",
+      "target": "unitAI-53ieb",
+      "target_present_in_snapshot": true,
+      "target_title": "debugger: classify PR 280 stop CLI test failure",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-03T07:11:37Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-yme9q",
+        "issue_id": "unitAI-6lr8l",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-6lr8l",
+      "source_field": "dependencies",
+      "target": "unitAI-yme9q",
+      "target_present_in_snapshot": true,
+      "target_title": "Keep-alive pi sessions orphan indefinitely when no orchestrator ever sends resume/close over the FIFO",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-6lr8l"
+  },
+  "issues": {
+    "unitAI-6lr8l": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-03T07:11:36Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-03T07:11:37Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-53ieb",
+            "issue_id": "unitAI-6lr8l",
+            "metadata": "{}",
+            "type": "discovered-from"
+          },
+          {
+            "created_at": "2026-09-03T07:11:37Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-yme9q",
+            "issue_id": "unitAI-6lr8l",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nPR #280 CI run 33726208807 intermittently failed tests/unit/cli/stop.test.ts orphan-reaper assertion because the test mocks process.kill but not process-liveness /proc reads. A real host PID 1234 with a different start time correctly triggers the production PID-reuse guard, making synthetic stdout empty. Muse debugger unitAI-53ieb reproduced 15/15 isolated passes and full 2172/22, classifying this as host-state-dependent test isolation.\n\n## SUCCESS\nThe test deterministically controls liveness/start-time behavior and proves both terminal-alive reap and PID-reuse/dead paths without reading host /proc state. Production control.ts and process-liveness.ts behavior remains unchanged unless an independent product bug is proven.\n\n## SCOPE\ntests/unit/cli/stop.test.ts and minimal test-only mocks/helpers. Relates to closed origin unitAI-yme9q. Evidence: /home/dawid/.cache/xtrm-validation/unitAI-jndsb.15/ci-33726208807/stop-flake-classification.txt.\n\n## NON_GOALS\nNo release branch fix, no skip/quarantine/retry masking, no weaker assertions, no production behavior change, no publication.\n\n## VALIDATION\nRun affected file repeatedly, full supported suite alone, and demonstrate independence from whether host PID 1234 exists. Reviewer confirms production PID-reuse guard remains tested.",
+        "id": "unitAI-6lr8l",
+        "issue_type": "bug",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "test: isolate orphan-reaper stop test from host PID reuse",
+        "updated_at": "2026-09-03T07:11:36Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-6lr8l",
+  "root_title": "test: isolate orphan-reaper stop test from host PID reuse",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

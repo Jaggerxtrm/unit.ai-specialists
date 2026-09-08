@@ -1,0 +1,113 @@
+{
+  "content_sha256": "558d73371072a00668baeb7878ee685ff275f811e64a397e2a4cc8ab4f8e4b50",
+  "desired_issues": {
+    "unitAI-4n9of": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T19:13:41Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T19:13:41Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-beqby",
+          "issue_id": "unitAI-4n9of",
+          "metadata": "{}",
+          "type": "discovered-from"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: The collapsed fleet line ends in \"↓/← inspect\", promising that Down/Left opens the fleet. Operator-verified live 2026-09-08: pressing Down/Left does nothing; only the collapsed line itself renders. Cause, verified in source: keyboard handling exists ONLY inside the ui.custom inspector (index.mjs keybindings.register fleet-down/up/attach/back + tui.onKey fallback) -- nothing intercepts keys in the idle editor state, and pi 0.85.1 offers passive extensions no global key API (KeybindingsManager reaches extension code only inside custom()/setEditorComponent factories, per pi dist/core/extensions/types.d.ts:117-166). The inspector opens solely via the /fleet inspect command. pi-subagents -- the copied model -- likewise opens its navigator via slash command (/subagents:sessions), never via arrow keys; the arrow premise was never true there either.\n\nSUCCESS: The collapsed line advertises only triggers that work: name /fleet inspect (and /fleet:reply when asks wait) instead of ↓/←. In-inspector keys (j/k, enter, esc) stay as-is. No dead key promises anywhere in the fleet surface (collapsed, expanded, inspector help line).\n\nSCOPE: Specialists repo fleet render strings only (collapsed line, expanded help line, inspector help line in index.mjs) + unit-test expectation updates. No API, placement, or behavior changes.\n\nNON_GOALS: Global arrow-key interception (unimplementable on this pi API -- do not attempt editor-component replacement for a hint); live-TUI proof beyond the operator re-check.\n\nCONSTRAINTS: Keep lines within existing width/overflow budgets. Suite green, tsc clean. No dist rebuild needed (no src changes; mjs ships as-is) -- verify this holds.\n\nVALIDATION: Unit tests assert the collapsed line contains /fleet inspect and no ↓/← activation promise; operator re-check in live TUI (the original reporter) confirms the hint matches reality.\n\nOUTPUT: Commit on a specialists branch, operator confirmation recorded in bead notes.\n\nSCRUTINY: low\n",
+      "id": "unitAI-4n9of",
+      "issue_type": "bug",
+      "labels": [
+        "contract:ready"
+      ],
+      "notes": "SCOPE AMENDMENT 2026-09-08 (operator directive): drop the arrows (↓/←) from the collapsed line entirely -- the inspector they gestured at is deferred, so no arrow promise of any kind. Collapsed hint must name the text-report path (/fleet shows the report; /fleet:reply answers asks). Row wording (spent->bare tokens) moved to unitAI-d99hb which owns renderFleetRowLine.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "Collapsed fleet hint promises arrow-key activation that cannot exist",
+      "updated_at": "2026-09-08T19:55:33Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-08T19:13:41Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby",
+        "issue_id": "unitAI-4n9of",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-4n9of",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby",
+      "target_present_in_snapshot": true,
+      "target_title": "Fleet UI: operational fleet under the XTRM statusline (UI-1..UI-7)",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-4n9of"
+  },
+  "issues": {
+    "unitAI-4n9of": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T19:13:41Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T19:13:41Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby",
+            "issue_id": "unitAI-4n9of",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The collapsed fleet line ends in \"↓/← inspect\", promising that Down/Left opens the fleet. Operator-verified live 2026-09-08: pressing Down/Left does nothing; only the collapsed line itself renders. Cause, verified in source: keyboard handling exists ONLY inside the ui.custom inspector (index.mjs keybindings.register fleet-down/up/attach/back + tui.onKey fallback) -- nothing intercepts keys in the idle editor state, and pi 0.85.1 offers passive extensions no global key API (KeybindingsManager reaches extension code only inside custom()/setEditorComponent factories, per pi dist/core/extensions/types.d.ts:117-166). The inspector opens solely via the /fleet inspect command. pi-subagents -- the copied model -- likewise opens its navigator via slash command (/subagents:sessions), never via arrow keys; the arrow premise was never true there either.\n\nSUCCESS: The collapsed line advertises only triggers that work: name /fleet inspect (and /fleet:reply when asks wait) instead of ↓/←. In-inspector keys (j/k, enter, esc) stay as-is. No dead key promises anywhere in the fleet surface (collapsed, expanded, inspector help line).\n\nSCOPE: Specialists repo fleet render strings only (collapsed line, expanded help line, inspector help line in index.mjs) + unit-test expectation updates. No API, placement, or behavior changes.\n\nNON_GOALS: Global arrow-key interception (unimplementable on this pi API -- do not attempt editor-component replacement for a hint); live-TUI proof beyond the operator re-check.\n\nCONSTRAINTS: Keep lines within existing width/overflow budgets. Suite green, tsc clean. No dist rebuild needed (no src changes; mjs ships as-is) -- verify this holds.\n\nVALIDATION: Unit tests assert the collapsed line contains /fleet inspect and no ↓/← activation promise; operator re-check in live TUI (the original reporter) confirms the hint matches reality.\n\nOUTPUT: Commit on a specialists branch, operator confirmation recorded in bead notes.\n\nSCRUTINY: low\n",
+        "id": "unitAI-4n9of",
+        "issue_type": "bug",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "SCOPE AMENDMENT 2026-09-08 (operator directive): drop the arrows (↓/←) from the collapsed line entirely -- the inspector they gestured at is deferred, so no arrow promise of any kind. Collapsed hint must name the text-report path (/fleet shows the report; /fleet:reply answers asks). Row wording (spent->bare tokens) moved to unitAI-d99hb which owns renderFleetRowLine.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Collapsed fleet hint promises arrow-key activation that cannot exist",
+        "updated_at": "2026-09-08T19:55:33Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-4n9of",
+  "root_title": "Collapsed fleet hint promises arrow-key activation that cannot exist",
+  "roundtrip": {
+    "base_package_sha256": "558d73371072a00668baeb7878ee685ff275f811e64a397e2a4cc8ab4f8e4b50",
+    "base_record_sha256": {
+      "unitAI-4n9of": "fae2afbd8eb68893a00f438bb1ba7c2090dd892c8974362d99d05bdbe17cc06a"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-08T20:56:35Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
