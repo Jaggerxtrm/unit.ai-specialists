@@ -92,7 +92,7 @@ export function createSpecialistStatusTool(
       // projection is the host's own `ActivationSnapshot`, so this reads the same whether
       // the activation was dispatched over MCP or by the Pi extension.
       const host = getHost?.();
-      const activations: ActivationView[] = host ? host.list().map(toActivationView) : [];
+      const activations: ActivationView[] = host ? host.list().map(s => toActivationView(s)) : [];
       const pending_asks: PendingAskView[] = host ? host.pendingAsks().map(toPendingAskView) : [];
 
       // The read half of Phase 14. A completion notification is pushed toward a live

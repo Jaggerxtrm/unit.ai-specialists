@@ -59,9 +59,37 @@ import {
   type ActivationResult,
   type ActivationSnapshot,
   type ActivationState,
+  type ActivationTokenUsage,
+  type LiveActivationStats,
   type WorkspaceAccess,
   type WorkspaceIdentity,
 } from './types.js';
+
+const TOKEN_USAGE_KEYS = [
+  'input_tokens',
+  'output_tokens',
+  'cache_creation_tokens',
+  'cache_read_tokens',
+  'reasoning_tokens',
+  'tool_tokens',
+  'total_tokens',
+] as const;
+
+/** Latest spend counts carried by a session event, if any. Accepts both snake_case and camelCase. */
+function extractTokenUsage(event: PiAgentSessionEvent): ActivationTokenUsage | undefined {
+  const candidates = [event.token_usage, event.tokenUsage, event.usage];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const record = candidate as Record<string, unknown>;
+    const usage: ActivationTokenUsage = {};
+    for (const key of TOKEN_USAGE_KEYS) {
+      const value = record[key];
+      if (typeof value === 'number' && Number.isFinite(value)) usage[key] = value;
+    }
+    if (Object.keys(usage).length > 0) return usage;
+  }
+  return undefined;
+}
 
 /** Permission tiers that can mutate the workspace. Derived from the resolved grant. */
 const WRITE_TIERS = new Set(['MEDIUM', 'HIGH']);
@@ -487,6 +515,7 @@ export class NativeActivationHost {
       requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
+      ...(execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {}),
       startedAt,
       lastActivityAt: startedAt,
     };
@@ -522,6 +551,8 @@ export class NativeActivationHost {
     emit: (name: string, payload?: Record<string, unknown>) => void,
   ): void {
     snapshot.lastActivityAt = this.now();
+    const usage = extractTokenUsage(event);
+    if (usage) snapshot.tokenUsage = { ...snapshot.tokenUsage, ...usage };
 
     // Offer the RAW event before any translation. Deliberately not wrapped in try/catch:
     // the sink swallows its own errors, and a forensic concern must never alter activation
@@ -771,6 +802,22 @@ export class NativeActivationHost {
   /** Current state of one activation, or undefined if unknown to this host. */
   inspect(activationId: string): ActivationSnapshot | undefined {
     return this.registry.projection(activationId);
+  }
+
+  /**
+   * Live per-activation stats over existing in-memory state: one Map read plus
+   * arithmetic, never an observability.db query, so the 1s widget tick stays cheap.
+   */
+  liveStats(activationId: string): LiveActivationStats | undefined {
+    const snapshot = this.registry.projection(activationId);
+    if (!snapshot) return undefined;
+    return {
+      activationId: snapshot.activationId,
+      elapsed_s: Math.max(0, Math.floor((this.now() - snapshot.startedAt) / 1000)),
+      last_activity_at: snapshot.lastActivityAt,
+      ...(snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {}),
+      ...(snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {}),
+    };
   }
 
   /**

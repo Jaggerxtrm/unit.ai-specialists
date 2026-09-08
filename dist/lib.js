@@ -21013,6 +21013,32 @@ function nextAttemptId(current) {
 var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
 
 // src/activation/native-host.ts
+var TOKEN_USAGE_KEYS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_creation_tokens",
+  "cache_read_tokens",
+  "reasoning_tokens",
+  "tool_tokens",
+  "total_tokens"
+];
+function extractTokenUsage(event) {
+  const candidates = [event.token_usage, event.tokenUsage, event.usage];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object")
+      continue;
+    const record = candidate;
+    const usage = {};
+    for (const key of TOKEN_USAGE_KEYS) {
+      const value = record[key];
+      if (typeof value === "number" && Number.isFinite(value))
+        usage[key] = value;
+    }
+    if (Object.keys(usage).length > 0)
+      return usage;
+  }
+  return;
+}
 var WRITE_TIERS = new Set(["MEDIUM", "HIGH"]);
 var NULL_FORENSIC_SINK = { emit: () => {} };
 
@@ -21236,6 +21262,7 @@ class NativeActivationHost {
       requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
+      ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
       startedAt,
       lastActivityAt: startedAt
     };
@@ -21258,6 +21285,9 @@ class NativeActivationHost {
   }
   onSessionEvent(snapshot, event, emit) {
     snapshot.lastActivityAt = this.now();
+    const usage = extractTokenUsage(event);
+    if (usage)
+      snapshot.tokenUsage = { ...snapshot.tokenUsage, ...usage };
     this.forensics.sessionEvent?.({
       activationId: snapshot.activationId,
       attemptId: snapshot.attemptId,
@@ -21439,6 +21469,18 @@ class NativeActivationHost {
   inspect(activationId) {
     return this.registry.projection(activationId);
   }
+  liveStats(activationId) {
+    const snapshot = this.registry.projection(activationId);
+    if (!snapshot)
+      return;
+    return {
+      activationId: snapshot.activationId,
+      elapsed_s: Math.max(0, Math.floor((this.now() - snapshot.startedAt) / 1000)),
+      last_activity_at: snapshot.lastActivityAt,
+      ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+      ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {}
+    };
+  }
   wirePeerDelivery(peer) {
     const repoRoot = peer.repoRoot ?? this.cwd;
     return createPeerDelivery({
@@ -21575,7 +21617,7 @@ function textOf(message) {
   return content.filter((part) => typeof part === "object" && part !== null && part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
 }
 // src/tools/specialist/activation.tool.ts
-function toActivationView(snapshot) {
+function toActivationView(snapshot, nowMs = Date.now()) {
   return {
     activation_id: snapshot.activationId,
     participant_id: snapshot.participantId,
@@ -21589,7 +21631,11 @@ function toActivationView(snapshot) {
     ...snapshot.piSessionId ? { pi_session_id: snapshot.piSessionId } : {},
     ...snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {},
     resolved_model: snapshot.resolvedModel,
-    model_override: snapshot.modelOverride
+    model_override: snapshot.modelOverride,
+    elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
+    ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {},
+    ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+    last_activity_at: snapshot.lastActivityAt
   };
 }
 function toPendingAskView(ask) {

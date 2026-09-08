@@ -34,7 +34,7 @@
 
 import * as z from 'zod';
 import type { NativeActivationHost } from '../../activation/native-host.js';
-import type { ActivationSnapshot } from '../../activation/types.js';
+import type { ActivationSnapshot, ActivationTokenUsage } from '../../activation/types.js';
 import { DispatchRejectedError } from '../../activation/types.js';
 import type { PendingAsk } from '../../activation/interaction.js';
 import type { RuntimeEventPusher } from '../../activation/async-events.js';
@@ -63,9 +63,17 @@ export interface ActivationView {
   requested_model?: string;
   resolved_model: string;
   model_override: boolean;
+  /** Seconds since dispatch, from the in-memory snapshot — never an observability.db query. */
+  elapsed_s: number;
+  /** Cumulative spend counts. Omitted until the first usage event (never zero-filled). */
+  token_usage?: ActivationTokenUsage;
+  /** Thinking level from session creation. Omitted when unset (never fabricated). */
+  thinking_level?: string;
+  /** Last session-event time. Per-tool "doing X now" inference is out of scope. */
+  last_activity_at: number;
 }
 
-export function toActivationView(snapshot: ActivationSnapshot): ActivationView {
+export function toActivationView(snapshot: ActivationSnapshot, nowMs: number = Date.now()): ActivationView {
   return {
     activation_id: snapshot.activationId,
     participant_id: snapshot.participantId,
@@ -80,6 +88,10 @@ export function toActivationView(snapshot: ActivationSnapshot): ActivationView {
     ...(snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {}),
     resolved_model: snapshot.resolvedModel,
     model_override: snapshot.modelOverride,
+    elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
+    ...(snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {}),
+    ...(snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {}),
+    last_activity_at: snapshot.lastActivityAt,
   };
 }
 

@@ -1,6 +1,6 @@
 import * as z from 'zod';
 import type { NativeActivationHost } from '../../activation/native-host.js';
-import type { ActivationSnapshot } from '../../activation/types.js';
+import type { ActivationSnapshot, ActivationTokenUsage } from '../../activation/types.js';
 import type { PendingAsk } from '../../activation/interaction.js';
 import type { RuntimeEventPusher } from '../../activation/async-events.js';
 import type { ActivationResult } from '../../activation/types.js';
@@ -27,8 +27,16 @@ export interface ActivationView {
     requested_model?: string;
     resolved_model: string;
     model_override: boolean;
+    /** Seconds since dispatch, from the in-memory snapshot — never an observability.db query. */
+    elapsed_s: number;
+    /** Cumulative spend counts. Omitted until the first usage event (never zero-filled). */
+    token_usage?: ActivationTokenUsage;
+    /** Thinking level from session creation. Omitted when unset (never fabricated). */
+    thinking_level?: string;
+    /** Last session-event time. Per-tool "doing X now" inference is out of scope. */
+    last_activity_at: number;
 }
-export declare function toActivationView(snapshot: ActivationSnapshot): ActivationView;
+export declare function toActivationView(snapshot: ActivationSnapshot, nowMs?: number): ActivationView;
 /** An outstanding question or escalation, projected for a coordinator that must answer it. */
 export interface PendingAskView {
     message_id: string;
@@ -158,6 +166,14 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
         requested_model?: string;
         resolved_model: string;
         model_override: boolean;
+        /** Seconds since dispatch, from the in-memory snapshot — never an observability.db query. */
+        elapsed_s: number;
+        /** Cumulative spend counts. Omitted until the first usage event (never zero-filled). */
+        token_usage?: ActivationTokenUsage;
+        /** Thinking level from session creation. Omitted when unset (never fabricated). */
+        thinking_level?: string;
+        /** Last session-event time. Per-tool "doing X now" inference is out of scope. */
+        last_activity_at: number;
         status: "dispatched";
     } | {
         step_contract: {

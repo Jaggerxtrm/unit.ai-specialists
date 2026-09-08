@@ -95,8 +95,40 @@ export interface ActivationSnapshot {
     resolvedModel: string;
     /** True iff an explicit `modelOverride` was supplied. `requestedModel` carries which. */
     modelOverride: boolean;
+    /** Thinking level passed to session creation. Absent when unset — never fabricated. */
+    thinkingLevel?: string;
+    /** Cumulative spend counts from the session event stream. Absent until the first usage event. */
+    tokenUsage?: ActivationTokenUsage;
     startedAt: number;
     lastActivityAt: number;
+}
+/**
+ * Cumulative token spend for one activation.
+ *
+ * Spend counts only. Window-context % is coordinator-owned (it needs the model's context
+ * window, which the host never sees) and is deliberately not computed here.
+ */
+export interface ActivationTokenUsage {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_tokens?: number;
+    cache_read_tokens?: number;
+    reasoning_tokens?: number;
+    tool_tokens?: number;
+    total_tokens?: number;
+}
+/**
+ * Live per-activation stats over existing in-memory state.
+ *
+ * A Map read plus arithmetic — never an observability.db query — so the 1s widget tick
+ * stays cheap. Window-context % is omitted by design (see `ActivationTokenUsage`).
+ */
+export interface LiveActivationStats {
+    activationId: ActivationId;
+    elapsed_s: number;
+    last_activity_at: number;
+    thinking_level?: string;
+    token_usage?: ActivationTokenUsage;
 }
 /**
  * The validated outcome of an activation.

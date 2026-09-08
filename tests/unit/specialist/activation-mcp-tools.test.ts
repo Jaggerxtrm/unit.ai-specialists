@@ -327,7 +327,13 @@ describe('specialist_status — an MCP activation reads back identically', () =>
 
     // VALIDATION 4 is an IDENTITY claim, so assert identity: what status reports is the
     // host's own snapshot projected by the same function, not a shape invented for MCP.
-    expect(activations[0]).toEqual(toActivationView(host.list()[0]));
+    // elapsed_s is time-dependent (two projections a millisecond apart can straddle a
+    // second boundary), so it is compared separately as a non-negative number.
+    const { elapsed_s: _tick, ...reported } = activations[0];
+    const { elapsed_s: _retick, ...reprojected } = toActivationView(host.list()[0]) as Record<string, unknown>;
+    expect(reported).toEqual(reprojected);
+    expect(typeof _tick).toBe('number');
+    expect(_tick as number).toBeGreaterThanOrEqual(0);
   });
 
   it('reports an empty Fleet rather than failing when no host is wired', async () => {
