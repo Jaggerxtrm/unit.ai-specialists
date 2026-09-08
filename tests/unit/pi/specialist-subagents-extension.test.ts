@@ -159,15 +159,17 @@ function makeFakePi({ flags = {} } = {}) {
  * the way they would if each lane kept its own.
  */
 function makeFakeCtx({ hasUI = true, mode = 'tui', sessionId = 'sess-1' } = {}) {
-  const painted = { widgets: {}, statuses: {}, notices: [] };
+  const painted = { widgets: {}, widgetOptions: {}, statuses: {}, notices: [], customs: [] };
   return {
     hasUI,
     mode,
     sessionManager: { getSessionId: () => sessionId },
     ui: {
-      setWidget: (key, content) => { painted.widgets[key] = content; },
+      setWidget: (key, content, options) => { painted.widgets[key] = content; painted.widgetOptions[key] = options; },
       setStatus: (key, text) => { painted.statuses[key] = text; },
       notify: (message, level = 'info') => { painted.notices.push([message, level]); },
+      // Default: RPC degrade — custom() returns undefined like rpc-mode.ts.
+      custom: (...args) => { painted.customs.push(args); return Promise.resolve(undefined); },
     },
     painted,
     get notices() { return painted.notices; },
@@ -746,15 +748,15 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
   afterEach(() => { vi.useRealTimers(); });
 
   /** Boot the extension with a live host and a UI context already captured. */
-  async function boot(ctxOptions) {
+  async function boot(ctxOptions, extOptions = {}) {
     const mod = await loadExtension();
     const pi = makeFakePi();
     const { host, calls } = makeFakeHost();
-    mod.default(pi, { createHost: () => host });
+    mod.default(pi, { createHost: () => host, ...extOptions });
     const ctx = makeFakeCtx(ctxOptions);
     await pi.fire('session_start', { type: 'session_start' }, ctx);
     const command = (name) => pi.commands.find((c) => c.name === name);
-    return { pi, host, calls, ctx, command };
+    return { pi, host, calls, ctx, command, mod };
   }
 
   it('registers the three operator commands', async () => {
@@ -762,26 +764,67 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(pi.commands.map((c) => c.name)).toEqual(['fleet', 'fleet:reply', 'fleet:stop']);
   });
 
-  it('paints the Fleet and pending asks into a widget without a tool call', async () => {
-    const { pi, host, ctx } = await boot();
-    // The host exists only after a tool call, so the operator's first paint is
-    // empty — this is the state the bead reported as "nothing rendered".
-    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
-
+  it('registers a footer section when the seam exists, and paints no widget and no setStatus', async () => {
+    const sections = new Map();
+    const registerFooterSection = (key, renderBelow) => { sections.set(key, renderBelow); return () => { sections.delete(key); }; };
+    const { pi, ctx } = await boot(undefined, { registerFooterSection });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});   // specialist_status creates the host
     await command_tick();
+    expect(sections.has('specialist-fleet')).toBe(true);
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+    const lines = sections.get('specialist-fleet')(80);
+    expect(lines[0]).toContain('SPECIALISTS');
+    expect(lines[0]).toContain('need reply');
+  });
 
+  it('falls back to a belowEditor mirror when the seam is absent, never aboveEditor', async () => {
+    const { pi, ctx } = await boot();
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    await command_tick();
     const lines = ctx.painted.widgets['specialist-fleet'];
     expect(lines).toBeDefined();
-    expect(lines[0]).toContain('1 activation(s), 1 pending ask(s)');
-    expect(lines.join('\n')).toContain('explorer');
-    expect(lines.join('\n')).toContain('act:aaaa');
-    expect(lines.join('\n')).toContain('Which option?');
-    expect(lines.join('\n')).toContain('/fleet:reply msg:1');
-    expect(ctx.painted.statuses['specialist-fleet']).toBe('specialists: 1 · 1 waiting');
-    // The projection is re-read every paint, never cached.
-    expect(host.list).toHaveBeenCalled();
-    expect(host.pendingAsks).toHaveBeenCalled();
+    expect(lines[0]).toContain('SPECIALISTS');
+    expect(ctx.painted.widgetOptions['specialist-fleet']).toMatchObject({ placement: 'belowEditor' });
+    expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+  });
+
+  it('collapsed line prioritises needs-reply and row lines carry no forensic ids', async () => {
+    const { mod } = await boot();
+    expect(mod.renderCollapsedLine({ activations: [], asks: [] })).toContain('idle');
+    const fleet = {
+      activations: [{
+        activation_id: 'act:aaaa', participant_id: 'p', attempt_id: 'a',
+        specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+        resolved_model: 'm', thinking_level: 'high', elapsed_s: 180,
+        token_usage: { input: 800, output: 400, cache: 0 }, last_activity_at: Math.floor(Date.now() / 1000),
+      }],
+      asks: [{ message_id: 'msg:1', kind: 'question', activation_id: 'act:aaaa', from: 'x', body: 'Which option?' }],
+    };
+    expect(mod.renderCollapsedLine(fleet)).toContain('1 need reply');
+    const rows = mod.renderSectionLines(fleet, { expanded: true });
+    expect(rows[1]).toContain('explorer');
+    expect(rows[1]).toContain('bd-1');
+    expect(rows[1]).not.toContain('act:aaaa');
+    expect(rows[1]).not.toContain('msg:1');
+  });
+
+  it('bounds expanded rows with an overflow line', async () => {
+    const { mod } = await boot();
+    const activations = Array.from({ length: mod.FLEET_MAX_ROWS + 3 }, (_, i) => ({
+      activation_id: `act:${i}`, specialist: `spec-${i}`, bead_id: 'bd-1', state: 'running',
+      resolved_model: 'm', elapsed_s: 10,
+    }));
+    const lines = mod.renderSectionLines({ activations, asks: [] }, { expanded: true });
+    expect(lines).toHaveLength(mod.FLEET_MAX_ROWS + 2); // collapsed + rows + overflow
+    expect(lines.at(-1)).toContain('+3 more');
+  });
+
+  it('/fleet inspect degrades to text when ui.custom is unavailable (RPC)', async () => {
+    const { command, ctx } = await boot({ hasUI: true, mode: 'tui' });
+    ctx.ui.custom = undefined;
+    await command('fleet').handler('inspect', ctx);
+    expect(ctx.painted.notices.at(-1)[0]).toContain('SPECIALISTS');
   });
 
   it('clears the widget when the Fleet is empty rather than painting a bare header', async () => {
@@ -807,7 +850,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     const { pi, ctx, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command('fleet').handler('', ctx);
-    expect(ctx.painted.notices.at(-1)[0]).toContain('1 activation(s), 1 pending ask(s)');
+    expect(ctx.painted.notices.at(-1)[0]).toContain('SPECIALISTS');
   });
 
   it('/fleet:reply answers by message_id and reports an unknown id instead of silently passing', async () => {

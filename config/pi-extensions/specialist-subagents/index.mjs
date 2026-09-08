@@ -97,6 +97,69 @@ export function installCoordinatorFence(pi, deps = {}) {
 /** Default coordinator ParticipantId: <participant_kind>::<participant_role>, matching MCP. */
 export const DEFAULT_REQUESTED_BY = 'adapter::pi-extension';
 
+export const FLEET_MAX_ROWS = 8;
+
+export function fleetSummaryOf({ activations, asks }) {
+  const act = activations ?? [];
+  const pending = asks ?? [];
+  const active = act.filter((v) => v.state === 'running').length;
+  return { active, waiting: act.length - active, needsReply: pending.length, total: act.length };
+}
+
+export function formatElapsedShort(elapsedS) {
+  const s = Math.max(0, Math.floor(elapsedS ?? 0));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h${m % 60 ? `${m % 60}m` : ''}`;
+}
+
+// Spend counts only. Window-context % is coordinator-owned and out of scope;
+// never fabricated here (unitAI-beqby.3).
+export function formatSpendShort(tokenUsage) {
+  const total = (tokenUsage?.input ?? 0) + (tokenUsage?.output ?? 0) + (tokenUsage?.cache ?? 0);
+  if (!tokenUsage || total <= 0) return '—';
+  if (total < 1000) return `${total}`;
+  if (total < 10000) return `${(total / 1000).toFixed(1)}k`;
+  return `${Math.round(total / 1000)}k`;
+}
+
+/** Collapsed line. Needs-reply outranks idle: always shown when nonzero. */
+export function renderCollapsedLine({ activations, asks }) {
+  const { active, waiting, needsReply, total } = fleetSummaryOf({ activations, asks });
+  if (total === 0 && needsReply === 0) return 'SPECIALISTS · idle · ↓/← inspect';
+  const parts = [`${active} active`, `${waiting} waiting`];
+  if (needsReply > 0) parts.push(`${needsReply} need reply`);
+  return `SPECIALISTS · ${parts.join(' · ')} · ↓/← inspect`;
+}
+
+/** One row per specialist. Forensic IDs stay in the inspector, never here. */
+export function renderFleetRowLine(view) {
+  const model = view.thinking_level
+    ? `${view.resolved_model ?? '?model'}/${view.thinking_level}`
+    : (view.resolved_model ?? '?model');
+  const elapsed = formatElapsedShort(view.elapsed_s);
+  const tokens = formatSpendShort(view.token_usage);
+  const idleS = view.last_activity_at != null
+    ? Math.max(0, Math.floor(Date.now() / 1000) - view.last_activity_at)
+    : null;
+  const activity = view.state === 'running'
+    ? (idleS != null && idleS > 30 ? `idle ${formatElapsedShort(idleS)}` : 'working')
+    : view.state;
+  return `${view.specialist} ${model} ${view.bead_id ?? '—'} ${view.state} ${elapsed} ${tokens} ${activity}`;
+}
+
+/** Footer-section lines: collapsed + bounded expanded rows with overflow. */
+export function renderSectionLines({ activations, asks }, { expanded = false } = {}) {
+  const lines = [renderCollapsedLine({ activations, asks })];
+  if (!expanded) return lines;
+  const rows = (activations ?? []).slice(0, FLEET_MAX_ROWS).map(renderFleetRowLine);
+  lines.push(...rows.map((r) => `  ${r}`));
+  const overflow = (activations ?? []).length - rows.length;
+  if (overflow > 0) lines.push(`  +${overflow} more`);
+  return lines;
+}
+
 // ── Forensic wiring (unitAI-rrdnt.37.1) ──────────────────────────────────────
 //
 // Native activations must be answerable from the SAME observability.db the legacy
@@ -1130,58 +1193,127 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     };
   };
 
-  /** One line per activation, then one per outstanding ask. Nothing else fits. */
-  const renderFleetLines = ({ activations, asks }) => {
-    const lines = [`Specialists — ${activations.length} activation(s), ${asks.length} pending ask(s)`];
-    for (const view of activations) {
-      lines.push(
-        `  ${view.state.padEnd(9)} ${view.specialist} ${view.bead_id} ` +
-        `[${view.access}] ${view.activation_id}`,
-      );
-    }
-    for (const ask of asks) {
-      // The body is the operator's whole reason to look, but it must not push
-      // the editor off the screen; one truncated line keeps the panel bounded.
-      const body = ask.body.replace(/\s+/g, ' ').trim();
-      lines.push(
-        `  ASK ${ask.kind} ${ask.message_id} — ` +
-        `${body.length > 96 ? `${body.slice(0, 95)}…` : body}`,
-      );
-      lines.push(`      answer with: /fleet:reply ${ask.message_id} <your answer>`);
-    }
-    return lines;
+  /** Fleet view-model helpers (projection-only; no cached state). */
+  const fleetSummary = ({ activations, asks }) => fleetSummaryOf({ activations, asks });
+  const formatFleetElapsed = (s) => formatElapsedShort(s);
+  const formatFleetTokens = (u) => formatSpendShort(u);
+  const renderFleetCollapsed = (fleet) => renderCollapsedLine(fleet);
+  const renderFleetRow = (view) => renderFleetRowLine(view);
+  const renderFleetSection = (fleet, opts) => renderSectionLines(fleet, opts);
+
+  // UI-1..UI-7 operational fleet (unitAI-beqby.4). Footer section below the
+  // statusline is primary; belowEditor mirror is fallback only when the seam
+  // is absent; silent skip when neither exists. No setStatus line. The section
+  // render is a projection: readFleet() afresh on every render, nothing cached.
+  let fleetExpanded = false;
+  let fleetUnregister = null;
+
+  const renderBelow = () => {
+    if (!fleetVisible) return [];
+    const fleet = readFleet();
+    if (fleet.activations.length === 0 && fleet.asks.length === 0) return [];
+    return renderFleetSection(fleet, { expanded: fleetExpanded });
   };
 
-  const paintFleet = () => {
+  // Seam lookup order: explicit test seam, then the core footer's global hook,
+  // then absent. The core module is not importable from this tree, so the
+  // runtime shares it via globalThis (set by custom-footer when loaded).
+  const findFooterSeam = () => {
+    if (typeof options.registerFooterSection === 'function') return options.registerFooterSection;
+    try {
+      const hook = globalThis.__registerFooterSection;
+      if (typeof hook === 'function') return hook;
+    } catch { /* no global — fallback decides */ }
+    return null;
+  };
+
+  const paintFleetFallback = () => {
     const ctx = liveContext({ requireUI: true });
     if (!ctx) return;
+    if (typeof ctx.ui?.setWidget !== 'function') return; // RPC/headless: silent skip
     const fleet = readFleet();
-    // An empty Fleet clears the panel rather than rendering a header for
-    // nothing — an operator with no activations should see their editor.
     const content =
       fleetVisible && (fleet.activations.length > 0 || fleet.asks.length > 0)
-        ? renderFleetLines(fleet)
+        ? renderFleetSection(fleet, { expanded: fleetExpanded })
         : undefined;
-    ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'aboveEditor' });
-    ctx.ui.setStatus(
-      FLEET_WIDGET_KEY,
-      fleet.asks.length > 0
-        ? `specialists: ${fleet.activations.length} · ${fleet.asks.length} waiting`
-        : fleet.activations.length > 0
-          ? `specialists: ${fleet.activations.length}`
-          : undefined,
-    );
+    try {
+      ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'belowEditor' });
+    } catch { /* a widget that cannot paint must not break the session */ }
+  };
+  const paintFleet = () => { if (!fleetUnregister) paintFleetFallback(); };
+
+  // Inspector: keyboard navigator over the live projection. TUI-only; under
+  // RPC/headless ui.custom is absent or returns undefined — degrade to text.
+  const openFleetInspector = async (ctx) => {
+    const fleet = readFleet();
+    const detail = (view) => {
+      const lines = [
+        `${view.specialist} · ${view.state}`,
+        `model: ${view.resolved_model ?? '?'}${view.thinking_level ? `/${view.thinking_level}` : ''}`,
+        `bead: ${view.bead_id ?? '—'} · elapsed: ${formatFleetElapsed(view.elapsed_s)} · tokens: ${formatFleetTokens(view.token_usage)}`,
+        `activation_id: ${view.activation_id}`,
+        `participant_id: ${view.participant_id ?? '—'} · attempt_id: ${view.attempt_id ?? '—'}`,
+      ];
+      const ask = fleet.asks.find((a) => a.activation_id === view.activation_id);
+      if (ask) lines.push(`ask ${ask.kind} ${ask.message_id}: ${String(ask.body ?? '').slice(0, 200)}`);
+      return lines.join('\n');
+    };
+    if (!ctx?.hasUI || ctx?.mode === 'print' || ctx?.mode === 'json' || typeof ctx?.ui?.custom !== 'function') {
+      report(ctx ?? { hasUI: false }, renderFleetSection(fleet, { expanded: true }).join('\n'));
+      return false;
+    }
+    let selected = 0;
+    const count = () => Math.max(1, fleet.activations.length);
+    try {
+      const result = await ctx.ui.custom((tui, theme, keybindings, done) => {
+        const render = () => renderFleetSection(readFleet(), { expanded: true })
+          .map((line, i) => (i === selected + 1 ? `▸ ${line.trim()}` : line)).join('\n');
+        const move = (d) => { selected = (selected + d + count()) % count(); try { tui.requestRender?.(); } catch {} };
+        const attachSelected = () => {
+          const views = readFleet().activations;
+          const view = views[selected];
+          if (!view || !host) { done(undefined); return; }
+          try {
+            const attachment = host.attach?.(view.activation_id, () => {});
+            if (attachment) { try { attachment.detach(); } catch {} }
+          } catch {}
+          report(ctx, detail(view));
+        };
+        try {
+          keybindings?.register?.('fleet-down', ['down', 'j'], () => move(1));
+          keybindings?.register?.('fleet-up', ['up', 'k'], () => move(-1));
+          keybindings?.register?.('fleet-attach', ['enter'], () => attachSelected());
+          keybindings?.register?.('fleet-back', ['escape'], () => done(undefined));
+        } catch {}
+        try { tui.onKey?.((key) => {
+          if (key === 'down' || key === 'j') move(1);
+          else if (key === 'up' || key === 'k') move(-1);
+          else if (key === 'enter') attachSelected();
+          else if (key === 'escape') done(undefined);
+        }); } catch {}
+        return { dispose() {}, render };
+      }, { overlay: false });
+      void result;
+      return true;
+    } catch {
+      report(ctx, renderFleetSection(fleet, { expanded: true }).join('\n'));
+      return false;
+    }
   };
 
   pi.on('session_start', (_event, ctx) => {
     if (!ctx.hasUI) return;
+    const seam = findFooterSeam();
+    if (seam && !fleetUnregister) {
+      try { fleetUnregister = seam(FLEET_WIDGET_KEY, renderBelow) ?? null; }
+      catch { fleetUnregister = null; }
+    }
+    if (fleetUnregister) return; // section renders on the footer's own cycle
     if (fleetTimer) clearInterval(fleetTimer);
-    // The tick is a null check until the first dispatch creates a host, so an
-    // operator who never dispatches pays nothing for the surface being present.
-    fleetTimer = setInterval(paintFleet, FLEET_POLL_MS);
-    // Do not hold the event loop open on the poll alone.
+    // Fallback tick is a null check until the first dispatch creates a host.
+    fleetTimer = setInterval(paintFleetFallback, FLEET_POLL_MS);
     fleetTimer.unref?.();
-    paintFleet();
+    paintFleetFallback();
   });
 
   /** Report to the operator on whichever surface the current mode actually has. */
@@ -1191,15 +1323,15 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   };
 
   pi.registerCommand('fleet', {
-    description: 'Show the Specialist Fleet and any pending asks. Usage: /fleet [show|hide]',
+    description: 'Show the Specialist Fleet and any pending asks. Usage: /fleet [show|hide|inspect|expand|collapse]',
     getArgumentCompletions: (prefix) => {
       const normalized = prefix.trim().toLowerCase();
-      const items = ['show', 'hide']
+      const items = ['show', 'hide', 'inspect', 'expand', 'collapse']
         .filter((value) => value.startsWith(normalized))
         .map((value) => ({
           value,
           label: value,
-          description: value === 'show' ? 'Show the Fleet panel.' : 'Hide the Fleet panel.',
+          description: value === 'show' ? 'Show the Fleet panel.' : value === 'hide' ? 'Hide the Fleet panel.' : value === 'inspect' ? 'Open the keyboard inspector.' : value === 'expand' ? 'Expand rows in the footer section.' : 'Collapse to one line.',
         }));
       return items.length > 0 ? items : null;
     },
@@ -1207,13 +1339,16 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       const action = args.trim().split(/\s+/, 1)[0] ?? '';
       if (action === 'hide') fleetVisible = false;
       else if (action === 'show') fleetVisible = true;
+      else if (action === 'expand') fleetExpanded = true;
+      else if (action === 'collapse') fleetExpanded = false;
+      else if (action === 'inspect') { await openFleetInspector(ctx); return; }
       else if (action !== '') {
-        report(ctx, 'Usage: /fleet [show|hide]', 'warning');
+        report(ctx, 'Usage: /fleet [show|hide|inspect|expand|collapse]', 'warning');
         return;
       }
       // The panel is only half the answer: in json/print mode there is no
       // widget at all, so the command always reports the Fleet in text too.
-      report(ctx, renderFleetLines(readFleet()).join('\n'));
+      report(ctx, renderFleetSection(readFleet(), { expanded: fleetExpanded }).join('\n'));
       paintFleet();
     },
   });
@@ -1260,7 +1395,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         return;
       }
       report(ctx, `Answered ${message.messageId} on activation ${message.activationId}.`);
-      paintFleet();
+      paintFleetFallback();
     },
   });
 
@@ -1293,7 +1428,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       }
       await disposeActivation(activationId, reason || 'pi operator request');
       report(ctx, `Stopped ${activationId}.`);
-      paintFleet();
+      paintFleetFallback();
 
     },
   });
@@ -1305,6 +1440,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       clearInterval(fleetTimer);
       fleetTimer = null;
     }
+    try { fleetUnregister?.(); } catch {}
+    fleetUnregister = null;
     if (!host) return;
     if (!host) return;
     for (const snapshot of host.list()) {
