@@ -59915,6 +59915,106 @@ var init_epic = __esm(() => {
   RUNNING_STATUSES = new Set(["starting", "running", "waiting", "degraded"]);
 });
 
+// src/specialist/native-activation-summary.ts
+function stateForEventName(eventName) {
+  const short = eventName.startsWith("activation.") ? eventName.slice("activation.".length) : eventName;
+  switch (short) {
+    case "activation_requested":
+      return "requested";
+    case "activation_admitted":
+      return "admitted";
+    case "activation_starting":
+    case "step_contract_compiled":
+      return "starting";
+    case "activation_started":
+    case "turn_started":
+    case "turn_completed":
+    case "output_validation_started":
+    case "output_validation_passed":
+      return "active";
+    case "activation_settled":
+      return "settled";
+    case "activation_completed":
+      return "completed";
+    case "activation_failed":
+      return "failed";
+    case "activation_disposed":
+      return "disposed";
+    case "activation_rejected":
+      return "rejected";
+    default:
+      return short;
+  }
+}
+function parseBody(eventJson) {
+  try {
+    const parsed = JSON.parse(eventJson);
+    const out = {};
+    if (typeof parsed.correlation?.bead_id === "string")
+      out.bead_id = parsed.correlation.bead_id;
+    if (typeof parsed.body?.pi_session_id === "string")
+      out.pi_session_id = parsed.body.pi_session_id;
+    if (typeof parsed.body?.error === "string")
+      out.error = parsed.body.error;
+    if (typeof parsed.body?.stop_reason === "string")
+      out.stop_reason = parsed.body.stop_reason;
+    if (typeof parsed.body?.reason === "string")
+      out.reason = parsed.body.reason;
+    return out;
+  } catch {
+    return {};
+  }
+}
+function summarizeNativeActivations(rows) {
+  const byId = new Map;
+  for (const row of rows) {
+    if (!row.job_id)
+      continue;
+    const group = byId.get(row.job_id) ?? [];
+    group.push(row);
+    byId.set(row.job_id, group);
+  }
+  const summaries = [];
+  for (const [activationId, events] of byId.entries()) {
+    const ordered = [...events].sort((a, b) => a.t - b.t || a.seq - b.seq);
+    const first = ordered[0];
+    const last = ordered[ordered.length - 1];
+    const bodies = ordered.map((event) => parseBody(event.event_json));
+    const beadId = [...bodies.map((b) => b.bead_id)].find((v) => typeof v === "string");
+    const piSessionId = [...bodies.map((b) => b.pi_session_id)].find((v) => typeof v === "string");
+    const lastBody = bodies[bodies.length - 1];
+    const detail = lastBody.error ?? (lastBody.stop_reason ? `stop_reason=${lastBody.stop_reason}` : undefined) ?? lastBody.reason;
+    const role = last.participant_role?.trim();
+    summaries.push({
+      activation_id: activationId,
+      specialist: role && role.length > 0 ? role : "unknown",
+      ...beadId ? { bead_id: beadId } : {},
+      state: stateForEventName(last.event_name),
+      last_event: last.event_name,
+      last_event_at_ms: last.t,
+      first_event_at_ms: first.t,
+      event_count: ordered.length,
+      turns: ordered.filter((event) => event.event_name === "activation.turn_started").length,
+      ...piSessionId ? { pi_session_id: piSessionId } : {},
+      ...detail ? { detail } : {}
+    });
+  }
+  summaries.sort((a, b) => b.last_event_at_ms - a.last_event_at_ms);
+  return summaries;
+}
+function formatActivationAge(nowMs, atMs) {
+  const seconds = Math.max(0, Math.round((nowMs - atMs) / 1000));
+  if (seconds < 60)
+    return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)
+    return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48)
+    return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 // src/cli/ps.ts
 var exports_ps = {};
 __export(exports_ps, {
@@ -60481,7 +60581,45 @@ function resolveEpicReadinessMap(jobs, includeTerminal) {
     sqlite.close();
   }
 }
-function renderHuman(jobs, nodes, trees, all, includeTerminal, epicReadiness, health, includeHealthDetails) {
+function loadNativeActivationSummaries(args, mineBeadIds) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient)
+    return [];
+  try {
+    const rows = sqliteClient.readForensicEvents({
+      eventFamily: "activation",
+      sinceMs: args.sinceMs,
+      limit: 1000
+    });
+    return summarizeNativeActivations(rows).filter((summary) => {
+      if (args.beadFilter && summary.bead_id !== args.beadFilter)
+        return false;
+      if (mineBeadIds && (!summary.bead_id || !mineBeadIds.has(summary.bead_id)))
+        return false;
+      return true;
+    });
+  } catch {
+    return [];
+  } finally {
+    sqliteClient.close();
+  }
+}
+function renderNativeActivationsBlock(summaries) {
+  if (summaries.length === 0)
+    return;
+  console.log(bold(cyan("Native activations")) + dim(" \xB7 LAST-KNOWN from forensics \u2014 not live (the Fleet registry is in-process in the host session)"));
+  const now = Date.now();
+  for (const summary of summaries.slice(0, NATIVE_ACTIVATION_DISPLAY_LIMIT)) {
+    const bead = summary.bead_id ? ` ${summary.bead_id}` : "";
+    const detail = summary.detail ? ` \xB7 ${summary.detail}` : "";
+    console.log(`  ${summary.activation_id} ${summary.specialist}${bead} ${statusLabel(summary.state)} \xB7 ${summary.event_count} events \xB7 ${summary.turns} turns \xB7 ${formatActivationAge(now, summary.last_event_at_ms)}${detail}`);
+  }
+  if (summaries.length > NATIVE_ACTIVATION_DISPLAY_LIMIT) {
+    console.log(dim(`  +${summaries.length - NATIVE_ACTIVATION_DISPLAY_LIMIT} older omitted \u2014 narrow with --since/--bead`));
+  }
+  console.log("");
+}
+function renderHuman(jobs, nodes, trees, all, includeTerminal, epicReadiness, health, includeHealthDetails, nativeActivations = []) {
   const beadTitles = buildBeadTitleCache(jobs);
   const renderedJobIds = new Set;
   const epicGroups = buildEpicGroups(jobs, epicReadiness);
@@ -60573,6 +60711,7 @@ function renderHuman(jobs, nodes, trees, all, includeTerminal, epicReadiness, he
     console.log(dim("  no active jobs"));
     console.log("");
   }
+  renderNativeActivationsBlock(nativeActivations);
   const renderedJobs = jobs.filter((job) => renderedJobIds.has(job.id));
   const runningCount = renderedJobs.filter((job) => job.status === "running").length;
   const waitingCount = renderedJobs.filter((job) => job.status === "waiting").length;
@@ -60772,7 +60911,7 @@ ${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job
   console.log(`
   ${dim(inspectActions.join(" | "))}`);
 }
-function renderJson(jobs, nodes, trees, _all, epicReadiness, args, health) {
+function renderJson(jobs, nodes, trees, _all, epicReadiness, args, health, nativeActivations = []) {
   console.log(JSON.stringify({
     generated_at_ms: Date.now(),
     include_terminal: args.includeTerminal,
@@ -60815,6 +60954,8 @@ function renderJson(jobs, nodes, trees, _all, epicReadiness, args, health) {
     })),
     nodes,
     trees,
+    native_activations: nativeActivations.map((summary) => ({ ...summary, last_known: true, live: false })),
+    native_activations_note: "LAST-KNOWN state from forensics, not live registry state.",
     epics: buildEpicGroups(jobs, epicReadiness),
     epic_readiness: Object.fromEntries([...epicReadiness.entries()].map(([epicId, summary]) => [epicId, summary])),
     process_health: health
@@ -60873,11 +61014,12 @@ function render(args) {
   const nodes = groupByNode(visibleStatuses);
   const trees = groupByTree(visibleStatuses);
   const health = collectProcessHealth();
+  const nativeActivations = loadNativeActivationSummaries(args, mineBeadIds);
   if (args.json) {
-    renderJson(visibleStatuses, nodes, trees, args.all, epicReadiness, args, health);
+    renderJson(visibleStatuses, nodes, trees, args.all, epicReadiness, args, health, nativeActivations);
     return;
   }
-  renderHuman(visibleStatuses, nodes, trees, args.all, args.includeTerminal, epicReadiness, health, args.health);
+  renderHuman(visibleStatuses, nodes, trees, args.all, args.includeTerminal, epicReadiness, health, args.health, nativeActivations);
 }
 function renderBuffered(args) {
   const lines = [];
@@ -60973,7 +61115,7 @@ async function run22() {
     sqliteClient?.close();
   }
 }
-var ACTIVE_STATES2, TERMINAL_STATES2, BEAD_TITLE_CACHE, STATUS_PRIORITY, ANSI_ENTER_ALT_SCREEN = "\x1B[?1049h", ANSI_EXIT_ALT_SCREEN = "\x1B[?1049l", ANSI_HIDE_CURSOR = "\x1B[?25l", ANSI_SHOW_CURSOR = "\x1B[?25h", ANSI_CURSOR_HOME = "\x1B[H", ANSI_ERASE_DOWN = "\x1B[J", ANSI_ESCAPE_SEQUENCE_PATTERN;
+var ACTIVE_STATES2, TERMINAL_STATES2, BEAD_TITLE_CACHE, STATUS_PRIORITY, NATIVE_ACTIVATION_DISPLAY_LIMIT = 10, ANSI_ENTER_ALT_SCREEN = "\x1B[?1049h", ANSI_EXIT_ALT_SCREEN = "\x1B[?1049l", ANSI_HIDE_CURSOR = "\x1B[?25l", ANSI_SHOW_CURSOR = "\x1B[?25h", ANSI_CURSOR_HOME = "\x1B[H", ANSI_ERASE_DOWN = "\x1B[J", ANSI_ESCAPE_SEQUENCE_PATTERN;
 var init_ps = __esm(() => {
   init_format_helpers();
   init_theme();
@@ -61986,8 +62128,38 @@ function parseArgs12(argv) {
     json
   };
 }
+function renderForensicTrail(sqliteClient, jobId, json) {
+  let rows;
+  try {
+    rows = sqliteClient.readForensicEvents({ jobId, limit: 1000 });
+  } catch {
+    return false;
+  }
+  if (rows.length === 0)
+    return false;
+  if (json) {
+    for (const row of rows) {
+      console.log(JSON.stringify({ source: "forensic", last_known: true, live: false, ...row }));
+    }
+    return true;
+  }
+  const [summary] = summarizeNativeActivations(rows);
+  console.log(dim(`native activation ${jobId} \xB7 LAST-KNOWN trail from forensics \u2014 not live (host-session Fleet registry is not visible here)`));
+  if (summary) {
+    const bead = summary.bead_id ? ` \xB7 bead ${summary.bead_id}` : "";
+    console.log(dim(`specialist ${summary.specialist}${bead} \xB7 last-known state: ${summary.state} \xB7 ${summary.turns} turns \xB7 ${summary.event_count} events`));
+  }
+  for (const row of rows) {
+    const short = row.event_name.startsWith("activation.") ? row.event_name.slice("activation.".length) : row.event_name;
+    console.log(`  ${new Date(row.t).toISOString()} ${short}`);
+  }
+  return true;
+}
 function printSnapshot(sqliteClient, merged, options2, jobsDir, piProjectors = new Map) {
   if (merged.length === 0) {
+    if (options2.jobId && sqliteClient && renderForensicTrail(sqliteClient, options2.jobId, options2.json)) {
+      return;
+    }
     if (!options2.json) {
       if (options2.jobId && sqliteClient) {
         console.log(dim(`job ${options2.jobId} not found in .specialists/db/observability.db`));
