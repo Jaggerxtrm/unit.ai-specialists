@@ -22678,7 +22678,7 @@ var init_memory_retrieval = __esm(() => {
   STATIC_WORKFLOW_RULES_BLOCK = `
 ## Beads Workflow Quick Rules
 - Claim work: \`bd update <id> --claim\`
-- Append progress notes: \`bd update <id> --notes "..."\`
+- Append progress notes: \`bd update <id> --append-notes "..."\`
 - Store reusable insight: \`bd remember "insight"\`
 - Close completed issue: \`bd close <id> --reason "done"\`
 
@@ -57540,7 +57540,7 @@ class NodeSupervisor {
     if (!this.opts.sourceBeadId)
       return;
     const notes = this.buildCompletionSummary(options2);
-    const result = spawnSync21("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
+    const result = spawnSync21("bd", ["update", this.opts.sourceBeadId, "--append-notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -57605,7 +57605,7 @@ class NodeSupervisor {
       for (const dependency of action.depends_on ?? []) {
         this.runCommand("bd", ["dep", "add", createdBeadId, dependency]);
       }
-      this.runCommand("bd", ["update", createdBeadId, "--notes", `node_id:${this.opts.nodeId} (created via Wave 2B autonomy action)`]);
+      this.runCommand("bd", ["update", createdBeadId, "--append-notes", `node_id:${this.opts.nodeId} (created via Wave 2B autonomy action)`]);
       this.persistNodeEvent("executeCreateBeadAction.bead_created", "bead_created", {
         node_id: this.opts.nodeId,
         action_id: sourceActionId,
@@ -76017,7 +76017,7 @@ var useSpecialistSchema = objectType({
 function createUseSpecialistTool(runner) {
   return {
     name: "use_specialist",
-    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load \u2192 agents.md \u2192 pi session \u2192 output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto \u2014 creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. " + "Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too). " + "A bead_id that specialist_dispatch would REFUSE (draft, closed, or missing a contract section) still runs here, but the result carries a readiness_warning naming what is missing. " + "That divergence is deprecated: prefer specialist_dispatch for contract-gated work.",
+    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load \u2192 agents.md \u2192 pi session \u2192 output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto \u2014 creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --append-notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. " + "Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too). " + "A bead_id that specialist_dispatch would REFUSE (draft, closed, or missing a contract section) still runs here, but the result carries a readiness_warning naming what is missing. " + "That divergence is deprecated: prefer specialist_dispatch for contract-gated work.",
     inputSchema: useSpecialistSchema,
     async execute(input, onProgress) {
       let prompt = input.prompt?.trim() ?? "";
