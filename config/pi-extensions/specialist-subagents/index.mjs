@@ -806,16 +806,29 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     name: 'specialist_list',
     label: 'Specialist registry',
     description:
-      'List the resolved Specialist registry — every configured specialist after ' +
-      'repo and user layer overrides, with its permission tier and whether the ' +
-      'native runtime can dispatch it right now (model configured, tool contract ' +
-      'non-empty, preflight passing). Write-capable tiers (MEDIUM/HIGH) still need ' +
-      'the workspace lease at dispatch time. This is awareness only: for the full ' +
-      'CLI surface (run, feed, result, steer, resume, stop and the rest) use the ' +
-      'specialists CLI — `sp help`.',
-    promptSnippet: 'List configured Specialists (specialist_list)',
-    parameters: Type.Object({}),
-    async execute() {
+      'List the resolved Specialist registry after repo and user layer overrides. ' +
+      'Returns a COMPACT line per specialist by default — name, permission tier, ' +
+      'category, and a reason only where the native runtime cannot dispatch it. ' +
+      'Pass `name` for one specialist\'s full record including its description, or ' +
+      'detail:"full" for every field of every specialist (large — prefer `name`). ' +
+      'Write-capable tiers (MEDIUM/HIGH) still need the workspace lease at dispatch ' +
+      'time. Awareness only: for the full CLI surface use `sp help`.',
+    promptSnippet: 'List configured Specialists (specialist_list; name= for detail)',
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({
+        description: 'Return the full record for this one specialist instead of the compact list.',
+      })),
+      detail: Type.Optional(Type.String({
+        description: '"compact" (default) is one line each; "full" returns every field for every specialist.',
+      })),
+    }),
+    // Progressive disclosure (operator report 2026-09-08). The unconditional form returned
+    // 32 specialists x 9 fields = 16,161 bytes across 357 lines, and 44% of that was
+    // `description` prose — a field a coordinator needs when choosing ONE specialist and
+    // never when scanning all of them. The compact form is 1,204 bytes, a 13x reduction.
+    // Undispatchable rows keep their reason in every mode: that is the part with signal,
+    // and it is what tells a reader why `bare` and `changelog-keeper` are excluded.
+    async execute(_toolCallId, params = {}) {
       const loader = new SpecialistLoader({ projectDir: process.cwd() });
       const summaries = await loader.list();
       const rows = [];
@@ -841,7 +854,43 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         }
         rows.push(row);
       }
-      return resultOf({ specialists: rows, note: 'Full CLI surface: sp help' });
+      const wanted = params.name;
+      if (wanted) {
+        const one = rows.find((r) => r.name === wanted);
+        return resultOf(one
+          ? { specialist: one, note: 'Full CLI surface: sp help' }
+          : {
+            error: `Unknown specialist: ${wanted}`,
+            known: rows.map((r) => r.name),
+            note: 'Full CLI surface: sp help',
+          });
+      }
+
+      if (params.detail === 'full') {
+        return resultOf({ specialists: rows, detail: 'full', note: 'Full CLI surface: sp help' });
+      }
+
+      const compact = rows.map((r) => ({
+        name: r.name,
+        tier: r.permission_required ?? 'READ_ONLY',
+        access: r.access,
+        ...(r.category ? { category: r.category } : {}),
+        // ALWAYS present, even when true. Omitting it to save bytes would make absence mean
+        // "dispatchable", which is indistinguishable from the field going missing through a
+        // bug — and dispatchability is the one thing this tool exists to report. Only the
+        // `reason` is conditional, because there is no reason when nothing is wrong.
+        dispatchable: r.dispatchable !== false,
+        ...(r.dispatchable === false ? { reason: r.reason } : {}),
+      }));
+      const undispatchable = compact.filter((r) => r.dispatchable === false).length;
+      return resultOf({
+        specialists: compact,
+        count: compact.length,
+        undispatchable,
+        detail: 'compact',
+        note: 'Pass name=<specialist> for one full record, or detail="full" for everything. '
+          + 'Full CLI surface: sp help',
+      });
     },
   });
 

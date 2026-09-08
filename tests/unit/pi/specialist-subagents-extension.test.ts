@@ -946,3 +946,71 @@ describe('coordinator workspace fence — PRD acceptance U (unitAI-rrdnt.61)', (
     expect(pi.handlers['tool_call']?.length).toBe(1);
   });
 });
+
+describe('specialist_list progressive disclosure (operator report 2026-09-08)', () => {
+  // The unconditional form returned 32 specialists x 9 fields = 16,161 bytes over 357 lines,
+  // 44% of it `description` prose. A coordinator scanning the registry to pick one specialist
+  // never needs that; it needs the name, the tier, and why something is unavailable.
+
+  async function list(args: Record<string, unknown>) {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    return resultText(await toolNamed(pi, 'specialist_list').execute('tc1', args));
+  }
+
+  it('omits description and the other drill-down fields by default', async () => {
+    const out = await list({});
+    expect(out.detail).toBe('compact');
+    expect(out.specialists.length).toBeGreaterThan(0);
+    for (const row of out.specialists) {
+      expect(row).not.toHaveProperty('description');
+      expect(row).not.toHaveProperty('scope');
+      expect(row).not.toHaveProperty('version');
+      expect(row).not.toHaveProperty('source');
+      expect(row.name).toBeTruthy();
+      expect(row.tier).toBeTruthy();
+    }
+  });
+
+  it('always reports dispatchable, and carries a reason only when it is false', async () => {
+    // dispatchable stays on every row even though omitting it when true would save bytes:
+    // absence would then mean "dispatchable", which is indistinguishable from the field
+    // going missing through a bug. The reason is conditional because there is no reason
+    // when nothing is wrong.
+    const out = await list({});
+    for (const row of out.specialists) {
+      expect(typeof row.dispatchable).toBe('boolean');
+      if (row.dispatchable === false) expect(row.reason).toBeTruthy();
+      else expect(row).not.toHaveProperty('reason');
+    }
+    expect(typeof out.undispatchable).toBe('number');
+  });
+
+  it('returns one full record, description included, for name=', async () => {
+    const all = await list({});
+    const target = all.specialists[0].name;
+    const out = await list({ name: target });
+    expect(out.specialist.name).toBe(target);
+    expect(out.specialist).toHaveProperty('description');
+  });
+
+  it('names what IS known when asked for a specialist that is not', async () => {
+    const out = await list({ name: 'no-such-specialist' });
+    expect(out.error).toMatch(/Unknown specialist/);
+    expect(Array.isArray(out.known)).toBe(true);
+    expect(out.known.length).toBeGreaterThan(0);
+  });
+
+  it('keeps the full dump reachable, so nothing is lost', async () => {
+    const out = await list({ detail: 'full' });
+    expect(out.detail).toBe('full');
+    expect(out.specialists[0]).toHaveProperty('description');
+  });
+
+  it('is materially smaller than the full dump', async () => {
+    const compact = JSON.stringify(await list({}));
+    const full = JSON.stringify(await list({ detail: 'full' }));
+    expect(compact.length).toBeLessThan(full.length / 3);
+  });
+});
