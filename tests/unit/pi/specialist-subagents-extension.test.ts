@@ -1571,3 +1571,57 @@ describe('human-readable tool-result views (unitAI-55yjs)', () => {
     expect(expanded).toContain('"status": "dispatched"');
   });
 });
+
+describe('renderer component contract (unitAI-q02sz)', () => {
+  // pi wraps every tool renderResult/renderCall in a MouseRegion and walks
+  // invalidate() on theme/resume. A renderer object without a callable
+  // invalidate kills the session (this.child.invalidate is not a function).
+  // Every custom renderer in the extension must satisfy this contract.
+  async function setup() {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    return { pi, host };
+  }
+
+  const TOOL_CASES = [
+    ['specialist_dispatch', { specialist: 'explorer', bead_id: 'bd-1' }],
+    ['specialist_status', {}],
+    ['specialist_reply', { message_id: 'msg:1', body: 'x' }],
+    ['specialist_resume', { activation_id: 'act:aaaa', prompt: 'more' }],
+    ['specialist_stop_activation', { activation_id: 'act:aaaa' }],
+    ['specialist_list', {}],
+  ] as const;
+
+  it.each(TOOL_CASES)('%s renderResult exposes dispose/invalidate and array render', async (name, params) => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, name);
+    expect(typeof tool.renderResult).toBe('function');
+    const result = await tool.execute('tc1', params);
+    const component = tool.renderResult(result, { expanded: false }, {}, {});
+    expect(typeof component.dispose).toBe('function');
+    expect(typeof component.invalidate).toBe('function');
+    expect(() => component.invalidate()).not.toThrow();
+    const lines = component.render(80);
+    expect(Array.isArray(lines)).toBe(true);
+    // Recomputed per render call: repeated renders agree (no first-call capture).
+    expect(component.render(80)).toEqual(lines);
+  });
+
+  it.each([
+    ['specialist_dispatch', { specialist: 'explorer', bead_id: 'bd-1' }],
+    ['specialist_reply', { message_id: 'msg:1', body: 'x' }],
+    ['specialist_resume', { activation_id: 'act:aaaa', prompt: 'more' }],
+    ['specialist_stop_activation', { activation_id: 'act:aaaa' }],
+  ] as const)('%s renderCall exposes dispose/invalidate and array render', async (name, params) => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, name);
+    expect(typeof tool.renderCall).toBe('function');
+    const component = tool.renderCall(params, {}, {}, {});
+    expect(typeof component.dispose).toBe('function');
+    expect(typeof component.invalidate).toBe('function');
+    expect(() => component.invalidate()).not.toThrow();
+    expect(Array.isArray(component.render(80))).toBe(true);
+  });
+});

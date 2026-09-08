@@ -569,13 +569,20 @@ function summarizePayload(payload) {
 /** Build a renderResult that shows the human summary, with full JSON on expand. */
 function humanResultOf() {
   return (result, { expanded } = {}) => {
-    const raw = (result?.content ?? []).find((c) => c?.type === 'text')?.text ?? '';
-    let payload = null;
-    try { payload = JSON.parse(raw); } catch { /* fall through to raw lines */ }
-    const summary = payload ? summarizePayload(payload) : null;
-    const lines = summary ?? (raw ? raw.split('\n') : ['(empty result)']);
-    const shown = summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
-    return { dispose: () => {}, render: () => shown };
+    // Recomputed per render call: pi re-invokes render() as its own state
+    // changes, so closing over first-call lines could go stale.
+    const render = () => {
+      const raw = (result?.content ?? []).find((c) => c?.type === 'text')?.text ?? '';
+      let payload = null;
+      try { payload = JSON.parse(raw); } catch { /* fall through to raw lines */ }
+      const summary = payload ? summarizePayload(payload) : null;
+      const lines = summary ?? (raw ? raw.split('\n') : ['(empty result)']);
+      return summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
+    };
+    // pi wraps every tool renderer in a MouseRegion and walks invalidate()
+    // on theme/resume; a missing method kills the session (unitAI-q02sz).
+    // Every custom renderer object in this file must expose it.
+    return { dispose: () => {}, invalidate: () => {}, render };
   };
 }
 
@@ -583,7 +590,8 @@ function humanResultOf() {
 function humanCallOf(describe) {
   return (args) => {
     const line = describe(args ?? {});
-    return { dispose: () => {}, render: () => [line] };
+    // invalidate() required: see humanResultOf (unitAI-q02sz).
+    return { dispose: () => {}, invalidate: () => {}, render: () => [line] };
   };
 }
 
