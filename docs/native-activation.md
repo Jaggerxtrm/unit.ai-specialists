@@ -2,9 +2,9 @@
 title: Native Activation Runtime
 scope: native-activation
 category: guide
-version: 0.3.1
+version: 0.6.0
 updated: 2026-09-07
-synced_at: e78d120d
+synced_at: b88759d4
 description: What the native Specialist activation runtime does today, what it refuses, and which of its guarantees are not yet in force.
 source_of_truth_for:
   - "src/activation/native-host.ts"
@@ -24,11 +24,11 @@ domain:
 | [What it is](#what-it-is) | The runtime seam, and how it differs from `sp run` |
 | [Admission](#admission-what-gets-refused-before-a-model-turn) | The four gates a dispatch passes, in order |
 | [Workspaces and worktrees](#workspaces-and-worktrees) | Why a native Specialist does not get its own worktree |
-| [The writer lease](#the-writer-lease) | Acquired at admission; the per-call guard has no caller |
+| [The writer lease](#the-writer-lease) | In force at admission and per tool call |
 | [Results are not messages](#results-are-not-messages) | The distinction the runtime exists to preserve |
 | [Asking without restarting](#asking-without-restarting) | Clarification versus restart |
 | [Forensics](#forensics) | One store, one query, and the vocabulary gap |
-| [Running one](#running-one--the-mcp-surface) | The four MCP tools, merged and callable |
+| [Running one](#running-one--two-frontends-one-host) | The two frontends, what they share, and where they have diverged |
 | [Known holes](#known-holes) | Every unclosed gap, with its bead |
 
 # Native Activation Runtime
@@ -57,8 +57,9 @@ SPECIALISTS_LIVE_SMOKE_MODEL_ALT=<a different provider/model> \
 It skips cleanly rather than failing when the environment variables or provider credentials
 are absent.
 
-A second frontend — a Pi extension over the same host — is in progress as
-`unitAI-rrdnt.37` and is not merged. It is not documented here.
+There are two frontends: the Claude Code MCP server and a Pi extension
+(`config/pi-extensions/specialist-subagents`, `unitAI-rrdnt.37`, merged as `08d37047`).
+Both call the same host and share one tool vocabulary.
 
 Nothing below describes a planned behaviour. Where a behaviour is specified but not yet in
 force, the text says so and names the bead that closes it.
@@ -136,6 +137,24 @@ pre-existing and by design: the gate lives where admission lives. It is stated h
 a reader who learns "a draft Bead is refused" from this document would otherwise be
 surprised.
 
+### The contract parser: a documentation bug with a code symptom
+
+Both `PROBLEM` on its own line with the body beneath, and `PROBLEM: the body` on one line,
+are accepted. Text after the colon becomes the section's first body line rather than being
+discarded — the parser keeps the distinction between "missing" and "declared but empty".
+
+That was not always true, and the cause is worth more than the fix. The parser recognised a
+heading only as a bare word on its own line. The `contract` parameter description added by
+`unitAI-rrdnt.44` named the seven sections and never stated their format. So a model
+following the tool description exactly produced the same-line form, and the gate reported
+**every section missing while all seven were present** — the least believable refusal the
+system can emit, against a contract that was correct. The tool description was the input
+specification, and it was silent on the one thing the parser cared about (`unitAI-rrdnt.54`).
+
+Both frontends now state the format in the parameter description, and the whole path is
+proven live end to end: an inline contract with no `bead_id` admitted, created its Bead, and
+settled.
+
 **3. An explicitly requested model must exist and be authenticated.** Both halves are
 required and neither is sufficient alone. A known provider with an unknown model id
 resolves to a *fabricated* model with no error, so only the `no-match` diagnostic catches
@@ -175,24 +194,16 @@ keying it by branch would miss two activations on one branch in one worktree.
 
 ## The writer lease
 
-> **Partly in force.** Acquisition and release are wired: a write-capable activation takes
-> the lease at admission (`native-host.ts:316`) and releases it on teardown, and both paths
-> emit forensics. The **per-call mutation guard is not reachable**:
-> `NativeActivationHost.admitToolCall` is a public method with no caller anywhere in `src/`
-> or `tests/`, and the host registers no blocking `tool_call` handler — `session.subscribe`
-> is observation only. No frontend should be the one to call it either — an enforcement
-> point invoked by a frontend is optional enforcement, because the next frontend forgets and
-> nothing goes red. Tracked as `unitAI-rrdnt.36.2`.
+> **In force.** A write-capable activation takes the lease at admission and releases it on
+> teardown, and the per-call mutation guard now has a caller: the host reconstructs pi's
+> mutating builtins and wraps them (`native-host.ts:414`), so a frontend that wires nothing
+> cannot produce an unguarded activation (`unitAI-rrdnt.36.2`, closed). Enforcement is not
+> a frontend's responsibility, which is the point — an enforcement point invoked by a
+> frontend is optional enforcement.
 >
-> What that means concretely: two activations cannot both hold one worktree, because
-> admission refuses the second. What is *not* enforced is the per-call block — a writer
-> whose lease turns uncertain mid-turn is not stopped, and a reader is not refused mutating
-> calls by the lease. A reader is still constrained, but by its fail-closed tool allowlist
-> rather than by the lease.
+> The H1–H4 bypasses below are unchanged and unclosable on pi 0.85.1.
 
-Everything below describes the module's behaviour. Acquisition, contention, uncertainty and
-release are live on the admission path; the admission-verdict subsection is the part with no
-caller.
+Everything below describes live behaviour.
 
 ### Contention
 
@@ -313,12 +324,9 @@ lease that silently leaks for the remainder of every turn in which it is acquire
 Mutation admission uses an **allowlist** of non-mutating tools, so an unrecognised tool is
 treated as mutating. A denylist would silently admit every tool added after it was written.
 
-**Nothing calls this yet.** `NativeActivationHost.admitToolCall(activationId, toolName)`
-exists, emits `tool_blocked` on a refusal, and fails closed on an unknown activation — and
-`grep -rn admitToolCall src/ tests/` finds no caller of it outside the module and its own
-unit tests. The three outcomes below therefore describe the verdict the function returns, not a block
-any Specialist has experienced. Tracked as `unitAI-rrdnt.36.2`, which requires the host to
-invoke it rather than a frontend.
+`NativeActivationHost.admitToolCall(activationId, toolName)` is the verdict, it emits
+`tool_blocked` on a refusal, and it fails closed on an unknown activation. The host wraps
+pi's mutating builtins so every such call routes through it; no frontend has to remember.
 
 Three admission outcomes are worth stating plainly, because each is deliberate rather than
 incidental:
@@ -376,8 +384,36 @@ rather than failing or silently proceeding.
 > model could use. `ask-tool.ts` and `interaction.ts` were complete and unit-tested against
 > doubles the whole time.
 >
-> **Whether a live model calls the tool is `unitAI-rrdnt.43` and is still open.** Everything
-> below describes the protocol as built. Treat the end-to-end path as unproven.
+> **Whether a live model calls the tool is `unitAI-rrdnt.43` and is still open.**
+>
+> Third, even when a child does ask, **the coordinator is not woken** — a blocked child is
+> discovered by polling `specialist_status` (`unitAI-rrdnt.45`, in progress). The wake
+> primitive itself is live-proven: an idle interactive TUI took a turn from an out-of-band
+> async callback with no operator input. The half that is missing is the one that fires it
+> from an escalation, and the lane is explicitly refusing to let the first stand in for the
+> second. So the interaction model is not usable as designed today, whatever the protocol
+> below says.
+>
+> Fourth, `InteractionTransport.attemptDelivery` returned `true` when no `deliver` hook was
+> wired, so the polling-only configuration — what the shipping Pi coordinator runs — marked
+> every ask `delivered` the moment it was asked, with nobody having seen it. Fixed: with no
+> transport, an ask stays `pending`. **Two lanes found this independently and shipped the
+> identical one-line fix**; the only merge conflict was which provenance comment to keep, and
+> both were kept. Convergent discovery by two lanes that were not talking to each other is
+> much stronger evidence than either report alone.
+>
+> **That fourth one was a documentation failure as much as a code one, and it is why this
+> section is written the way it is.** Three places described the delivery path —
+> `interaction.ts`'s own contract, `native-host.ts`'s constructor comment, and the entire
+> premise of `peer-bridge.ts`. All three agreed with each other. None agreed with the code —
+> `interaction.ts` contradicted its own contract two screens above the defect. Prose that is
+> internally consistent is not evidence about a running system, and three documents repeating
+> one another are one claim, not three. Every existing delivery test supplied a `deliver`
+> hook, so the single configuration that actually ships was the one never exercised.
+>
+> Everything below describes the protocol as built. `unitAI-rrdnt.43` — whether a live model
+> calls the tool — is the last unproven step; prefer reading the code over trusting this
+> section where the two could differ.
 
 A running Specialist reaches its coordinator through two tools it sees in its contract:
 `ask_coordinator` and `escalate_to_coordinator`. Both expect an answer and both leave the
@@ -442,6 +478,12 @@ lease_acquired         lease_denied            lease_uncertain
 tool_blocked
 ```
 
+Under node, this wrote **nothing at all** until the driver was made resolvable at first use.
+`observability-sqlite` loaded `bun:sqlite` only, and the Pi coordinator surface runs under
+node, so every in-process activation appeared to succeed and left an empty table. Any
+measurement taken from `observability.db` under node before that fix measured nothing. See
+[Known holes](#known-holes).
+
 Two caveats apply to anything built on this.
 
 `attempt_id` and `pi_session_id` have no dedicated columns in the current schema. They are
@@ -458,12 +500,15 @@ wired in `67be44b1`.
 
 ## Known holes
 
-Every entry is unclosed as of `e78d120d`. Where a bead exists it is named; where one does
+Every entry is unclosed as of `b88759d4`. Where a bead exists it is named; where one does
 not, that is stated rather than implied.
 
 | Hole | Consequence | Bead |
 |---|---|---|
-| The per-call mutation guard has no caller. `admitToolCall` is a public method; nothing in `src/` invokes it and the host registers no blocking `tool_call` handler. | Admission-time exclusion works. The block *during* a turn is absent: a writer whose lease turns uncertain mid-turn is not stopped, and a reader is constrained by its fail-closed tool allowlist rather than by the lease. | `unitAI-rrdnt.36.2` |
+| The two dispatch paths render one refusal in two shapes: the bead path returns the `SPECIALIST_DISPATCH_REJECTED` envelope, the inline path a bare object with no envelope and no `AgentSession` line. | A coordinator cannot parse refusals one way. Refusals are rendered, not projected, which is why sharing saved the projections and not these. | `unitAI-rrdnt.55` |
+| MCP `specialist_dispatch` has no `contract` parameter; the Pi one does. | A dispatch call is not portable between frontends. | Unfiled |
+| An escalation does not wake the coordinator. The wake *primitive* is live-proven — an idle interactive TUI took a turn from an out-of-band async callback with no operator input — but the escalation-to-callback half is unbuilt. | A blocked child is discovered by polling `specialist_status`, not by being told. The interaction model is not usable as designed. A proven primitive is not a proven path. | `unitAI-rrdnt.45` |
+| `tsconfig.json` includes only `src/**/*`, so no test file is ever typechecked. | `bunx tsc --noEmit` is green while a test calls a method that does not exist. Do not read a green tsc as covering the suite. | `unitAI-rrdnt.50` |
 | A live model has never been observed calling `ask_coordinator`. The tools reached no Specialist at all until `866d4a35`. | The clarification path is built and unit-tested but unproven end to end. | `unitAI-rrdnt.43` |
 | The 7-section contract gate applies only to native admission. `use_specialist` takes a `bead_id` with no readiness check, and a free-form `prompt` with no Bead at all. | A Bead refused by `specialist_dispatch` still runs through `use_specialist`. Pre-existing and by design; surprising if the gate is read as a property of Beads. | None; stated so the boundary is not mistaken |
 | Lease bypasses H3 (`pi.exec`) and H4 (direct `node:fs` / `child_process` in extension code) cannot be closed on Pi 0.85.1. `executeBash()` and `pi.exec()` fire the `tool_call` handler zero times. | A trusted extension can mutate a leased workspace unobserved. Not a delegated-agent threat. | No bead; requires a Pi interposition layer that does not exist |
@@ -471,7 +516,7 @@ not, that is stated rather than implied.
 | `attempt_id` and `pi_session_id` are not indexed columns. | Attempt-level lineage is present but not efficiently queryable. | Tracked separately per `src/activation/forensic-sink.ts` |
 | Three forensic event names are classified by the sink with no producer: `output_validation_failed`, `retry_failed`, `activation_uncertain`. | Their absence is not a health signal; each is the negative half of a pair whose positive half is emitted. | `unitAI-rrdnt.38` |
 
-Four items previously listed here are **closed** and are recorded rather than deleted, so
+Six items previously listed here are **closed** and are recorded rather than deleted, so
 nobody reinstates them from an older document.
 
 **There was no operator surface.** `NativeActivationHost` had no production consumer and the
@@ -484,6 +529,23 @@ wrote. Three lanes found it independently on the same day. Closed by `67be44b1`,
 enabled writers and acquired the lease in one change — flipping admission without the
 acquire call would have shipped write-capable Specialists guarded by a lease that was
 present, tested, closed on the board, and never called.
+
+**The Pi extension registered no UI.** It existed as tools only — no slash commands, no
+Fleet view, nothing rendered — and an operator found it by using it rather than a test
+finding it. Closed by `unitAI-rrdnt.46`: `/fleet`, `/fleet:reply` and `/fleet:stop`, an
+`aboveEditor` widget, and argument completion driven off live host state.
+
+**The per-call mutation guard had no caller.** `admitToolCall` was host surface nothing
+invoked, and the host registered no blocking `tool_call` handler, so exclusion held at
+admission but not during a turn. Closed by `unitAI-rrdnt.36.2`: the host reconstructs pi's
+mutating builtins and wraps them, so enforcement does not depend on a frontend remembering.
+
+**Forensics could not be written under node at all.** `observability-sqlite` loaded
+`bun:sqlite` only, and pi — and therefore the Pi coordinator surface — runs under node. Every
+in-process activation wrote **zero rows while appearing to succeed**. Fixed by resolving the
+driver at first use: `bun:sqlite` under bun, `node:sqlite` otherwise, behind a shim. An older
+node without `node:sqlite` degrades to the no-op sink rather than failing. Anything you
+measured from `observability.db` before that fix, under node, measured an empty table.
 
 **The refusal renderer dropped its explanation.** `reject()` was called with
 `{ detail: <explanation> }` at four sites while `DispatchRejectedError`'s only free-text
@@ -508,10 +570,18 @@ exists. It was removed by `0b76f3f6` — "fix(console): remove fabricated lease 
 `worktree_owner_job_id` itself remains chain-provenance metadata for `--job` reuse and is
 still not an exclusion primitive. Do not build on it.
 
-## Running one — the MCP surface
+## Running one — two frontends, one host
 
-`unitAI-rrdnt.33` is merged; these tools are registered in `src/server.ts` and callable.
-Field names and shapes below were read from `src/tools/specialist/activation.tool.ts`.
+Both frontends are merged: the MCP tools are registered in `src/server.ts`
+(`unitAI-rrdnt.33`), and the Pi extension registers the same four names in
+`config/pi-extensions/specialist-subagents/index.mjs` (`unitAI-rrdnt.37`). Field names and
+shapes below were read from `src/tools/specialist/activation.tool.ts` and that file, and
+apply to both unless the [Pi delta](#the-pi-delta-and-why-it-is-the-risky-part) says
+otherwise.
+
+They share a host and they share their projections; they have diverged in their tools and in
+how they render a refusal. The section below says which is which, because "one vocabulary"
+was true when it was written and is no longer true of the whole surface.
 
 Four tools, three new and one extended. They call `NativeActivationHost` in-process and
 construct no child process — a subprocess running `sp` would satisfy the letter of
@@ -527,9 +597,19 @@ surfaces, not one migrating into the other.
 `model_override`, `requested_by` (defaults to `adapter::specialists-mcp`) and
 `coordinator_session_id`.
 
-There is **no task or prompt field**. The Bead is the prompt. There is also **no workspace
-hint**: the activation runs in the server's working directory, and a writer would not get a
-new worktree anyway.
+There is **no task or prompt field**. The Bead is the prompt.
+
+> **The two frontends now differ here.** `unitAI-rrdnt.48` landed in the **Pi extension
+> only**: its `specialist_dispatch` takes *either* `bead_id` *or* an inline `contract`,
+> exactly one, never both — supplying both is refused rather than resolved by preference,
+> because silently preferring one would dispatch against a contract the coordinator did not
+> mean. An inline contract runs the **same** readiness gate first, then a Bead is created
+> from it and dispatched, so the gate is not weakened; only the order is. The MCP
+> `specialist_dispatch` still requires `bead_id` and accepts no inline contract. Verified at
+> `3b2a2611`.
+
+There is **no workspace hint** on either frontend: the activation runs in the server's
+working directory, and a writer would not get a new worktree anyway.
 
 Pass `model_override` for any Specialist whose `execution.model` is null — `explorer` is
 one. Without it the dispatch is refused with `no_model_configured`, which is a poor first
@@ -607,8 +687,9 @@ rather than absent when there is nothing:
 - `pending_asks[]` — `message_id`, `kind` (`question` or `escalation`), `activation_id`,
   `attempt_id`, `from`, `to`, `body`, `delivery`, `asked_at`.
 
-`delivery` is `pending`, `delivered` or `refused`, where `delivered` means a receipt was
-seen and not merely that no error was thrown.
+`delivery` is `pending`, `delivered` or `refused`. `delivered` means a receipt was seen, not
+merely that no error was thrown — and with no transport wired at all it is now `pending`,
+never `delivered`. That was wrong until recently; see [Known holes](#known-holes).
 
 Until the asynchronous push channel exists (Phase 14), a coordinator learns about a question
 by **reading**. A reader that cannot see the ask leaves the Specialist stuck forever, which
@@ -632,8 +713,70 @@ write-capable Specialist now acquires the lease, and a contended or uncertain wo
 comes back as a `status: "rejected"` result naming the holder, exactly like any other
 refusal.
 
-What this path still cannot do is call the per-call mutation guard — MCP has no agent-loop
-hook. See [Known holes](#known-holes).
+Neither frontend calls the per-call mutation guard, and neither should — that belongs in the
+host (`unitAI-rrdnt.36.2`). See [Known holes](#known-holes).
+
+### The Pi delta, and why it is the risky part
+
+**The rule, stated as narrowly as the evidence supports it: a shared projection cannot
+drift, and anything hand-rendered per frontend already has.** Three independent instances, in
+the order they were found:
+
+1. `toResultView` omitted `requested_model` while the shared `toActivationView` carried it,
+   so the two frontends answered "what was this asked to run on?" differently for a settled
+   activation. Fixed.
+2. The `.44` teaching text described the seven sections without stating their format, and the
+   parser accepted a different form than the text taught — see
+   [the contract parser](#the-contract-parser-a-documentation-bug-with-a-code-symptom). Fixed.
+3. The two dispatch paths render the *same* refusal in two *different* shapes. Still true at
+   `b88759d4`, below.
+
+`toActivationView` and `toPendingAskView` are imported by the Pi extension rather than
+reimplemented, and neither has ever drifted. That is not a coincidence and it is the whole
+argument: the fix for a rendering divergence is to share the renderer, not to remember to
+update both.
+
+### Two refusal shapes for one refusal
+
+A refusal is **rendered**, not projected, and nobody checked the renderers against each
+other. The bead path returns the host's `DispatchRejectedError` — the
+`SPECIALIST_DISPATCH_REJECTED` envelope in `reason`, ending `AgentSession: not created`, plus
+a `detail` object. The inline-contract path returns a bare object: `status`, `reason`,
+optional `missing[]` and `note`, with no envelope and no `AgentSession` line. Same rejection,
+same coordinator, two shapes depending on which parameter was supplied (`unitAI-rrdnt.55`).
+
+There is a second hazard on that path worth knowing before you debug one: a **stale extension
+build** refuses dispatch with a reason byte-identical to a genuinely broken contract, because
+the extension statically imports `dist/lib.js` at load. If a refusal makes no sense against
+the contract you passed, rebuild before investigating the contract.
+
+### Pi-only tools
+
+Three things exist only on the Pi frontend as of `b88759d4`: inline-contract dispatch
+(above), a `specialist_list` tool (`unitAI-rrdnt.51`), and the result projection. The MCP
+`specialist_dispatch` still has no `contract` parameter, so a dispatch call is not portable
+between the surfaces; that is unfiled.
+
+The result projection is the answer to acceptance AU for a Pi coordinator: a
+**settled** activation carries a `result` object, projected by `toResultView`, alongside the
+shared view in `specialist_status`. It carries `status`, `output`, the `validation` record,
+`configured_model`, `resolved_model`, `model_override`, `fallback_used` and `completed_at`.
+The MCP surface does not project it.
+
+So the AU rule across both frontends is: **no tool returns a result in place of a message**.
+Dispatch returns identity and admission on both. Where a validated `ActivationResult` is
+available at all, it is *read* — a distinct object with its own `validation` record — never
+substituted for an interaction message. The deadlock argument still holds, because nothing
+blocks waiting for it.
+
+The delta is also exactly where drift reappears, and it already did once. `toResultView`
+omitted `requested_model` while the shared `toActivationView` carried it, so for a settled
+activation the two frontends answered "what was this asked to run on?" differently. Caught by
+the Phase 11 lane and now fixed — `index.mjs:89` projects it. Verified at `1592b87f`.
+
+That single miss is a better argument for the one-vocabulary rule than any assertion of it:
+the shared projections never drifted, because they are shared. The one hand-written
+projection did, immediately.
 
 ## See also
 
@@ -642,4 +785,7 @@ hook. See [Known holes](#known-holes).
   measurement.
 - `docs/mcp-tools.md` — the current MCP tool contract. It documents `use_specialist`, which
   is the legacy `sp run` path, not native activation.
-- `/using-specialists` — the operator skill for the supervised `sp` job lifecycle.
+- `/using-specialists` — the operator skill for the supervised `sp` job lifecycle. Editing
+  any file under `config/skills/` changes its hash in `dist/asset-contract.json`: rebuild, or
+  run `npm run generate:contract`, or `tests/unit/skills/using-specialists-layout.test.ts`
+  fails — and it fails only when run in isolation, so a full-suite run will not catch it.
