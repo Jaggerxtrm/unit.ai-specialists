@@ -102,6 +102,9 @@
       "path": "config/specialists/explorer.specialist.json"
     },
     {
+      "path": "config/specialists/live-wake-asker.specialist.json"
+    },
+    {
       "path": "config/specialists/memory-processor.specialist.json"
     },
     {
