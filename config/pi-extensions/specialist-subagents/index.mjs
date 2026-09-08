@@ -276,6 +276,16 @@ function shortReason(reason) {
   return chosen.length <= 120 ? chosen : `${chosen.slice(0, 117)}...`;
 }
 
+/**
+ * Every listing answer ends with this.
+ *
+ * A coordinator that reads a registry listing is deciding how to delegate, and that is the
+ * exact moment it might reach for the CLI. It must not: the `sp` CLI is deferred while this
+ * extension is what runs Specialists, and a shelled run has no Fleet entry, no ask channel,
+ * no workspace lease and no native forensics (unitAI-rrdnt.63).
+ */
+const NATIVE_ONLY_NOTE = 'Dispatch through specialist_dispatch. Do not shell out to the specialists CLI.';
+
 function specialistSummaryView(summary) {
   return {
     name: summary.name,
@@ -485,10 +495,13 @@ export default function specialistSubagentsExtension(pi, options = {}) {
             'not seven; SCRUTINY is the one most often left out. Write each section as a ' +
             'heading: either the section name on its own line with its body beneath, or ' +
             '`PROBLEM: the body` on one line. Both forms are accepted. ' +
-            'A dispatch here always creates a durable Bead, so it is not the path for a ' +
-            'throwaway question — for an untracked one-off use the CLI: `sp run <name> ' +
-            '--prompt "..."`. Use the planning skill (/planning) to write a real contract; ' +
-            'one missing any section is refused and nothing is created.',
+            'THIS IS THE PATH FOR ALL DELEGATED WORK, including small and quick questions. ' +
+            'A short contract is a fine contract — a one-line body per section is enough for a ' +
+            'bounded question, and dispatching here is what gives you the Fleet view, the ' +
+            'ask/answer channel, the workspace lease and forensics. Do NOT shell out to the ' +
+            '`sp` CLI to avoid writing a contract; a native activation is cheaper, not dearer. ' +
+            'Use the planning skill (/planning) for genuinely complex work; a contract missing ' +
+            'any section is refused and nothing is created.',
         }),
       ),
       title: Type.Optional(
@@ -814,7 +827,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   // unitAI-rrdnt.49: an sp-list equivalent inside the extension — awareness, not
   // surface area. One listing tool over the RESOLVED registry (repo + user layer
   // overrides merged by SpecialistLoader), marking what the native runtime can
-  // actually dispatch. The full CLI surface is `sp help`; this tool is not a
+  // actually dispatch. This extension is the dispatch surface; this tool is not a
   // replacement for it and deliberately does not reproduce run/feed/steer.
   pi.registerTool({
     name: 'specialist_list',
@@ -826,7 +839,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'Pass `name` for one specialist\'s full record including its description, or ' +
       'detail:"full" for every field of every specialist (large — prefer `name`). ' +
       'Write-capable tiers (MEDIUM/HIGH) still need the workspace lease at dispatch ' +
-      'time. Awareness only: for the full CLI surface use `sp help`.',
+      'time. This extension is the dispatch surface: do not shell out to the specialists ' +
+      'CLI to run a Specialist.',
     promptSnippet: 'List configured Specialists (specialist_list; name= for detail)',
     parameters: Type.Object({
       name: Type.Optional(Type.String({
@@ -872,16 +886,16 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       if (wanted) {
         const one = rows.find((r) => r.name === wanted);
         return resultOf(one
-          ? { specialist: one, note: 'Full CLI surface: sp help' }
+          ? { specialist: one, note: NATIVE_ONLY_NOTE }
           : {
             error: `Unknown specialist: ${wanted}`,
             known: rows.map((r) => r.name),
-            note: 'Full CLI surface: sp help',
+            note: NATIVE_ONLY_NOTE,
           });
       }
 
       if (params.detail === 'full') {
-        return resultOf({ specialists: rows, detail: 'full', note: 'Full CLI surface: sp help' });
+        return resultOf({ specialists: rows, detail: 'full', note: NATIVE_ONLY_NOTE });
       }
 
       const compact = rows.map((r) => ({
@@ -909,7 +923,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         undispatchable,
         detail: 'compact',
         note: 'Pass name=<specialist> for one full record, or detail="full" for everything. '
-          + 'Full CLI surface: sp help',
+          + NATIVE_ONLY_NOTE,
       });
     },
   });

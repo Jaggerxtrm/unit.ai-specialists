@@ -351,7 +351,10 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     mod.default(pi, { createHost: () => host });
     const listTool = toolNamed(pi, 'specialist_list');
     const out = resultText(await listTool.execute('tc1', {}));
-    expect(out.note).toContain('sp help');
+    // Was `toContain('sp help')`. The operator ruled the CLI out entirely — sp is deferred
+    // while this extension is what runs Specialists — so the listing must point at
+    // specialist_dispatch, not at a shell (unitAI-rrdnt.63).
+    expect(out.note).toMatch(/Do not shell out/i);
     expect(Array.isArray(out.specialists)).toBe(true);
     expect(out.specialists.length).toBeGreaterThan(0);
     for (const row of out.specialists) {
@@ -1031,5 +1034,55 @@ describe('specialist_list progressive disclosure (operator report 2026-09-08)', 
     for (const row of out.specialists) {
       if (row.dispatchable === false) expect(row.reason.length).toBeLessThanOrEqual(120);
     }
+  });
+});
+
+describe('dispatch guidance must not route work off the native runtime', () => {
+  // A live coordinator asked a small bounded question about the repo and answered it by
+  // shelling out to `sp run --prompt` as a background task, because the contract parameter
+  // told it that native dispatch "is not the path for a throwaway question". That guidance
+  // was mine and it was wrong three ways: PRD Phase 13 says NO CLI shell-out; the shelled
+  // run has no Fleet entry, no ask/answer channel, no lease and no forensics; and the
+  // premise was false, since a short contract is a perfectly good contract.
+
+  it('no tool description anywhere routes the coordinator to the specialists CLI', async () => {
+    // Widened from specialist_dispatch to EVERY tool after the operator ruled the CLI out
+    // entirely: the sp CLI is deferred while this extension is what runs Specialists, so a
+    // one-off either lives in the extension or does not exist. specialist_list was the other
+    // offender — its every answer ended with 'Full CLI surface: sp help', which is precisely
+    // the moment a coordinator is deciding how to delegate.
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+
+    for (const tool of pi.tools as Array<{ name: string; description?: string;
+      parameters?: { properties?: Record<string, { description?: string }> } }>) {
+      const text = [
+        tool.description ?? '',
+        ...Object.values(tool.parameters?.properties ?? {}).map((p) => p.description ?? ''),
+      ].join(' ');
+      expect(text, `${tool.name} routes to the CLI`).not.toMatch(/\bsp (run|help|ps|feed)\b/);
+      expect(text, `${tool.name} disparages the native path`).not.toMatch(/not the path for/i);
+    }
+  });
+
+  it('does not put the CLI in a listing RESULT either', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const out = resultText(await toolNamed(pi, 'specialist_list').execute('tc1', {}));
+    expect(JSON.stringify(out)).not.toMatch(/\bsp (run|help)\b/);
+    expect(out.note).toMatch(/Do not shell out/i);
+  });
+
+  it('says small work belongs here too', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const dispatch = toolNamed(pi, 'specialist_dispatch') as unknown as {
+      parameters: { properties?: Record<string, { description?: string }> };
+    };
+    const contract = dispatch.parameters?.properties?.contract?.description ?? '';
+    expect(contract).toMatch(/small|quick|short contract/i);
   });
 });
