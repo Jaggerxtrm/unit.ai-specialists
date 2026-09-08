@@ -361,47 +361,63 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
 });
 
 describe('createActivationForensicSink', () => {
-  it('writes activation events to observability.db and never throws on writer failure', async () => {
+  it('routes native events through the shared timeline writer and never throws on writer failure', async () => {
     const { createActivationForensicSink } = await import('../../../src/activation/forensic-sink.js');
-    const rows: Array<{ jobId: string; specialist: string; beadId?: string; event: Record<string, unknown> }> = [];
+    const statuses: Array<Record<string, unknown>> = [];
+    const rows: Array<{ jobId: string; event: Record<string, unknown>; identity: Record<string, unknown> }> = [];
 
     const sink = createActivationForensicSink({
-      appendForensicEvent: (jobId: string, specialist: string, beadId: string | undefined, event: Record<string, unknown>) => {
-        rows.push({ jobId, specialist, beadId, event });
+      upsertStatus: (status: Record<string, unknown>) => statuses.push(status),
+      upsertStatusWithEvents: (
+        status: Record<string, unknown>,
+        events: Record<string, unknown>[],
+        identity: Record<string, unknown>,
+      ) => {
+        statuses.push(status);
+        rows.push(...events.map(event => ({ jobId: String(status.id), event, identity })));
       },
     } as never);
 
     sink.emit({
       activationId: 'act:abc', attemptId: 'att:abc:1', participantId: 'specialist::researcher',
-      specialist: 'researcher', beadId: 'ISSUE-1', name: 'activation_admitted', payload: { tier: 'READ_ONLY' },
+      specialist: 'researcher', beadId: 'ISSUE-1', name: 'activation_requested',
     });
     sink.emit({
       activationId: 'act:abc', attemptId: 'att:abc:1', participantId: 'specialist::researcher',
       specialist: 'researcher', beadId: 'ISSUE-1', name: 'activation_rejected', payload: { reason: 'x' },
     });
 
-    expect(rows).toHaveLength(2);
-    expect(rows[0].jobId).toBe('act:abc');
-    expect(rows[0].event.event_family).toBe('activation');
-    expect(rows[0].event.event_name).toBe('activation.activation_admitted');
-    expect(rows[0].event.severity).toBe('info');
-    // A refused dispatch is error-severity evidence, not a silent return value.
-    expect(rows[1].event.severity).toBe('error');
-    // attempt_id has no column yet, so it must at least survive in the body.
-    expect((rows[0].event.body as Record<string, unknown>).attempt_id).toBe('att:abc:1');
-    expect((rows[0].event.correlation as Record<string, unknown>).participant_id).toBe('specialist::researcher');
+    expect(statuses).toHaveLength(2);
+    expect(statuses[1]).toMatchObject({
+      id: 'act:abc', specialist: 'researcher', bead_id: 'ISSUE-1', status: 'error', error: 'x',
+    });
+    expect(rows.map(row => row.event.type)).toEqual(['run_complete']);
+    expect(rows[0]).toMatchObject({
+      jobId: 'act:abc',
+      identity: { attemptId: 'att:abc:1', attemptNo: 1 },
+    });
 
-    // Forensics must never be the reason an activation fails.
+    // Observability must never be the reason an activation fails.
     const exploding = createActivationForensicSink({
-      appendForensicEvent: () => { throw new Error('db gone'); },
+      upsertStatus: () => {},
+      upsertStatusWithEvents: () => { throw new Error('db gone'); },
     } as never);
     expect(() => exploding.emit({
-      activationId: 'a', attemptId: 'b', participantId: 'c', specialist: 'd', name: 'activation_started',
+      activationId: 'a', attemptId: 'att:a:1', participantId: 'specialist::d', specialist: 'd', name: 'activation_started',
+    })).not.toThrow();
+    expect(() => exploding.sessionEvent?.({
+      activationId: 'a', attemptId: 'att:a:1', participantId: 'specialist::d', specialist: 'd',
+      piSessionId: 'pi-a', workspacePath: '/tmp/a', event: { type: 'turn_start' },
     })).not.toThrow();
 
     // A null client yields a no-op sink rather than throwing at construction.
-    expect(() => createActivationForensicSink(null).emit({
-      activationId: 'a', attemptId: 'b', participantId: 'c', specialist: 'd', name: 'activation_started',
+    const noOp = createActivationForensicSink(null);
+    expect(() => noOp.emit({
+      activationId: 'a', attemptId: 'att:a:1', participantId: 'specialist::d', specialist: 'd', name: 'activation_started',
+    })).not.toThrow();
+    expect(() => noOp.sessionEvent?.({
+      activationId: 'a', attemptId: 'att:a:1', participantId: 'specialist::d', specialist: 'd',
+      piSessionId: 'pi-a', workspacePath: '/tmp/a', event: { type: 'turn_start' },
     })).not.toThrow();
   });
 });

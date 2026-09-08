@@ -1413,14 +1413,31 @@ export interface BranchIntegrationEventRecord {
   event: BranchIntegrationEvent;
 }
 
+export interface ObservabilityIdentityProjection {
+  /** Runtime-owned attempt identity. Omit on legacy writes to retain automatic sequencing. */
+  attemptId: string;
+  attemptNo: number;
+}
+
 export interface ObservabilitySqliteClient {
-  upsertStatus(status: SupervisorStatus): void;
+  upsertStatus(status: SupervisorStatus, identity?: ObservabilityIdentityProjection): void;
   markSpecialistJobCancelled(jobId: string, reason: string): void;
   upsertEpicRun(epic: EpicRunRecord): void;
   upsertEpicChainMembership(chain: EpicChainRecord): void;
   upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void;
+  upsertStatusWithEvents(
+    status: SupervisorStatus,
+    events: readonly TimelineEvent[],
+    identity?: ObservabilityIdentityProjection,
+  ): void;
   upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
-  appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
+  appendEvent(
+    jobId: string,
+    specialist: string,
+    beadId: string | undefined,
+    event: TimelineEvent,
+    identity?: ObservabilityIdentityProjection,
+  ): void;
   appendForensicEvent(jobId: string, specialist: string, beadId: string | undefined, forensicEvent: ForensicEvent): void;
   recordBranchIntegration(event: BranchIntegrationEvent): void;
   listBranchIntegrations(filters?: ListBranchIntegrationFilters): BranchIntegrationEventRecord[];
@@ -1531,15 +1548,20 @@ class SqliteClient implements ObservabilitySqliteClient {
     this.db.run('PRAGMA journal_mode=WAL');
   }
 
-  private writeStatusRow(status: SupervisorStatus, lastOutput?: string): void {
+  private writeStatusRow(
+    status: SupervisorStatus,
+    lastOutput?: string,
+    identity?: ObservabilityIdentityProjection,
+  ): void {
     const statusJson = JSON.stringify(status);
     const workspaceId = normalizeWorkspacePath(status.worktree_path);
     const piSessionId = status.session_id ?? null;
     const participantId = deriveParticipantId({ participant_role: status.specialist });
-    const attemptId = `${status.id}::attempt::1`;
+    const attemptNo = identity?.attemptNo ?? 1;
+    const attemptId = identity?.attemptId ?? `${status.id}::attempt::1`;
     this.db.run(`
       INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json, participant_id, pi_session_id, workspace_id, attempt_no, attempt_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
@@ -1556,8 +1578,10 @@ class SqliteClient implements ObservabilitySqliteClient {
         last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
         startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json),
         participant_id = excluded.participant_id,
-        pi_session_id = excluded.pi_session_id,
-        workspace_id = excluded.workspace_id;
+        pi_session_id = CASE WHEN ? THEN COALESCE(excluded.pi_session_id, specialist_jobs.pi_session_id) ELSE excluded.pi_session_id END,
+        workspace_id = CASE WHEN ? THEN COALESCE(excluded.workspace_id, specialist_jobs.workspace_id) ELSE excluded.workspace_id END,
+        attempt_no = CASE WHEN ? AND excluded.attempt_no >= specialist_jobs.attempt_no THEN excluded.attempt_no ELSE specialist_jobs.attempt_no END,
+        attempt_id = CASE WHEN ? AND excluded.attempt_no >= specialist_jobs.attempt_no THEN excluded.attempt_id ELSE specialist_jobs.attempt_id END;
     `, [
       status.id,
       status.specialist,
@@ -1577,7 +1601,12 @@ class SqliteClient implements ObservabilitySqliteClient {
       participantId,
       piSessionId,
       workspaceId,
+      attemptNo,
       attemptId,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
+      identity ? 1 : 0,
     ]);
   }
 
@@ -1632,13 +1661,24 @@ class SqliteClient implements ObservabilitySqliteClient {
     return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === 'string' ? row.attempt_id : null };
   }
 
-  private writeEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
+  private writeEventRow(
+    jobId: string,
+    specialist: string,
+    beadId: string | undefined,
+    event: TimelineEvent,
+    identity?: ObservabilityIdentityProjection,
+  ): void {
     const seq = typeof event.seq === 'number' && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
     const current = this.readJobAttempt(jobId);
     let attemptId: string | null;
-    if (isRetryStartEvent(event as { type: string; phase?: unknown })) {
+    if (identity) {
+      attemptId = identity.attemptId;
+      if (current && identity.attemptNo >= current.attempt_no) {
+        this.db.run('UPDATE specialist_jobs SET attempt_no = ?, attempt_id = ?, updated_at_ms = ? WHERE job_id = ?', [identity.attemptNo, attemptId, Date.now(), jobId]);
+      }
+    } else if (isRetryStartEvent(event as { type: string; phase?: unknown })) {
       const nextNo = (current?.attempt_no ?? 0) + 1;
       attemptId = buildAttemptId(jobId, nextNo);
       if (current) {
@@ -2009,9 +2049,9 @@ class SqliteClient implements ObservabilitySqliteClient {
     ]);
   }
 
-  upsertStatus(status: SupervisorStatus): void {
+  upsertStatus(status: SupervisorStatus, identity?: ObservabilityIdentityProjection): void {
     withRetry(() => {
-      this.writeStatusRow(status);
+      this.writeStatusRow(status, undefined, identity);
     }, 'upsertStatus');
   }
 
@@ -2053,6 +2093,22 @@ class SqliteClient implements ObservabilitySqliteClient {
     }, 'upsertStatusWithEvent');
   }
 
+  upsertStatusWithEvents(
+    status: SupervisorStatus,
+    events: readonly TimelineEvent[],
+    identity?: ObservabilityIdentityProjection,
+  ): void {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status, undefined, identity);
+        for (const event of events) {
+          this.writeEventRow(status.id, status.specialist, status.bead_id, event, identity);
+        }
+      });
+      transaction();
+    }, 'upsertStatusWithEvents');
+  }
+
   upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
@@ -2064,9 +2120,15 @@ class SqliteClient implements ObservabilitySqliteClient {
     }, 'upsertStatusWithEventAndResult');
   }
 
-  appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
+  appendEvent(
+    jobId: string,
+    specialist: string,
+    beadId: string | undefined,
+    event: TimelineEvent,
+    identity?: ObservabilityIdentityProjection,
+  ): void {
     withRetry(() => {
-      this.writeEventRow(jobId, specialist, beadId, event);
+      this.writeEventRow(jobId, specialist, beadId, event, identity);
     }, 'appendEvent');
   }
 
