@@ -26596,9 +26596,9 @@ class HookEmitter {
 var init_hooks = () => {};
 
 // src/specialist/runtime-origin.ts
-import { spawnSync as spawnSync5 } from "child_process";
+import { spawnSync as spawnSync6 } from "child_process";
 function defaultRunner(cmd, args, opts) {
-  const result = spawnSync5(cmd, args, {
+  const result = spawnSync6(cmd, args, {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: opts.timeoutMs,
@@ -27651,7 +27651,7 @@ function derivePersistedChainIdentity(status, chainRootSnapshot) {
 var init_chain_identity = () => {};
 
 // src/cli/tmux-utils.ts
-import { spawnSync as spawnSync6 } from "child_process";
+import { spawnSync as spawnSync7 } from "child_process";
 function escapeForSingleQuotedBash(script) {
   return script.replace(/'/g, "'\\''");
 }
@@ -27659,7 +27659,7 @@ function quoteShellValue(value) {
   return `'${escapeForSingleQuotedBash(value)}'`;
 }
 function isTmuxAvailable() {
-  return spawnSync6("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync7("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function buildSessionName(specialist, suffix) {
   return `${TMUX_SESSION_PREFIX}-${specialist}-${suffix}`;
@@ -27674,14 +27674,14 @@ function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
   }
   const startupScript = `${exports.join("; ")}; exec ${cmd}`;
   const wrappedCommand = `/bin/bash -c '${escapeForSingleQuotedBash(startupScript)}'`;
-  const result = spawnSync6("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
+  const result = spawnSync7("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) {
     const errorOutput = (result.stderr ?? "").trim() || (result.error?.message ?? "unknown error");
     throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
   }
 }
 function isTmuxSessionAlive(sessionName) {
-  const result = spawnSync6("tmux", ["has-session", "-t", sessionName], {
+  const result = spawnSync7("tmux", ["has-session", "-t", sessionName], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 2000
@@ -27691,7 +27691,7 @@ function isTmuxSessionAlive(sessionName) {
   return result.status === 0;
 }
 function killTmuxSession(name) {
-  spawnSync6("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
+  spawnSync7("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
 }
 var TMUX_SESSION_PREFIX = "sp";
 var init_tmux_utils = () => {};
@@ -27727,7 +27727,7 @@ import {
 import { join as join13 } from "path";
 import { createInterface } from "readline";
 import { createReadStream } from "fs";
-import { spawn as spawn2, spawnSync as spawnSync7, execFileSync } from "child_process";
+import { spawn as spawn2, spawnSync as spawnSync8, execFileSync } from "child_process";
 function projectMandatoryRulesInjection(data) {
   return {
     sets_loaded: data.sets_loaded ?? [],
@@ -27810,7 +27810,7 @@ function emitParentNotification(statusSnapshot, activeSiblingAssignee) {
       text,
       "--json"
     ];
-    const result = spawnSync7("xtmux", args, {
+    const result = spawnSync8("xtmux", args, {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: PARENT_NOTIFICATION_TIMEOUT_MS
@@ -27820,7 +27820,7 @@ function emitParentNotification(statusSnapshot, activeSiblingAssignee) {
     }
     if (!statusSnapshot.bead_id)
       return;
-    const show = spawnSync7("bd", ["show", statusSnapshot.bead_id, "--json"], {
+    const show = spawnSync8("bd", ["show", statusSnapshot.bead_id, "--json"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: PARENT_NOTIFICATION_TIMEOUT_MS
@@ -27843,7 +27843,7 @@ function emitParentNotification(statusSnapshot, activeSiblingAssignee) {
       return;
     }
     const assignee = activeSiblingAssignee ?? `${statusSnapshot.specialist}/${statusSnapshot.id}`;
-    const update = spawnSync7("bd", ["update", statusSnapshot.bead_id, `--assignee=${assignee}`, "--json"], {
+    const update = spawnSync8("bd", ["update", statusSnapshot.bead_id, `--assignee=${assignee}`, "--json"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: PARENT_NOTIFICATION_TIMEOUT_MS
@@ -27856,7 +27856,7 @@ function emitParentNotification(statusSnapshot, activeSiblingAssignee) {
   }
 }
 function getCurrentGitSha() {
-  const result = spawnSync7("git", ["rev-parse", "HEAD"], {
+  const result = spawnSync8("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -27988,7 +27988,7 @@ function isAutoCommitNoisePath(path) {
   return AUTO_COMMIT_NOISE_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 function listSubstantiveWorktreeFiles(worktreePath) {
-  const status = spawnSync7("git", ["status", "--porcelain"], {
+  const status = spawnSync8("git", ["status", "--porcelain"], {
     cwd: worktreePath,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -28020,7 +28020,7 @@ function runAutoCommitCheckpoint(options) {
       return { status: "skipped", reason: "no_substantive_changes" };
     }
     const addStart = Date.now();
-    const addResult = spawnSync7("git", ["add", "--", ...substantiveFiles], {
+    const addResult = spawnSync8("git", ["add", "--", ...substantiveFiles], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -28033,7 +28033,7 @@ function runAutoCommitCheckpoint(options) {
     emitCommandEvent?.("completed", { command_kind: "git", duration_ms: addDuration, command: "git", args: ["add", "--", ...substantiveFiles], exit_code: 0, redacted: true });
     const commitMessage = buildAutoCommitMessage(specialist, beadId, turnNumber);
     const commitStart = Date.now();
-    const commitResult = spawnSync7("git", ["commit", "-m", commitMessage], {
+    const commitResult = spawnSync8("git", ["commit", "-m", commitMessage], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -28045,7 +28045,7 @@ function runAutoCommitCheckpoint(options) {
     }
     emitCommandEvent?.("completed", { command_kind: "git", duration_ms: commitDuration, command: "git", args: ["commit", "-m", commitMessage], exit_code: 0, redacted: true });
     const shaStart = Date.now();
-    const shaResult = spawnSync7("git", ["rev-parse", "HEAD"], {
+    const shaResult = spawnSync8("git", ["rev-parse", "HEAD"], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -28093,7 +28093,7 @@ function resolveDetachedRuntime() {
   const envRuntime = process.env.SPECIALISTS_BUN_PATH ?? process.env.BUN_PATH;
   if (envRuntime)
     return envRuntime;
-  const whichResult = spawnSync7("which", ["bun"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const whichResult = spawnSync8("which", ["bun"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (whichResult.status === 0) {
     const resolved = (whichResult.stdout ?? "").trim();
     if (resolved)
@@ -29068,7 +29068,7 @@ class Supervisor {
     let skipFinalKeepAliveInputBeadAppend = false;
     let latestEvidenceRefs;
     const getObservedPrEvidenceRef = (worktreePath) => {
-      const result = spawnSync7("gh", ["pr", "view", "--json", "number,url,state"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const result = spawnSync8("gh", ["pr", "view", "--json", "number,url,state"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       if (result.status !== 0)
         return;
       try {
@@ -29144,12 +29144,12 @@ ${appendError}
     };
     const appendResultToInputBead = (params) => writeUnifiedHandoff(params);
     const buildAutoCommitEvidenceRefs = (jobId, worktreePath, commitSha) => {
-      const baseShaResult = spawnSync7("git", ["rev-parse", commitSha + "^"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const baseShaResult = spawnSync8("git", ["rev-parse", commitSha + "^"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       const baseSha = baseShaResult.status === 0 ? (baseShaResult.stdout ?? "").trim() : undefined;
       const baseRef = baseSha ? commitSha + "^" : undefined;
       const range = baseSha ? baseSha + ".." + commitSha : commitSha + "^.." + commitSha;
-      const numstatResult = spawnSync7("git", ["diff", "--numstat", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
-      const hunksResult = spawnSync7("git", ["diff", "--unified=0", "--no-ext-diff", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const numstatResult = spawnSync8("git", ["diff", "--numstat", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const hunksResult = spawnSync8("git", ["diff", "--unified=0", "--no-ext-diff", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       const hunksOutput = (hunksResult.stdout ?? "").trim();
       const artifactRef = hunksOutput && !willHunksBeInline(hunksOutput) ? writeGitDiffHunksArtifact(this.jobDir(jobId), "git-diff-" + commitSha.slice(0, 12) + ".patch", hunksOutput) : undefined;
       const diff = buildGitDiffEvidence({
@@ -30051,7 +30051,7 @@ ${appendError}
           rmSync2(fifoPath);
       } catch {}
       if (statusSnapshot.tmux_session) {
-        spawnSync7("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
+        spawnSync8("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
       }
       await this.dispose();
     }
@@ -30661,7 +30661,7 @@ var init_format_helpers = __esm(() => {
 });
 
 // src/cli/version-check.ts
-import { spawnSync as spawnSync8 } from "child_process";
+import { spawnSync as spawnSync9 } from "child_process";
 import { existsSync as existsSync16, mkdirSync as mkdirSync8, readFileSync as readFileSync11, writeFileSync as writeFileSync7 } from "fs";
 import { dirname as dirname10, join as join15 } from "path";
 import { createRequire } from "module";
@@ -30729,7 +30729,7 @@ function compareVersions(left, right) {
   return 0;
 }
 function runRemoteTagLookup() {
-  const result = spawnSync8("git", ["ls-remote", "--tags", "--refs", "origin"], {
+  const result = spawnSync9("git", ["ls-remote", "--tags", "--refs", "origin"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NETWORK_TIMEOUT_MS
@@ -30799,7 +30799,7 @@ __export(exports_status, {
   run: () => run,
   detectJobOutputMode: () => detectJobOutputMode
 });
-import { spawnSync as spawnSync9 } from "child_process";
+import { spawnSync as spawnSync10 } from "child_process";
 import { existsSync as existsSync17, readFileSync as readFileSync12 } from "fs";
 import { join as join16 } from "path";
 function ok(msg) {
@@ -30820,7 +30820,7 @@ function section(label) {
 ${bold(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync9(bin, args, {
+  const r = spawnSync10(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -30828,7 +30828,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled(bin) {
-  return spawnSync9("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync10("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -75875,6 +75875,109 @@ init_beads();
 // src/tools/specialist/use_specialist.tool.ts
 init_zod();
 init_beads();
+
+// src/activation/bead-gate.ts
+import { spawnSync as spawnSync5 } from "child_process";
+var REQUIRED_SECTIONS = [
+  "PROBLEM",
+  "SUCCESS",
+  "SCOPE",
+  "NON_GOALS",
+  "CONSTRAINTS",
+  "VALIDATION",
+  "OUTPUT"
+];
+var SCRUTINY_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+var NON_DISPATCHABLE_STATUSES = new Set(["closed", "deferred"]);
+function readContractState(beadId) {
+  const result = spawnSync5("bd", ["state", beadId, "contract"], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 5000
+  });
+  if (result.error || result.status !== 0)
+    return;
+  const value = result.stdout?.trim().toLowerCase();
+  return value ? value : undefined;
+}
+var ALL_HEADINGS = new Set([...REQUIRED_SECTIONS, "SCRUTINY"]);
+function headingOf(line) {
+  const bare = line.trim().replace(/^#+\s*/, "").replace(/\*/g, "").trim();
+  const canonical = (text) => text.toUpperCase().replace(/[\s-]+/g, "_");
+  const whole = canonical(bare.replace(/:$/, "").trim());
+  if (ALL_HEADINGS.has(whole))
+    return { name: whole };
+  const split = bare.match(/^([A-Za-z][A-Za-z _-]*?)\s*:\s*(.*)$/);
+  if (!split)
+    return;
+  const name = canonical(split[1].trim());
+  if (!ALL_HEADINGS.has(name))
+    return;
+  const inlineBody = split[2].trim();
+  return inlineBody ? { name, inlineBody } : { name };
+}
+function extractSections(description) {
+  const sections = new Map;
+  let current;
+  let body = [];
+  const flush = () => {
+    if (current)
+      sections.set(current, body.join(`
+`).trim());
+  };
+  for (const line of description.split(`
+`)) {
+    const heading = headingOf(line);
+    if (heading) {
+      flush();
+      current = heading.name;
+      body = heading.inlineBody ? [heading.inlineBody] : [];
+      continue;
+    }
+    if (current)
+      body.push(line);
+  }
+  flush();
+  return sections;
+}
+function scrutinyLevel(description) {
+  const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-\u2014]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
+  return match?.[1]?.toUpperCase();
+}
+function evaluateBeadReadiness(bead, options = {}) {
+  const status = bead.status?.trim().toLowerCase();
+  if (status && NON_DISPATCHABLE_STATUSES.has(status)) {
+    return { ok: false, reason: `bead is ${status} and is not dispatchable`, missing: [] };
+  }
+  const contractState = (options.readContractState ?? readContractState)(bead.id);
+  if (contractState === "draft") {
+    return {
+      ok: false,
+      reason: "bead contract is marked draft \u2014 promote it with `bd set-state <id> contract=ready` first",
+      missing: []
+    };
+  }
+  const description = bead.description ?? "";
+  const sections = extractSections(description);
+  const missing = REQUIRED_SECTIONS.filter((section) => !sections.get(section));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: "bead is not a usable task contract: required sections are missing or empty",
+      missing: [...missing]
+    };
+  }
+  if (!scrutinyLevel(description)) {
+    return {
+      ok: false,
+      reason: `bead declares no SCRUTINY level (expected one of ${SCRUTINY_LEVELS.join(", ")})`,
+      missing: ["SCRUTINY"]
+    };
+  }
+  return { ok: true };
+}
+
+// src/tools/specialist/use_specialist.tool.ts
 var useSpecialistSchema = objectType({
   name: stringType().describe("Specialist identifier (e.g. codebase-explorer)"),
   prompt: stringType().optional().describe("The task or question for the specialist"),
@@ -75890,11 +75993,12 @@ var useSpecialistSchema = objectType({
 function createUseSpecialistTool(runner) {
   return {
     name: "use_specialist",
-    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load \u2192 agents.md \u2192 pi session \u2192 output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto \u2014 creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. " + "Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too).",
+    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load \u2192 agents.md \u2192 pi session \u2192 output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto \u2014 creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. " + "Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too). " + "A bead_id that specialist_dispatch would REFUSE (draft, closed, or missing a contract section) still runs here, but the result carries a readiness_warning naming what is missing. " + "That divergence is deprecated: prefer specialist_dispatch for contract-gated work.",
     inputSchema: useSpecialistSchema,
     async execute(input, onProgress) {
       let prompt = input.prompt?.trim() ?? "";
       let variables = input.variables;
+      let readinessWarning;
       if (input.bead_id) {
         const beadsClient = new BeadsClient;
         const bead = beadsClient.readBead(input.bead_id);
@@ -75904,6 +76008,10 @@ function createUseSpecialistTool(runner) {
             error: `Unable to read bead '${input.bead_id}' via bd show --json`
           };
         }
+        const readiness = evaluateBeadReadiness(bead);
+        if (!readiness.ok) {
+          readinessWarning = `bead '${input.bead_id}' would be REFUSED by specialist_dispatch: ${readiness.reason}` + (readiness.missing.length > 0 ? ` (missing: ${readiness.missing.join(", ")})` : "") + ". use_specialist ran it anyway because it predates the bead gate. This divergence is" + " deprecated \u2014 promote the bead and use specialist_dispatch.";
+        }
         const beadContext = buildBeadContext(bead);
         prompt = beadContext;
         variables = {
@@ -75912,7 +76020,7 @@ function createUseSpecialistTool(runner) {
           bead_id: input.bead_id
         };
       }
-      return runner.run({
+      const result = await runner.run({
         name: input.name,
         prompt,
         variables,
@@ -75922,6 +76030,7 @@ function createUseSpecialistTool(runner) {
         specialistPermissions: undefined,
         inputBeadId: input.bead_id
       }, onProgress);
+      return readinessWarning ? { ...result, readiness_warning: readinessWarning } : result;
     }
   };
 }
@@ -76683,107 +76792,6 @@ init_runner();
 init_session();
 init_beads();
 import { randomUUID as randomUUID3 } from "crypto";
-
-// src/activation/bead-gate.ts
-import { spawnSync as spawnSync10 } from "child_process";
-var REQUIRED_SECTIONS = [
-  "PROBLEM",
-  "SUCCESS",
-  "SCOPE",
-  "NON_GOALS",
-  "CONSTRAINTS",
-  "VALIDATION",
-  "OUTPUT"
-];
-var SCRUTINY_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
-var NON_DISPATCHABLE_STATUSES = new Set(["closed", "deferred"]);
-function readContractState(beadId) {
-  const result = spawnSync10("bd", ["state", beadId, "contract"], {
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"],
-    timeout: 5000
-  });
-  if (result.error || result.status !== 0)
-    return;
-  const value = result.stdout?.trim().toLowerCase();
-  return value ? value : undefined;
-}
-var ALL_HEADINGS = new Set([...REQUIRED_SECTIONS, "SCRUTINY"]);
-function headingOf(line) {
-  const bare = line.trim().replace(/^#+\s*/, "").replace(/\*/g, "").trim();
-  const canonical = (text) => text.toUpperCase().replace(/[\s-]+/g, "_");
-  const whole = canonical(bare.replace(/:$/, "").trim());
-  if (ALL_HEADINGS.has(whole))
-    return { name: whole };
-  const split = bare.match(/^([A-Za-z][A-Za-z _-]*?)\s*:\s*(.*)$/);
-  if (!split)
-    return;
-  const name = canonical(split[1].trim());
-  if (!ALL_HEADINGS.has(name))
-    return;
-  const inlineBody = split[2].trim();
-  return inlineBody ? { name, inlineBody } : { name };
-}
-function extractSections(description) {
-  const sections = new Map;
-  let current;
-  let body = [];
-  const flush = () => {
-    if (current)
-      sections.set(current, body.join(`
-`).trim());
-  };
-  for (const line of description.split(`
-`)) {
-    const heading = headingOf(line);
-    if (heading) {
-      flush();
-      current = heading.name;
-      body = heading.inlineBody ? [heading.inlineBody] : [];
-      continue;
-    }
-    if (current)
-      body.push(line);
-  }
-  flush();
-  return sections;
-}
-function scrutinyLevel(description) {
-  const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-\u2014]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
-  return match?.[1]?.toUpperCase();
-}
-function evaluateBeadReadiness(bead, options = {}) {
-  const status = bead.status?.trim().toLowerCase();
-  if (status && NON_DISPATCHABLE_STATUSES.has(status)) {
-    return { ok: false, reason: `bead is ${status} and is not dispatchable`, missing: [] };
-  }
-  const contractState = (options.readContractState ?? readContractState)(bead.id);
-  if (contractState === "draft") {
-    return {
-      ok: false,
-      reason: "bead contract is marked draft \u2014 promote it with `bd set-state <id> contract=ready` first",
-      missing: []
-    };
-  }
-  const description = bead.description ?? "";
-  const sections = extractSections(description);
-  const missing = REQUIRED_SECTIONS.filter((section2) => !sections.get(section2));
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      reason: "bead is not a usable task contract: required sections are missing or empty",
-      missing: [...missing]
-    };
-  }
-  if (!scrutinyLevel(description)) {
-    return {
-      ok: false,
-      reason: `bead declares no SCRUTINY level (expected one of ${SCRUTINY_LEVELS.join(", ")})`,
-      missing: ["SCRUTINY"]
-    };
-  }
-  return { ok: true };
-}
 
 // src/activation/step-contract.ts
 function toList(body) {
