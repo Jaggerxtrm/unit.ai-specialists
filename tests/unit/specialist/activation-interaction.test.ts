@@ -165,6 +165,16 @@ describe('no silent loss', () => {
     expect(acknowledging.pendingAsks()[0].delivery).toBe('delivered');
   });
 
+  it('marks an ask pending when there is no transport at all (unitAI-rrdnt.45)', async () => {
+    // The Pi coordinator's configuration: no peer hook, polling only. Nothing
+    // received the ask, so nothing may claim it was delivered — otherwise
+    // specialist_status reports "delivered" for a question no one has seen, which
+    // is what a live run actually showed before this was fixed.
+    const t = new InteractionTransport();
+    await t.send({ ...base(), kind: 'question' });
+    expect(t.pendingAsks()[0].delivery).toBe('pending');
+  });
+
   it('records every message in history, delivered or not', async () => {
     const t = new InteractionTransport({ deliver: () => false });
     await t.send({ ...base(), kind: 'question' });

@@ -81,6 +81,93 @@ export function createCoordinatorHost({ createClient, wrapSink, Host } = {}) {
   return new HostCtor({ forensics: wrapSink ? wrapSink(sink) : sink });
 }
 
+// ── Ask observation (unitAI-rrdnt.45) ────────────────────────────────────────
+//
+// The coordinator's wake-up rides a seam that already exists rather than adding
+// one. `native-host.ts` already emits `clarification_requested` and
+// `escalation_raised` through the forensic sink on every ask, and this extension
+// is what constructs that sink — so observing asks costs a wrapper here and no
+// change to the host, to `InteractionTransport`, or to `NativeActivationHostDeps`.
+//
+// The property that matters is what this DOES NOT touch. `DeliveryState` lives in
+// the transport and the wake never reaches it, so an ask stays `pending` and stays
+// readable through `specialist_status` whether the wake fires, is disabled, or
+// throws. Push cannot become authoritative because it has no way to say otherwise
+// (PRD SS30) — that is a consequence of where the seam is, not of care at the call
+// site.
+//
+// Timing note, measured rather than assumed: `ask-tool.ts` calls `onAsk` BEFORE
+// `transport.request()`, so at notification time the ask is not yet in
+// `pendingAsks()` and no `message_id` exists to carry. The wake therefore carries
+// the activation identity and the question, and the coordinator reads
+// `specialist_status` for the id. That keeps the durable projection as the single
+// correlation authority; a message_id sourced from anywhere else would be a second
+// one for the exact thing that must have only one.
+
+/** Forensic event names that mean a child is now blocked on the coordinator. */
+const ASK_EVENTS = {
+  clarification_requested: 'question',
+  escalation_raised: 'escalation',
+};
+
+/**
+ * Wrap a forensic sink so asks are also reported to `onAsk`, forwarding everything
+ * else untouched.
+ *
+ * `onAsk` throwing must never reach the sink's caller: forensics are on the
+ * activation's path, and a failed notification is a diagnostic loss while a failed
+ * activation is a functional one. The optional members are forwarded conditionally
+ * because the host tests for their presence — defining them unconditionally over a
+ * sink that lacks them would silently change which forensic paths the host takes.
+ */
+export function createAskObserverSink(base, onAsk) {
+  const wrapped = {
+    emit(event) {
+      try {
+        base.emit(event);
+      } finally {
+        const kind = ASK_EVENTS[event.name];
+        if (kind) {
+          try {
+            onAsk({
+              kind,
+              activationId: event.activationId,
+              attemptId: event.attemptId,
+              specialist: event.specialist,
+              beadId: event.beadId,
+              body: typeof event.payload?.body === 'string' ? event.payload.body : '',
+            });
+          } catch {
+            // A wake that throws leaves the ask exactly as it was: pending, and
+            // readable through specialist_status. That is the degraded path, and
+            // it is the same path taken when no coordinator is listening at all.
+          }
+        }
+      }
+    },
+  };
+  if (base.sessionEvent) wrapped.sessionEvent = (input) => base.sessionEvent(input);
+  if (base.peerTransportEvent) wrapped.peerTransportEvent = (event) => base.peerTransportEvent(event);
+  return wrapped;
+}
+
+/** The wake message a blocked child produces. Exported so its shape is testable. */
+export function formatAskWake(ask) {
+  const what = ask.kind === 'escalation' ? 'ESCALATED' : 'is asking a question';
+  return [
+    `Specialist \`${ask.specialist}\` ${what} and is blocked waiting for you.`,
+    '',
+    `activation_id: ${ask.activationId}`,
+    ...(ask.beadId ? [`bead: ${ask.beadId}`] : []),
+    '',
+    ask.body || '(no body)',
+    '',
+    'Call specialist_status to read this ask\'s message_id from pending_asks, then ' +
+      'answer it with specialist_reply. The child is alive and resumable; it stays ' +
+      'blocked until you answer.',
+  ].join('\n');
+}
+
 // ── Pi-surface result projection ─────────────────────────────────────────────
 
 /**
@@ -220,10 +307,95 @@ function resultOf(payload) {
  *   when omitted, one process-lifetime host is created on first tool use.
  */
 export default function specialistSubagentsExtension(pi, options = {}) {
+  // The wake exists so that an operator who does nothing still learns a child is
+  // blocked. The flag turns it off so the DEGRADED path is reproducible on demand:
+  // the case worth regression-testing is not that a notification fires, it is that
+  // an ask with no notification is still readable and still not marked delivered.
+  pi.registerFlag('no-specialist-wake', {
+    type: 'boolean',
+    default: false,
+    description:
+      'Do not wake this coordinator when a Specialist asks or escalates. The ask ' +
+      'remains readable through specialist_status; only the notification is suppressed.',
+  });
+
+  /**
+   * Wake the coordinator for one blocked child.
+   *
+   * `followUp` rather than `steer`: a question delivered between a tool call and
+   * its result splits a turn the coordinator is in the middle of, and the child is
+   * blocked either way — waiting for the current turn's tool calls to finish costs
+   * the child nothing and costs the coordinator its train of thought otherwise.
+   * `triggerTurn` is what makes an IDLE coordinator act, which is the whole bug:
+   * without it a dispatched-then-waiting coordinator sees the message only when the
+   * operator next types, which is the polling they were already doing.
+   */
+  const wake = (ask) => {
+    if (pi.getFlag('no-specialist-wake') === true) return;
+
+    const summary = `Specialist ${ask.specialist} ${ask.kind === 'escalation' ? 'escalated' : 'asked a question'}`;
+    const ctx = liveContext({ requireUI: true });
+    if (ctx) {
+      try {
+        ctx.ui.notify(summary, ask.kind === 'escalation' ? 'warning' : 'info');
+      } catch {
+        // The UI can disappear while async work settles; the message below is the
+        // load-bearing half and does not depend on it.
+      }
+    }
+
+    pi.sendMessage(
+      {
+        customType: 'specialist_ask',
+        content: formatAskWake(ask),
+        display: true,
+        details: ask,
+      },
+      { deliverAs: 'followUp', triggerTurn: true },
+    );
+  };
+
+  /**
+   * State the wake behaviour once, when the operator first dispatches a child.
+   *
+   * Not at session start: an extension that announces itself on every session is
+   * noise, and before a dispatch there is nothing the wake could do. This fires at
+   * the moment it becomes true that a child could start a turn on its own — which
+   * is the behaviour a reader needs to have been told about, and the suppressed
+   * case is the one a silent session would otherwise be unexplainable without.
+   */
+  let announced = false;
+  const announceWake = () => {
+    if (announced) return;
+    announced = true;
+    const ctx = liveContext({ requireUI: true });
+    if (!ctx) return;
+    const off = pi.getFlag('no-specialist-wake') === true;
+    try {
+      ctx.ui.notify(
+        off
+          ? 'Specialist wake is OFF (--no-specialist-wake): a blocked child will not notify you. Read its question with specialist_status.'
+          : 'Specialist wake is on: a blocked child will start a turn here on its own. Disable with --no-specialist-wake.',
+        off ? 'warning' : 'info',
+      );
+    } catch {
+      // Announcing is courtesy, never a precondition for dispatching.
+    }
+  };
+
   /** One host for the life of the pi process — never per-turn (VALIDATION 5). */
   let host = null;
   const getHost = () => {
-    if (!host) host = options.createHost ? options.createHost() : createCoordinatorHost();
+    if (!host) {
+      // The wrapper is handed to the test seam as well as to the real constructor,
+      // so a test with an injected host still exercises the wake rather than
+      // routing around the only path that matters here.
+      const wrapSink = (sink) => createAskObserverSink(sink, wake);
+      host = options.createHost
+        ? options.createHost({ wrapSink })
+        : createCoordinatorHost({ wrapSink });
+      announceWake();
+    }
     return host;
   };
 

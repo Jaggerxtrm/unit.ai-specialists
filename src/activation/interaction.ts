@@ -261,9 +261,24 @@ export class InteractionTransport {
     });
   }
 
-  /** A throwing delivery is a failed delivery, never a lost message. */
+  /**
+   * A throwing delivery is a failed delivery, never a lost message.
+   *
+   * No transport is not a receipt either. This returned `true` until unitAI-rrdnt.45,
+   * which meant the polling-only configuration — the Pi coordinator's, where no peer
+   * hook is wired — marked every ask `delivered` the instant it was asked, with no
+   * receiver and no receipt anywhere. A live run caught it: the operator read
+   * `"delivery": "delivered"` off an ask nobody had seen.
+   *
+   * It survived because the three places that describe this path all agreed with each
+   * other and none of them agreed with the code: this module's own contract says
+   * `delivered` means a receipt was seen and never merely that nothing threw, and
+   * `native-host.ts` says an ask reads as `pending` when no coordinator address is
+   * configured. Every existing test supplied a `deliver` hook, so the one configuration
+   * that ships to the Pi surface was the one configuration never exercised.
+   */
   private async attemptDelivery(message: InteractionMessage): Promise<boolean> {
-    if (!this.deliver) return true;
+    if (!this.deliver) return false;
     try {
       return (await this.deliver(message)) === true;
     } catch {

@@ -108,29 +108,45 @@ function makeFakeHost() {
   return { host, calls };
 }
 
-function makeFakePi() {
+function makeFakePi({ flags = {} } = {}) {
   const tools = [];
   const commands = [];
   // Pi allows MANY handlers per event and invokes all of them. Modelling one
   // handler per event silently dropped the second registration on the same
   // event, which is precisely the class of defect this suite exists to catch.
   const handlers = {};
-  const fire = async (event, payload, ctx) => {
-    for (const handler of handlers[event] ?? []) await handler(payload, ctx);
-  };
+  const sent = [];
+  const registeredFlags = {};
   return {
     registerTool: (def) => tools.push(def),
     registerCommand: (name, options) => commands.push({ name, ...options }),
     on: (event, handler) => { (handlers[event] ??= []).push(handler); },
+    // Variadic, because the two registrations differ in arity: the UI surface is
+    // handed (payload, ctx) at session_start and the wake path takes the payload
+    // alone. A fixed signature here would silently pass undefined to one of them.
+    fire: async (event, ...args) => {
+      for (const handler of handlers[event] ?? []) await handler(...args);
+    },
+    registerFlag: (name, opts) => { registeredFlags[name] = opts; },
+    getFlag: (name) => (name in flags ? flags[name] : registeredFlags[name]?.default),
+    sendMessage: (message, options) => { sent.push({ message, options }); },
     get tools() { return tools; },
     get commands() { return commands; },
     get handlers() { return handlers; },
-    fire,
+    get sent() { return sent; },
+    get registeredFlags() { return registeredFlags; },
   };
 }
 
-/** A UI-capable ExtensionContext double: records what the extension paints. */
-function makeFakeCtx({ hasUI = true, mode = 'tui', sessionId = 'session-1' } = {}) {
+/**
+ * A UI-capable ExtensionContext double: records what the extension paints.
+ *
+ * The union of what two lanes needed — widgets and statuses for the operator
+ * panel, notices for the coordinator wake. `notices` is aliased onto `painted`
+ * rather than duplicated, so the two surfaces cannot drift apart in the double
+ * the way they would if each lane kept its own.
+ */
+function makeFakeCtx({ hasUI = true, mode = 'tui', sessionId = 'sess-1' } = {}) {
   const painted = { widgets: {}, statuses: {}, notices: [] };
   return {
     hasUI,
@@ -142,6 +158,7 @@ function makeFakeCtx({ hasUI = true, mode = 'tui', sessionId = 'session-1' } = {
       notify: (message, level = 'info') => { painted.notices.push([message, level]); },
     },
     painted,
+    get notices() { return painted.notices; },
   };
 }
 
@@ -413,7 +430,172 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     });
     expect(withoutClient.deps.forensics).toBeDefined();
     expect(wrapped).toBeDefined();
-    expect(() => withoutClient.deps.forensics.emit({ name: 'x' })).not.toThrow();
+    expect(() => withoutClient.deps.forensics.emit({ name: 'activation_started' })).not.toThrow();
+  });
+
+  // ── Coordinator wake-up (unitAI-rrdnt.45) ─────────────────────────────────
+  //
+  // These prove the WIRING. They do not prove the bug is fixed: the acceptance is
+  // that an operator who does nothing learns a child is blocked, and only a live
+  // interactive run can show that. See the transcripts on the bead.
+
+  const askEvent = (name) => ({
+    activationId: 'act:aaaa',
+    attemptId: 'att:aaaa:1',
+    participantId: 'specialist::explorer',
+    specialist: 'explorer',
+    beadId: 'bd-1',
+    name,
+    payload: { body: 'Which option?' },
+  });
+
+  it('createAskObserverSink forwards every event and reports only asks', async () => {
+    const mod = await loadExtension();
+    const seen = [];
+    const asks = [];
+    const sink = mod.createAskObserverSink({ emit: (e) => seen.push(e.name) }, (a) => asks.push(a));
+
+    sink.emit(askEvent('activation_started'));
+    sink.emit(askEvent('clarification_requested'));
+    sink.emit(askEvent('escalation_raised'));
+    sink.emit(askEvent('clarification_answered'));
+
+    // Forensics are unchanged: wrapping must not cost the base sink an event.
+    expect(seen).toEqual([
+      'activation_started', 'clarification_requested', 'escalation_raised', 'clarification_answered',
+    ]);
+    expect(asks.map((a) => a.kind)).toEqual(['question', 'escalation']);
+    expect(asks[0]).toMatchObject({ activationId: 'act:aaaa', specialist: 'explorer', body: 'Which option?' });
+  });
+
+  it('createAskObserverSink survives a throwing wake and still writes forensics', async () => {
+    const mod = await loadExtension();
+    const seen = [];
+    const sink = mod.createAskObserverSink(
+      { emit: (e) => seen.push(e.name) },
+      () => { throw new Error('no coordinator'); },
+    );
+    // A failed notification is a diagnostic loss; a failed activation is a
+    // functional one. The ask stays pending and readable either way.
+    expect(() => sink.emit(askEvent('escalation_raised'))).not.toThrow();
+    expect(seen).toEqual(['escalation_raised']);
+  });
+
+  it('createAskObserverSink forwards optional sink members only when the base has them', async () => {
+    const mod = await loadExtension();
+    const bare = mod.createAskObserverSink({ emit: () => {} }, () => {});
+    expect(bare.sessionEvent).toBeUndefined();
+    expect(bare.peerTransportEvent).toBeUndefined();
+
+    const raw = [];
+    const full = mod.createAskObserverSink(
+      { emit: () => {}, sessionEvent: (i) => raw.push(i), peerTransportEvent: (e) => raw.push(e) },
+      () => {},
+    );
+    full.sessionEvent({ activationId: 'act:aaaa' });
+    full.peerTransportEvent({ kind: 'route' });
+    expect(raw).toHaveLength(2);
+  });
+
+  it('an ask wakes the coordinator: a custom message that triggers a turn, plus a toast', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const ctx = makeFakeCtx();
+    let wrapSink;
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
+
+    await pi.fire('session_start', { type: 'session_start' }, ctx);
+    await pi.tools[1].execute('tc0', {});          // any tool call builds the host
+    wrapSink({ emit: () => {} }).emit(askEvent('escalation_raised'));
+
+    expect(pi.sent).toHaveLength(1);
+    // followUp so the wake lands between turns rather than splitting one;
+    // triggerTurn so an IDLE coordinator acts, which is the entire bug.
+    expect(pi.sent[0].options).toEqual({ deliverAs: 'followUp', triggerTurn: true });
+    expect(pi.sent[0].message.customType).toBe('specialist_ask');
+    expect(pi.sent[0].message.content).toContain('act:aaaa');
+    expect(pi.sent[0].message.content).toContain('Which option?');
+    // No message_id: onAsk fires before transport.request(), so the projection is
+    // the only place a correlation id may come from.
+    expect(pi.sent[0].message.content).not.toContain('message_id:');
+    expect(pi.sent[0].message.content).toContain('specialist_status');
+    expect(ctx.notices.some(([, level]) => level === 'warning')).toBe(true);
+  });
+
+  it('--no-specialist-wake suppresses the notification and nothing else', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi({ flags: { 'no-specialist-wake': true } });
+    const ctx = makeFakeCtx();
+    let wrapSink;
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
+
+    await pi.fire('session_start', { type: 'session_start' }, ctx);
+    await pi.tools[1].execute('tc0', {});
+    const base = [];
+    wrapSink({ emit: (e) => base.push(e.name) }).emit(askEvent('escalation_raised'));
+
+    expect(pi.sent).toEqual([]);
+    // The ask is untouched: forensics still written, and specialist_status still
+    // projects it from the host's own pending list.
+    expect(base).toEqual(['escalation_raised']);
+    const status = resultText(await pi.tools[1].execute('tc1', {}));
+    expect(status.pending_asks[0].message_id).toBe('msg:1');
+    expect(status.pending_asks[0].delivery).toBe('pending');
+    // The suppressed state announces itself; a silent session is unexplainable.
+    expect(ctx.notices.some(([msg]) => msg.includes('OFF'))).toBe(true);
+  });
+
+  it('wakes with no live context: the message still goes, only the toast is lost', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    let wrapSink;
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
+
+    // No session_start: nothing was ever captured.
+    await pi.tools[1].execute('tc0', {});
+    wrapSink({ emit: () => {} }).emit(askEvent('clarification_requested'));
+    expect(pi.sent).toHaveLength(1);
+  });
+
+  it('a stale context is not used: session_shutdown releases the capture', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const ctx = makeFakeCtx();
+    let wrapSink;
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
+
+    await pi.fire('session_start', { type: 'session_start' }, ctx);
+    await pi.tools[1].execute('tc0', {});
+    const before = ctx.notices.length;
+    await pi.fire('session_shutdown', { type: 'session_shutdown', reason: 'quit' });
+    wrapSink({ emit: () => {} }).emit(askEvent('escalation_raised'));
+
+    expect(ctx.notices).toHaveLength(before);   // no toast onto a dead session
+    expect(pi.sent).toHaveLength(1);            // the message is still not lost
+  });
+
+  it('a context whose session was switched underneath it is treated as dead', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    let sessionId = 'sess-1';
+    const ctx = makeFakeCtx();
+    ctx.sessionManager.getSessionId = () => sessionId;
+    let wrapSink;
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
+
+    await pi.fire('session_start', { type: 'session_start' }, ctx);
+    await pi.tools[1].execute('tc0', {});
+    const before = ctx.notices.length;
+    sessionId = 'sess-2';                        // switchSession keeps the ctx object
+    wrapSink({ emit: () => {} }).emit(askEvent('escalation_raised'));
+
+    expect(ctx.notices).toHaveLength(before);
+    expect(pi.sent).toHaveLength(1);
   });
 });
 
