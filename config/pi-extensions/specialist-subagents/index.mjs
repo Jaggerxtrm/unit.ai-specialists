@@ -493,6 +493,81 @@ function resultOf(payload) {
   return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }], details: {} };
 }
 
+// ── Human-readable tool-result views (unitAI-55yjs) ──────────────────────────
+//
+// Every specialist_* tool result carries byte-identical machine JSON in
+// content[].text (the coordinator JSON.parses it); renderResult only changes what
+// the operator SEES. Each summary below reads ONLY fields the tools already emit
+// — never forensic internals. Unknown shapes fall back to the raw JSON lines, and
+// the expanded view always appends the full JSON underneath.
+function summarizePayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  if (Array.isArray(payload.activations)) {
+    const lines = [`Fleet: ${payload.activations.length} activation(s), ${(payload.pending_asks ?? []).length} pending ask(s)`];
+    for (const a of payload.activations) {
+      lines.push(`- ${a.specialist ?? '?'} on ${a.bead_id ?? '?'} — ${a.state ?? '?'} (${a.activation_id ?? '?'})${a.resolved_model ? ` [${a.resolved_model}]` : ''}${a.result ? ` → ${a.result.status ?? 'settled'}` : ''}`);
+    }
+    for (const ask of payload.pending_asks ?? []) {
+      lines.push(`? ${ask.kind ?? 'ask'} from ${ask.activation_id ?? '?'} (${ask.message_id ?? '?'}): ${(ask.body ?? '').split('\n')[0]}`);
+    }
+    return lines;
+  }
+  if (Array.isArray(payload.specialists)) {
+    const rows = payload.specialists;
+    const und = rows.filter((r) => r.dispatchable === false).length;
+    const lines = [`Registry: ${payload.count ?? rows.length} specialist(s)${und ? `, ${und} undispatchable` : ''}`];
+    for (const r of rows) {
+      lines.push(`- ${r.name ?? '?'} [${r.tier ?? r.permission_required ?? '?'}]${r.category ? ` (${r.category})` : ''}${r.dispatchable === false ? ` — not dispatchable: ${r.reason ?? 'unknown reason'}` : ''}`);
+    }
+    return lines;
+  }
+  if (payload.specialist && typeof payload.specialist === 'object') {
+    const s = payload.specialist;
+    return [`${s.name ?? '?'} [${s.permission_required ?? s.tier ?? '?'}]${s.category ? ` (${s.category})` : ''}${s.dispatchable === false ? ` — not dispatchable: ${s.reason ?? 'unknown reason'}` : ''}`];
+  }
+  switch (payload.status) {
+    case 'dispatched':
+      return [
+        `Dispatched ${payload.specialist ?? '?'} on ${payload.bead_id ?? '?'} — ${payload.state ?? 'started'} as ${payload.activation_id ?? '?'}` +
+        `${payload.resolved_model ? ` [${payload.resolved_model}]` : ''}` +
+        `${payload.created_bead_id ? ` (created bead ${payload.created_bead_id})` : ''}`,
+      ];
+    case 'answered':
+      return [`Answered ${payload.message_id ?? '?'} for ${payload.activation_id ?? '?'}`];
+    case 'resumed':
+      return [`Resumed ${payload.activation_id ?? '?'} (${payload.specialist ?? '?'}) — attempt ${payload.previous_attempt_id ?? '?'} → ${payload.attempt_id ?? '?'}`];
+    case 'stopped':
+      return [`Stopped ${payload.activation_id ?? '?'}`];
+    case 'rejected':
+      return [`Rejected: ${payload.reason ?? 'no reason given'}${payload.missing?.length ? ` (missing: ${payload.missing.join(', ')})` : ''}`];
+    case 'error':
+      return [`Error: ${payload.error ?? 'unknown error'}`];
+    default:
+      return null;
+  }
+}
+
+/** Build a renderResult that shows the human summary, with full JSON on expand. */
+function humanResultOf() {
+  return (result, { expanded } = {}) => {
+    const raw = (result?.content ?? []).find((c) => c?.type === 'text')?.text ?? '';
+    let payload = null;
+    try { payload = JSON.parse(raw); } catch { /* fall through to raw lines */ }
+    const summary = payload ? summarizePayload(payload) : null;
+    const lines = summary ?? (raw ? raw.split('\n') : ['(empty result)']);
+    const shown = summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
+    return { dispose: () => {}, render: () => shown };
+  };
+}
+
+/** Build a renderCall one-liner naming the tool and its key argument. */
+function humanCallOf(describe) {
+  return (args) => {
+    const line = describe(args ?? {});
+    return { dispose: () => {}, render: () => [line] };
+  };
+}
+
 // ── Extension factory ────────────────────────────────────────────────────────
 
 /**
@@ -656,6 +731,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'creates a persistent activation YOU own: stop it with ' +
       'specialist_stop_activation when you are done with it.',
     promptSnippet: 'Dispatch an XTRM Specialist (specialist_dispatch: specialist, bead_id)',
+    renderCall: humanCallOf((args) => `Dispatch ${args.specialist ?? '?'} on ${args.bead_id || 'inline contract'}`),
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       specialist: Type.String({ description: 'Specialist name, e.g. codebase-explorer' }),
       bead_id: Type.Optional(
@@ -816,6 +893,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'every activation you will not resume. No CLI background jobs are shown — ' +
       'this surface only hosts in-process activations.',
     promptSnippet: 'Show the Specialist Fleet (specialist_status)',
+    renderResult: humanResultOf(),
     parameters: Type.Object({}),
     async execute() {
       const h = getHost();
@@ -843,6 +921,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'restarted with an answer pasted into a fresh prompt. An unknown or already ' +
       'answered message_id is reported, not silently accepted.',
     promptSnippet: 'Answer a Specialist question (specialist_reply: message_id, body)',
+    renderCall: humanCallOf((args) => `Reply to ${args.message_id ?? '?'}`),
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       message_id: Type.String({
         description:
@@ -900,6 +980,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'A disposed activation cannot be resumed — that is what makes specialist_stop_activation ' +
       'the irreversible one.',
     promptSnippet: 'Resume a settled Specialist (specialist_resume: activation_id, prompt)',
+    renderCall: humanCallOf((args) => `Resume ${args.activation_id ?? '?'}`),
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       activation_id: Type.String({ description: 'The settled or waiting activation to resume.' }),
       prompt: Type.String({ description: 'The new instruction for the resumed Specialist.' }),
@@ -977,6 +1059,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'to use again: a settled or waiting activation keeps its session and Fleet ' +
       'entry until YOU stop it — nothing expires it for you.',
     promptSnippet: 'Stop a Specialist (specialist_stop_activation: activation_id)',
+    renderCall: humanCallOf((args) => `Stop ${args.activation_id ?? '?'}`),
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       activation_id: Type.String({ description: 'Activation to stop and dispose.' }),
       reason: Type.Optional(Type.String({ description: 'Recorded forensically with the disposal.' })),
@@ -1027,6 +1111,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       'time. This extension is the dispatch surface: do not shell out to the specialists ' +
       'CLI to run a Specialist.',
     promptSnippet: 'List configured Specialists (specialist_list; name= for detail)',
+    renderResult: humanResultOf(),
     parameters: Type.Object({
       name: Type.Optional(Type.String({
         description: 'Return the full record for this one specialist instead of the compact list.',
