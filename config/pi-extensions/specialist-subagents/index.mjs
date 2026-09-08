@@ -1273,8 +1273,11 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     fleetInspectorOpen = true;
     try {
       const result = await ctx.ui.custom((tui, theme, keybindings, done) => {
-        const render = () => renderFleetSection(readFleet(), { expanded: true })
-          .map((line, i) => (i === selected + 1 ? `▸ ${line.trim()}` : line)).join('\n');
+        const render = (width) => {
+          if (typeof width === 'number' && width < 1) return [];
+          return renderFleetSection(readFleet(), { expanded: true })
+            .map((line, i) => (i === selected + 1 ? `▸ ${line.trim()}` : line));
+        };
         const move = (d) => { selected = (selected + d + count()) % count(); try { tui.requestRender?.(); } catch {} };
         const attachSelected = () => {
           const views = readFleet().activations;

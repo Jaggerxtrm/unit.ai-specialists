@@ -886,7 +886,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     const inspected = command('fleet').handler('inspect', ctx);
     expect(customs).toHaveLength(1); // handler reaches ui.custom synchronously
     const pane = customs[0][0]({ requestRender: vi.fn(), onKey: vi.fn() }, {}, { register: vi.fn() }, () => {});
-    expect(pane.render()).toContain('SPECIALISTS'); // inspector owns the screen
+    expect(pane.render(80).join('\n')).toContain('SPECIALISTS'); // inspector owns the screen
 
     await command_tick();
     await command_tick();
@@ -896,6 +896,33 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     release();
     await inspected; // handler returns undefined; the assertions below are the contract
     expect(paints).toBeGreaterThan(0); // close resumes live updates
+  });
+
+  it('/fleet inspect pane render(width) returns string[] per the pi custom() contract (unitAI-dygdq)', async () => {
+    const { pi, ctx, command } = await boot();
+    const customs = [];
+    let release;
+    ctx.ui.custom = (render, opts) => {
+      customs.push([render, opts]);
+      return new Promise((resolve) => { release = () => resolve(undefined); });
+    };
+    const inspected = command('fleet').handler('inspect', ctx);
+    const pane = customs[0][0]({ requestRender: vi.fn(), onKey: vi.fn() }, {}, { register: vi.fn() }, () => {});
+    // Empty fleet: array of lines, not a joined string (pi iterates a string char-wise).
+    const empty = pane.render(80);
+    expect(Array.isArray(empty)).toBe(true);
+    expect(empty.length).toBeGreaterThan(0);
+    expect(empty.join('\n')).toContain('SPECIALISTS');
+    // Populated fleet renders one normal row per line.
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
+    const rows = pane.render(80);
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows.every((r) => typeof r === 'string')).toBe(true);
+    expect(rows.join('\n')).toContain('SPECIALISTS');
+    // Tiny widths degrade to empty rather than garbage.
+    expect(pane.render(0)).toEqual([]);
+    release();
+    await inspected;
   });
 
   it('/fleet reports in text too, so json and print modes are not blind', async () => {
