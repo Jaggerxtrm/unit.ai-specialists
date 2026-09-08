@@ -614,7 +614,7 @@ export class NativeActivationHost {
       emit('output_validation_passed');
 
       snapshot.state = 'settled';
-      emit('activation_completed', { pi_session_id: session.sessionId });
+      emit('activation_completed', { pi_session_id: session.sessionId, output });
       this.releaseIfWriter(snapshot, 'completed');
 
       return {

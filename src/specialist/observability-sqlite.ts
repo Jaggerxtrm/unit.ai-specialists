@@ -1430,7 +1430,7 @@ export interface ObservabilitySqliteClient {
     events: readonly TimelineEvent[],
     identity?: ObservabilityIdentityProjection,
   ): void;
-  upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
+  upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string, identity?: ObservabilityIdentityProjection): void;
   appendEvent(
     jobId: string,
     specialist: string,
@@ -2109,11 +2109,11 @@ class SqliteClient implements ObservabilitySqliteClient {
     }, 'upsertStatusWithEvents');
   }
 
-  upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void {
+  upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string, identity?: ObservabilityIdentityProjection): void {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status, output);
-        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+        this.writeStatusRow(status, output, identity);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event, identity);
         this.writeResultRow(status.id, output);
       });
       transaction();
