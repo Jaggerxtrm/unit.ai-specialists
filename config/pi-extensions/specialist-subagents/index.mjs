@@ -421,11 +421,15 @@ export default function specialistSubagentsExtension(pi, options = {}) {
             'An INLINE task contract, used instead of bead_id: the SAME readiness gate ' +
             'runs first, then a Bead is created from it and dispatched. The contract ' +
             'must contain all seven sections — PROBLEM, SUCCESS, SCOPE, NON_GOALS, ' +
-            'CONSTRAINTS, VALIDATION, OUTPUT — plus a SCRUTINY level. Write each section ' +
-            'as a heading: either the section name on its own line with its body beneath, ' +
-            'or `PROBLEM: the body` on one line. Both forms are accepted. ' +
-            'Use the planning skill (/planning) to write one; a contract missing any ' +
-            'section is refused and nothing is created.',
+            'CONSTRAINTS, VALIDATION, OUTPUT — plus a SCRUTINY level, which must be exactly ' +
+            'one of LOW, MEDIUM, HIGH or CRITICAL. Note that this is EIGHT required parts, ' +
+            'not seven; SCRUTINY is the one most often left out. Write each section as a ' +
+            'heading: either the section name on its own line with its body beneath, or ' +
+            '`PROBLEM: the body` on one line. Both forms are accepted. ' +
+            'A dispatch here always creates a durable Bead, so it is not the path for a ' +
+            'throwaway question — for an untracked one-off use the CLI: `sp run <name> ' +
+            '--prompt "..."`. Use the planning skill (/planning) to write a real contract; ' +
+            'one missing any section is refused and nothing is created.',
         }),
       ),
       title: Type.Optional(
@@ -464,6 +468,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
           ));
         }
         let effectiveBeadId = beadId;
+        let autoCreatedBeadId;
         if (!effectiveBeadId) {
           if (!contract) {
             return resultOf(inlineRejectionResult(
@@ -485,6 +490,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
             return resultOf({ status: 'error', error: 'bd create failed — bead not created, board unchanged' });
           }
           effectiveBeadId = created;
+          autoCreatedBeadId = created;
         }
 
         const handle = await h.start({
@@ -512,6 +518,18 @@ export default function specialistSubagentsExtension(pi, options = {}) {
             text: JSON.stringify({
               status: 'dispatched',
               ...view,
+              // An inline contract creates a durable board record. Saying so in the RESULT
+              // is the difference between a coordinator tracking it and an operator finding
+              // an orphan bead later — the caller cannot see the side effect otherwise.
+              ...(autoCreatedBeadId
+                ? {
+                  created_bead_id: autoCreatedBeadId,
+                  created_bead_note:
+                    'This dispatch CREATED the bead above from your inline contract. It is a '
+                    + 'durable board record and is yours to track: close it when the work is '
+                    + 'done, or reassign it. It is not cleaned up automatically.',
+                }
+                : {}),
               step_contract: {
                 root_work_ref: handle.stepContract.rootWorkRef,
                 inputs: handle.stepContract.inputs.length,

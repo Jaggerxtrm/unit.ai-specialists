@@ -625,6 +625,38 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     expect(pi.sent).toHaveLength(1);
   });
 
+  it('tells the caller it created a bead, because the side effect is invisible otherwise', async () => {
+    const mod = await loadExtension();
+    const { host } = makeFakeHost();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => host, createBead: () => 'bd-created-1' });
+
+    const contract = [
+      'PROBLEM: p', 'SUCCESS: s', 'SCRUTINY: LOW', 'SCOPE: sc',
+      'NON_GOALS: n', 'CONSTRAINTS: c', 'VALIDATION: v', 'OUTPUT: o',
+    ].join('\n');
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch')
+      .execute('tc1', { specialist: 'explorer', contract }));
+
+    // An operator reported having to infer this and then clean up an orphan bead by hand.
+    expect(out.status).toBe('dispatched');
+    expect(out.created_bead_id).toBe('bd-created-1');
+    expect(out.created_bead_note).toMatch(/yours to track/i);
+  });
+
+  it('says nothing about created beads when the caller supplied one', async () => {
+    const mod = await loadExtension();
+    const { host } = makeFakeHost();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => host });
+
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch')
+      .execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' }));
+
+    expect(out.created_bead_id).toBeUndefined();
+    expect(out.created_bead_note).toBeUndefined();
+  });
+
   // ── Resume (unitAI-rrdnt.33.1) ──────────────────────────────────────────────
   //
   // resume() was complete, unit-tested, and reachable from nothing: no MCP tool, no CLI and
