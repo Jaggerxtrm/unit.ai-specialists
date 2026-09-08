@@ -610,6 +610,82 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     },
   });
 
+  // unitAI-rrdnt.33.1. `NativeActivationHost.resume()` existed, was unit-tested, and was
+  // called by nothing — no MCP tool, no CLI, no extension command. A settled Specialist is
+  // documented as "waiting and resumable" and the lease reacquisition path exists solely for
+  // resume, so the whole resume half of the runtime was unreachable from any operator surface.
+  // That is the epic's recurring shape: a module complete, tested, closed on the board, and
+  // reachable by nobody.
+  pi.registerTool({
+    name: 'specialist_resume',
+    label: 'Specialist resume',
+    description:
+      'Resume a settled or waiting Specialist with a new prompt, in the SAME session. ' +
+      'This is not a second dispatch: the activation_id is kept and the attempt_id advances, ' +
+      'so the child keeps its context and its workspace lease rather than starting over. ' +
+      'Use this after answering a question, or to give a settled Specialist more work. ' +
+      'A disposed activation cannot be resumed — that is what makes specialist_stop_activation ' +
+      'the irreversible one.',
+    promptSnippet: 'Resume a settled Specialist (specialist_resume: activation_id, prompt)',
+    parameters: Type.Object({
+      activation_id: Type.String({ description: 'The settled or waiting activation to resume.' }),
+      prompt: Type.String({ description: 'The new instruction for the resumed Specialist.' }),
+    }),
+    async execute(toolCallId, params) {
+      const h = getHost();
+      const before = h.inspect(params.activation_id);
+      if (!before) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'error',
+              error: `Unknown activation: ${params.activation_id}`,
+              activation_id: params.activation_id,
+            }, null, 2),
+          }],
+          details: {},
+        };
+      }
+
+      let handle;
+      try {
+        handle = await h.resume(params.activation_id, params.prompt);
+      } catch (error) {
+        // A refused resume is evidence, not a malfunction — the host refuses a disposed or
+        // running activation, and a lease it can no longer reacquire.
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'rejected',
+              activation_id: params.activation_id,
+              reason: error instanceof Error ? error.message : String(error),
+            }, null, 2),
+          }],
+          details: {},
+        };
+      }
+
+      handle.result
+        .then((result) => { results.set(handle.activationId, result); })
+        .catch(() => { /* observed via specialist_status */ });
+
+      const snapshot = h.inspect(handle.activationId);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'resumed',
+            previous_attempt_id: before.attemptId,
+            ...(snapshot ? toActivationView(snapshot) : { activation_id: handle.activationId }),
+          }, null, 2),
+        }],
+        details: {},
+      };
+    },
+  });
+
   pi.registerTool({
     name: 'specialist_stop_activation',
     label: 'Specialist stop',

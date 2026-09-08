@@ -64,7 +64,7 @@ const ASK = {
 };
 
 function makeFakeHost() {
-  const calls = { start: [], answer: [], stop: [] };
+  const calls = { start: [], answer: [], stop: [], resume: [] };
   const host = {
     start: vi.fn(async (req) => {
       calls.start.push(req);      return {
@@ -103,6 +103,18 @@ function makeFakeHost() {
     }),
     stop: vi.fn(async (activationId, reason) => {
       calls.stop.push([activationId, reason]);
+    }),
+    resume: vi.fn(async (activationId, prompt) => {
+      calls.resume.push([activationId, prompt]);
+      return {
+        activationId, participantId: 'specialist::explorer', attemptId: 'att:aaaa:2',
+        result: Promise.resolve({
+          activationId, participantId: 'specialist::explorer', attemptId: 'att:aaaa:2',
+          beadId: 'bd-1', status: 'completed', output: 'resumed report',
+          validation: { valid: true }, piSessionId: 'sess-1', configuredModel: 'm',
+          resolvedModel: 'm', modelOverride: false, fallbackUsed: false, completedAt: 200,
+        }),
+      };
     }),
   };
   return { host, calls };
@@ -162,13 +174,27 @@ function makeFakeCtx({ hasUI = true, mode = 'tui', sessionId = 'sess-1' } = {}) 
   };
 }
 
+/**
+ * Look a registered tool up by NAME, never by index.
+ *
+ * These were `pi.tools[3]` and friends until adding one tool (specialist_resume,
+ * unitAI-rrdnt.33.1) shifted three of them and produced failures that pointed at the wrong
+ * thing — "expected undefined to deeply equal [...]" says nothing about the cause.
+ * Registration order is not a contract; the names are.
+ */
+function toolNamed(pi, name) {
+  const tool = pi.tools.find((t) => t.name === name);
+  if (!tool) throw new Error(`tool not registered: ${name} (have: ${pi.tools.map(t => t.name).join(', ')})`);
+  return tool;
+}
+
 function resultText(result) {
   const text = (result.content ?? []).find((c) => c.type === 'text');
   return JSON.parse(text.text);
 }
 
 describe('specialist-subagents extension (Pi coordinator surface)', () => {
-  it('registers exactly the four specialist_* tools over the host', async () => {
+  it('registers exactly the six specialist_* tools over the host', async () => {
     const mod = await loadExtension();
     const pi = makeFakePi();
     mod.default(pi);
@@ -176,11 +202,12 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
       'specialist_dispatch',
       'specialist_status',
       'specialist_reply',
+      'specialist_resume',
       'specialist_stop_activation',
       'specialist_list',
     ]);
     // No free-form task text for tracked work (PRD §10/§14).
-    const dispatch = pi.tools[0];
+    const dispatch = toolNamed(pi, 'specialist_dispatch');
     expect(dispatch.parameters.properties).not.toHaveProperty('task');
     expect(dispatch.parameters.properties).toHaveProperty('bead_id');
     // .48: inline contract path is a first-class parameter.
@@ -195,7 +222,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const pi = makeFakePi();
     const { host, calls } = makeFakeHost();
     mod.default(pi, { createHost: () => host });
-    const dispatch = pi.tools[0];
+    const dispatch = toolNamed(pi, 'specialist_dispatch');
     const out = resultText(await dispatch.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' }));
     expect(calls.start[0]).toMatchObject({
       specialist: 'explorer',
@@ -212,7 +239,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const pi = makeFakePi();
     const { host, calls } = makeFakeHost();
     mod.default(pi, { createHost: () => host });
-    const dispatch = pi.tools[0];
+    const dispatch = toolNamed(pi, 'specialist_dispatch');
     await dispatch.execute('tc1', {
       specialist: 'explorer',
       bead_id: 'bd-1',
@@ -237,7 +264,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
       missing: ['VALIDATION', 'OUTPUT'],
     }));
     mod.default(pi, { createHost: () => host });
-    const out = resultText(await pi.tools[0].execute('tc1', { specialist: 'explorer', bead_id: 'bd-draft' }));
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', { specialist: 'explorer', bead_id: 'bd-draft' }));
     expect(out.status).toBe('rejected');
     expect(out.reason).toContain('SPECIALIST_DISPATCH_REJECTED');
     expect(out.detail.missing).toEqual(['VALIDATION', 'OUTPUT']);
@@ -254,7 +281,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const { host } = makeFakeHost();
     const createBead = vi.fn(() => 'bd-new');
     mod.default(pi, { createHost: () => host, createBead });
-    const out = resultText(await pi.tools[0].execute('tc1', {
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', {
       specialist: 'explorer',
       contract: 'PROBLEM\nMissing everything else.',
     }));
@@ -265,7 +292,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     expect(host.start).not.toHaveBeenCalled();
 
     // All seven sections present but no SCRUTINY: refused with SCRUTINY missing.
-    const noScrutiny = resultText(await pi.tools[0].execute('tc2', {
+    const noScrutiny = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc2', {
       specialist: 'explorer',
       contract: 'PROBLEM\np\n\nSUCCESS\ns\n\nSCOPE\nsc\n\nNON_GOALS\nng\n\nCONSTRAINTS\nc\n\nVALIDATION\nv\n\nOUTPUT\no',
     }));
@@ -280,7 +307,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const { host, calls } = makeFakeHost();
     const createBead = vi.fn(() => 'bd-inline-1');
     mod.default(pi, { createHost: () => host, createBead });
-    const out = resultText(await pi.tools[0].execute('tc1', {
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', {
       specialist: 'explorer',
       contract: INLINE_CONTRACT,
     }));
@@ -295,7 +322,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const { host } = makeFakeHost();
     const createBead = vi.fn();
     mod.default(pi, { createHost: () => host, createBead });
-    const out = resultText(await pi.tools[0].execute('tc1', {
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', {
       specialist: 'explorer',
       bead_id: 'bd-1',
       contract: INLINE_CONTRACT,
@@ -311,7 +338,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const pi = makeFakePi();
     const { host } = makeFakeHost();
     mod.default(pi, { createHost: () => host });
-    const out = resultText(await pi.tools[0].execute('tc1', { specialist: 'explorer' }));
+    const out = resultText(await toolNamed(pi, 'specialist_dispatch').execute('tc1', { specialist: 'explorer' }));
     expect(out.status).toBe('rejected');
     expect(out.reason).toContain('neither bead_id nor contract');
     expect(host.start).not.toHaveBeenCalled();
@@ -322,7 +349,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const pi = makeFakePi();
     const { host } = makeFakeHost();
     mod.default(pi, { createHost: () => host });
-    const listTool = pi.tools[4];
+    const listTool = toolNamed(pi, 'specialist_list');
     const out = resultText(await listTool.execute('tc1', {}));
     expect(out.note).toContain('sp help');
     expect(Array.isArray(out.specialists)).toBe(true);
@@ -342,9 +369,9 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const { host } = makeFakeHost();
     mod.default(pi, { createHost: () => host });
     // The dispatch result cache fills as the child result settles.
-    await pi.tools[0].execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' });
+    await toolNamed(pi, 'specialist_dispatch').execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' });
     await new Promise((r) => setTimeout(r, 0));
-    const out = resultText(await pi.tools[1].execute('tc2', {}));
+    const out = resultText(await toolNamed(pi, 'specialist_status').execute('tc2', {}));
     expect(out.activations[0]).toMatchObject({
       activation_id: 'act:aaaa',
       specialist: 'explorer',
@@ -372,7 +399,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
       attemptId: 'att:aaaa:1',
     });
     mod.default(pi, { createHost: () => host });
-    const reply = pi.tools[2];
+    const reply = toolNamed(pi, 'specialist_reply');
     const answered = resultText(await reply.execute('tc3', { message_id: 'msg:1', body: 'Option A' }));
     expect(host.answer.mock.calls[0]).toEqual(['msg:1', 'Option A']);
     expect(answered).toMatchObject({ status: 'answered', message_id: 'msg:1', in_reply_to: 'msg:0' });
@@ -387,7 +414,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const pi = makeFakePi();
     const { host, calls } = makeFakeHost();
     mod.default(pi, { createHost: () => host });
-    const stop = pi.tools[3];
+    const stop = toolNamed(pi, 'specialist_stop_activation');
     const stopped = resultText(await stop.execute('tc5', { activation_id: 'act:aaaa', reason: 'done' }));
     expect(calls.stop[0]).toEqual(['act:aaaa', 'done']);
     expect(stopped).toEqual({ status: 'stopped', activation_id: 'act:aaaa' });
@@ -403,7 +430,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     const { host, calls } = makeFakeHost();
     mod.default(pi, { createHost: () => host });
     // Create the host first (a real session has it after any tool call).
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await pi.fire('session_shutdown', { type: 'session_shutdown', reason: 'quit' });
     expect(calls.stop).toEqual([['act:aaaa', 'session shutdown']]);
   });
@@ -506,7 +533,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
 
     await pi.fire('session_start', { type: 'session_start' }, ctx);
-    await pi.tools[1].execute('tc0', {});          // any tool call builds the host
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});          // any tool call builds the host
     wrapSink({ emit: () => {} }).emit(askEvent('escalation_raised'));
 
     expect(pi.sent).toHaveLength(1);
@@ -532,7 +559,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
 
     await pi.fire('session_start', { type: 'session_start' }, ctx);
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     const base = [];
     wrapSink({ emit: (e) => base.push(e.name) }).emit(askEvent('escalation_raised'));
 
@@ -540,7 +567,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     // The ask is untouched: forensics still written, and specialist_status still
     // projects it from the host's own pending list.
     expect(base).toEqual(['escalation_raised']);
-    const status = resultText(await pi.tools[1].execute('tc1', {}));
+    const status = resultText(await toolNamed(pi, 'specialist_status').execute('tc1', {}));
     expect(status.pending_asks[0].message_id).toBe('msg:1');
     expect(status.pending_asks[0].delivery).toBe('pending');
     // The suppressed state announces itself; a silent session is unexplainable.
@@ -555,7 +582,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
 
     // No session_start: nothing was ever captured.
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     wrapSink({ emit: () => {} }).emit(askEvent('clarification_requested'));
     expect(pi.sent).toHaveLength(1);
   });
@@ -569,7 +596,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
 
     await pi.fire('session_start', { type: 'session_start' }, ctx);
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     const before = ctx.notices.length;
     await pi.fire('session_shutdown', { type: 'session_shutdown', reason: 'quit' });
     wrapSink({ emit: () => {} }).emit(askEvent('escalation_raised'));
@@ -589,7 +616,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     mod.default(pi, { createHost: (opts) => { wrapSink = opts.wrapSink; return host; } });
 
     await pi.fire('session_start', { type: 'session_start' }, ctx);
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     const before = ctx.notices.length;
     sessionId = 'sess-2';                        // switchSession keeps the ctx object
     wrapSink({ emit: () => {} }).emit(askEvent('escalation_raised'));
@@ -597,6 +624,61 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     expect(ctx.notices).toHaveLength(before);
     expect(pi.sent).toHaveLength(1);
   });
+
+  // ── Resume (unitAI-rrdnt.33.1) ──────────────────────────────────────────────
+  //
+  // resume() was complete, unit-tested, and reachable from nothing: no MCP tool, no CLI and
+  // no extension command called it. A settled Specialist is documented as "waiting and
+  // resumable" and the lease REACQUISITION path exists solely for resume, so the whole
+  // resume half of the runtime had no operator surface. These prove the surface exists and
+  // reaches the host; PRD acceptances Y and Z still need a live run.
+
+  it('resume reaches the host with the activation id and the new prompt', async () => {
+    const mod = await loadExtension();
+    const { host, calls } = makeFakeHost();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => host });
+
+    const out = resultText(await toolNamed(pi, 'specialist_resume')
+      .execute('tc1', { activation_id: 'act:aaaa', prompt: 'keep going' }));
+
+    expect(calls.resume).toEqual([['act:aaaa', 'keep going']]);
+    expect(out.status).toBe('resumed');
+    // A resume is not a second activation: the id is kept, the attempt advances.
+    expect(out.activation_id).toBe('act:aaaa');
+    expect(out.previous_attempt_id).toBe('att:aaaa:1');
+  });
+
+  it('refuses an unknown activation without calling the host', async () => {
+    const mod = await loadExtension();
+    const { host, calls } = makeFakeHost();
+    host.inspect = vi.fn(() => undefined);
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => host });
+
+    const out = resultText(await toolNamed(pi, 'specialist_resume')
+      .execute('tc1', { activation_id: 'act:nope', prompt: 'x' }));
+
+    expect(out.status).toBe('error');
+    expect(calls.resume).toEqual([]);
+  });
+
+  it('renders a refused resume as a RESULT, never a throw', async () => {
+    const mod = await loadExtension();
+    const { host } = makeFakeHost();
+    host.resume = vi.fn(async () => { throw new Error('activation is disposed'); });
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => host });
+
+    // A refused resume is evidence, not a malfunction — the same shape every other refusal
+    // on this surface takes.
+    const out = resultText(await toolNamed(pi, 'specialist_resume')
+      .execute('tc1', { activation_id: 'act:aaaa', prompt: 'x' }));
+
+    expect(out.status).toBe('rejected');
+    expect(out.reason).toMatch(/disposed/);
+  });
+
 });
 
 describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
@@ -626,7 +708,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     // empty — this is the state the bead reported as "nothing rendered".
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
 
-    await pi.tools[1].execute('tc0', {});   // specialist_status creates the host
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});   // specialist_status creates the host
     await command_tick();
 
     const lines = ctx.painted.widgets['specialist-fleet'];
@@ -644,7 +726,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 
   it('clears the widget when the Fleet is empty rather than painting a bare header', async () => {
     const { pi, host, ctx } = await boot();
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     host.list.mockReturnValue([]);
     host.pendingAsks.mockReturnValue([]);
     await command_tick();
@@ -654,7 +736,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 
   it('/fleet hide stops painting and /fleet show resumes it', async () => {
     const { pi, ctx, command } = await boot();
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command('fleet').handler('hide', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
     await command('fleet').handler('show', ctx);
@@ -663,7 +745,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 
   it('/fleet reports in text too, so json and print modes are not blind', async () => {
     const { pi, ctx, command } = await boot();
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command('fleet').handler('', ctx);
     expect(ctx.painted.notices.at(-1)[0]).toContain('1 activation(s), 1 pending ask(s)');
   });
@@ -706,7 +788,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 
   it('completes message ids and activation ids from live host state', async () => {
     const { pi, command } = await boot();
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     expect(command('fleet:reply').getArgumentCompletions('msg').map((i) => i.value)).toEqual(['msg:1']);
     expect(command('fleet:stop').getArgumentCompletions('act').map((i) => i.value)).toEqual(['act:aaaa']);
     expect(command('fleet:reply').getArgumentCompletions('nomatch')).toBeNull();
@@ -715,7 +797,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 
   it('does not install the view without UI, and never throws there', async () => {
     const { pi, ctx, command } = await boot({ hasUI: false, mode: 'print' });
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command('fleet').handler('', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
     expect(ctx.painted.notices).toEqual([]);   // report() falls back to console
@@ -723,7 +805,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 
   it('stops painting into a context whose session was replaced', async () => {
     const { pi, ctx } = await boot();
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command_tick();
     expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
 
@@ -736,7 +818,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 
   it('survives a context that throws on property access during teardown', async () => {
     const { pi, ctx } = await boot();
-    await pi.tools[1].execute('tc0', {});
+    await toolNamed(pi, 'specialist_status').execute('tc0', {});
     ctx.sessionManager.getSessionId = () => { throw new Error('session torn down'); };
     await expect(command_tick(pi, ctx)).resolves.not.toThrow();
   });
