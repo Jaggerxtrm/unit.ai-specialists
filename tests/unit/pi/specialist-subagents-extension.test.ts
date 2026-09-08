@@ -889,3 +889,60 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 async function command_tick() {
   await vi.advanceTimersByTimeAsync(1000);
 }
+
+describe('coordinator workspace fence — PRD acceptance U (unitAI-rrdnt.61)', () => {
+  function bootFence(admit: (i: { toolName: string }) => { allow: boolean; reason?: string }) {
+    const pi = makeFakePi();
+    return { pi, admit };
+  }
+
+  async function fire(mod: Record<string, any>, admit: unknown, toolName: string) {
+    const pi = makeFakePi();
+    mod.installCoordinatorFence(pi, {
+      admitCoordinatorToolCall: admit,
+      leaseScopeFor: () => ({ worktreePath: '/ws', repositoryRoot: '/ws' }),
+      cwd: '/ws',
+    });
+    const results: unknown[] = [];
+    for (const h of pi.handlers['tool_call'] ?? []) results.push(await h({ toolName }));
+    return results[0];
+  }
+
+  it('blocks a mutating call while a Specialist holds the workspace, and names the holder', async () => {
+    const mod = await loadExtension();
+    const out = await fire(mod,
+      () => ({ allow: false, reason: 'workspace /ws is held by executor act:aaaa' }), 'write');
+
+    expect(out).toMatchObject({ block: true });
+    expect((out as { reason: string }).reason).toMatch(/held by executor act:aaaa/);
+  });
+
+  it('ALLOWS a mutating call when the workspace is free', async () => {
+    // The trap this exists to catch. The Specialist-side admitToolCall REFUSES an unleased
+    // workspace, because a Specialist must hold a lease to mutate. Reusing that predicate here
+    // would refuse every coordinator write whenever no Specialist was running — which is
+    // almost always. A coordinator that cannot edit its own repository is not a fence.
+    const mod = await loadExtension();
+    expect(await fire(mod, () => ({ allow: true }), 'write')).toBeUndefined();
+  });
+
+  it('fails OPEN when the admission check throws', async () => {
+    // This handler runs on the operator's own session. A bug here must never be the reason
+    // they cannot write; a fence that misses a block is recoverable, one that wrongly blocks
+    // the operator is not.
+    const mod = await loadExtension();
+    const out = await fire(mod, () => { throw new Error('lease store unreadable'); }, 'write');
+    expect(out).toBeUndefined();
+  });
+
+  it('registers on tool_call, the only hook that can block before execution', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.installCoordinatorFence(pi, {
+      admitCoordinatorToolCall: () => ({ allow: true }),
+      leaseScopeFor: () => ({ worktreePath: '/ws', repositoryRoot: '/ws' }),
+      cwd: '/ws',
+    });
+    expect(pi.handlers['tool_call']?.length).toBe(1);
+  });
+});

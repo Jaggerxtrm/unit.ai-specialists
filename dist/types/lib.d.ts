@@ -23,4 +23,6 @@ export { LAUNCH_OUTCOME_SCHEMA_VERSION, LaunchOutcomeError, parseLaunchOutcome, 
 export { readVerifiedCitationWindow, verifyExactLineCitation, } from './specialist/citation-evidence.js';
 export type { CitationLine, VerifiedCitationWindow, VerifiedCitationWindowOptions, RawPiReadEvidence, ExactLineClaim, ExactLineCitationResult, } from './specialist/citation-evidence.js';
 export type { LaunchOutcome, LaunchOutcomeProjection, LaunchOutcomeErrorCode, LaunchOutcomeAction, LaunchOutcomeIdentity, LaunchOutcomeReadiness, LaunchOutcomeWorktree, LaunchOutcomeRuntime, LaunchOutcomeSafetyProfile, LaunchOutcomeSideEffect, LaunchOutcomeMutationRecord, } from './specialist/launch-outcome.js';
+export { admitCoordinatorToolCall } from './activation/workspace-lease.js';
+export { leaseScopeFor } from './activation/workspace-reconcile.js';
 //# sourceMappingURL=lib.d.ts.map

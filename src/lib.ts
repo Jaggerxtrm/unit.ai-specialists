@@ -122,3 +122,10 @@ export type {
   LaunchOutcomeSideEffect,
   LaunchOutcomeMutationRecord,
 } from './specialist/launch-outcome.js';
+
+// Coordinator-side workspace fence (unitAI-rrdnt.61). `admitCoordinatorToolCall` is the
+// coordinator's admission rule and is deliberately NOT `admitToolCall` — see its docstring for
+// why the default on an unleased workspace differs. `leaseScopeFor` turns a cwd into the
+// workspace identity both rules key on.
+export { admitCoordinatorToolCall } from './activation/workspace-lease.js';
+export { leaseScopeFor } from './activation/workspace-reconcile.js';

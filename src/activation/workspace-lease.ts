@@ -420,6 +420,47 @@ export interface AdmissionVerdict {
 }
 
 /**
+ * Decide whether the COORDINATOR may mutate a workspace right now.
+ *
+ * This is deliberately NOT `admitToolCall`, and the difference is the default case.
+ * `admitToolCall` refuses an unleased workspace, because a Specialist must HOLD a lease to
+ * mutate — that is the capability grant being enforced. The coordinator never holds one, so
+ * reusing that predicate would refuse every coordinator write whenever no Specialist happened
+ * to be running, which is almost always (unitAI-rrdnt.61). A coordinator that cannot edit its
+ * own repository is not a fence.
+ *
+ * The rule here is the mirror image: a free workspace is the coordinator's to write, and only
+ * an ACTIVE holder or an uncertain lease takes it away. Both functions read the same
+ * `inspect`, so they can never disagree about WHO holds the lease — only about what the
+ * absence of one means, which is exactly the thing that legitimately differs between a
+ * delegated Specialist and the operator who dispatched it.
+ */
+export function admitCoordinatorToolCall(
+  input: { toolName: string; workspace: WorkspaceIdentity },
+  probe: LeaseProcessProbe = procLeaseProbe(),
+): AdmissionVerdict {
+  if (!isMutatingTool(input.toolName)) return { allow: true };
+
+  const status = inspect(input.workspace, probe);
+  if (status.state === 'held') {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} is held by ${describeHolder(status)}; `
+        + `${input.toolName} would mutate a workspace a Specialist is currently writing`,
+    };
+  }
+  if (status.state === 'uncertain') {
+    return {
+      allow: false,
+      reason: `workspace ${input.workspace.worktreePath} lease is uncertain (${status.uncertainReason}); `
+        + 'mutation is refused until recovery resolves the previous holder',
+    };
+  }
+  // Free. The coordinator holds no lease and is not required to.
+  return { allow: true };
+}
+
+/**
  * Decide whether one tool call may proceed against a workspace.
  *
  * Wire this into `beforeToolCall` and convert `allow: false` into a per-call block. Do NOT

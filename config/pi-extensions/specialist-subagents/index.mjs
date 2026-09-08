@@ -44,11 +44,52 @@ import {
   resolveObservabilityDbLocation,
   resolveRuntimeToolContract,
   SpecialistLoader,
+  admitCoordinatorToolCall,
+  leaseScopeFor,
   toActivationResultView,
   toActivationView,
   toPendingAskView,
   validateBeforeRun,
 } from '../../../dist/lib.js';
+
+
+/**
+ * Fence the COORDINATOR out of a workspace a Specialist is writing (PRD acceptance U,
+ * unitAI-rrdnt.61).
+ *
+ * `pi.on('tool_call')` fires before a tool executes and can block — the per-call hook
+ * workspace-lease.ts §5.9 requires, and the one `setActiveToolsByName` cannot provide.
+ *
+ * FAILS OPEN, on purpose and without exception. This handler runs on the operator's own
+ * session: a bug here that threw or refused wrongly would stop them editing their own
+ * repository, and the failure would surface as an unexplained refusal with no obvious cause.
+ * A fence that occasionally misses a block is recoverable; one that wrongly blocks the
+ * operator is not.
+ *
+ * It uses `admitCoordinatorToolCall`, NOT the Specialist-side `admitToolCall`. The latter
+ * refuses an UNLEASED workspace, because a Specialist must hold a lease to mutate — applying
+ * that to the coordinator would refuse every write whenever no Specialist was running.
+ *
+ * The boundary this does NOT cover, stated rather than implied: `pi.exec` and direct
+ * `node:fs` inside extension code (H3/H4) are not interposable on Pi 0.85.1, so this fences
+ * every mutation the coordinator's MODEL can initiate and no more.
+ */
+export function installCoordinatorFence(pi, deps = {}) {
+  const scopeFor = deps.leaseScopeFor ?? leaseScopeFor;
+  const admit = deps.admitCoordinatorToolCall ?? admitCoordinatorToolCall;
+  const cwd = deps.cwd ?? process.cwd();
+
+  pi.on('tool_call', (event) => {
+    try {
+      const verdict = admit({ toolName: event.toolName, workspace: scopeFor(cwd) });
+      if (verdict.allow) return undefined;
+      return { block: true, reason: `specialist-subagents: ${verdict.reason}` };
+    } catch {
+      // Never let this handler be the reason an operator cannot write.
+      return undefined;
+    }
+  });
+}
 
 /** Default coordinator ParticipantId: <participant_kind>::<participant_role>, matching MCP. */
 export const DEFAULT_REQUESTED_BY = 'adapter::pi-extension';
@@ -291,6 +332,10 @@ function resultOf(payload) {
  *   when omitted, one process-lifetime host is created on first tool use.
  */
 export default function specialistSubagentsExtension(pi, options = {}) {
+  // PRD acceptance U: the coordinator is fenced out of a workspace a Specialist holds.
+  // Fails open — see installCoordinatorFence.
+  installCoordinatorFence(pi, options);
+
   // The wake exists so that an operator who does nothing still learns a child is
   // blocked. The flag turns it off so the DEGRADED path is reproducible on demand:
   // the case worth regression-testing is not that a notification fires, it is that
