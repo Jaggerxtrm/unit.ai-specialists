@@ -146,7 +146,7 @@ describe('NativeActivationHost — Fleet registry projection', () => {
     expect(keys).toEqual([
       'access', 'activationId', 'attemptId', 'beadId', 'configuredModel', 'lastActivityAt',
       'modelOverride', 'participantId', 'piSessionId', 'purpose', 'requestedModel', 'resolvedModel',
-      'specialist', 'startedAt', 'state', 'workspace',
+      'specialist', 'startedAt', 'state', 'thinkingOverride', 'workspace',
     ].sort());
   });
 

@@ -594,8 +594,9 @@ surfaces, not one migrating into the other.
 ### Dispatching
 
 `specialist_dispatch` takes `specialist` and `bead_id` (both required), plus optional
-`model_override`, `requested_by` (defaults to `adapter::specialists-mcp`) and
-`coordinator_session_id`.
+`model_override`, `thinking_override` (one of `off`, `minimal`, `low`, `medium`, `high`,
+`xhigh`; absent means the definition `thinking_level`), `requested_by` (defaults to
+`adapter::specialists-mcp`) and `coordinator_session_id`.
 
 There is **no task or prompt field**. The Bead is the prompt.
 
@@ -624,6 +625,7 @@ On success it returns the activation's **identity and state**, not a result:
   "state": "...", "access": "read",
   "worktree_path": "...", "branch": "...", "pi_session_id": "...",
   "resolved_model": "...", "model_override": false,
+  "thinking_level": "...", "thinking_override": false,
   "step_contract": { "root_work_ref": "...", "inputs": 0, "outputs": 1 } }
 ```
 
@@ -760,7 +762,8 @@ between the surfaces; that is unfiled.
 The result projection is the answer to acceptance AU for a Pi coordinator: a
 **settled** activation carries a `result` object, projected by `toResultView`, alongside the
 shared view in `specialist_status`. It carries `status`, `output`, the `validation` record,
-`configured_model`, `resolved_model`, `model_override`, `fallback_used` and `completed_at`.
+`configured_model`, `resolved_model`, `model_override`, `thinking_level`, `thinking_override`,
+`fallback_used` and `completed_at`.
 The MCP surface does not project it.
 
 So the AU rule across both frontends is: **no tool returns a result in place of a message**.

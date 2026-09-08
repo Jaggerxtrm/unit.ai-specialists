@@ -76307,6 +76307,8 @@ import { existsSync as existsSync19, linkSync, mkdirSync as mkdirSync10, readFil
 import { join as join18 } from "path";
 
 // src/activation/types.ts
+var THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
 class DispatchRejectedError extends Error {
   reason;
   detail;
@@ -76628,6 +76630,7 @@ function toActivationView(snapshot, nowMs = Date.now()) {
     ...snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {},
     resolved_model: snapshot.resolvedModel,
     model_override: snapshot.modelOverride,
+    thinking_override: snapshot.thinkingOverride,
     elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
     ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {},
     ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
@@ -76662,6 +76665,8 @@ function toActivationResultView(result) {
     ...result.requestedModel ? { requested_model: result.requestedModel } : {},
     resolved_model: result.resolvedModel,
     model_override: result.modelOverride,
+    ...result.thinkingLevel ? { thinking_level: result.thinkingLevel } : {},
+    thinking_override: result.thinkingOverride,
     fallback_used: result.fallbackUsed,
     completed_at: result.completedAt
   };
@@ -76677,6 +76682,7 @@ var specialistDispatchSchema = objectType({
   specialist: stringType().describe("Specialist name, e.g. codebase-explorer"),
   bead_id: stringType().describe("The Bead that is this activation's task contract \u2014 a COMPLETE 7-section contract " + "(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY " + "level, which must be exactly one of LOW, MEDIUM, HIGH or CRITICAL. That is EIGHT " + "required parts, not seven; SCRUTINY is the one most often left out. Write each section " + "as a heading: either the section name on its own line with its body beneath, or " + "`PROBLEM: the body` on one line. Both forms are accepted. " + "A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill)."),
   model_override: stringType().optional().describe("Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced."),
+  thinking_override: enumType(THINKING_LEVELS).optional().describe("Override the definition thinking_level for THIS activation only. Absent means the definition level. An unknown value is refused before the session is created."),
   requested_by: stringType().optional().describe("ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant."),
   coordinator_session_id: stringType().optional().describe("MCP session id, for lineage.")
 });
@@ -76691,6 +76697,7 @@ function createSpecialistDispatchTool(getHost, getPusher) {
           specialist: input.specialist,
           beadId: input.bead_id,
           ...input.model_override ? { modelOverride: input.model_override } : {},
+          ...input.thinking_override ? { thinkingOverride: input.thinking_override } : {},
           requestedByParticipantId: input.requested_by ?? "adapter::specialists-mcp",
           ...input.coordinator_session_id ? { coordinatorSessionId: input.coordinator_session_id } : {}
         });
@@ -77984,7 +77991,8 @@ class NativeActivationHost {
     });
     emit("activation_requested", {
       requested_by: request.requestedByParticipantId,
-      model_override: request.modelOverride ?? null
+      model_override: request.modelOverride ?? null,
+      thinking_override: request.thinkingOverride ?? null
     });
     const reject = (reason, detail = {}) => {
       emit("activation_rejected", { reason, ...detail });
@@ -78033,6 +78041,13 @@ class NativeActivationHost {
     const sdk = await this.loadSdk();
     const configuredModel = resolveModelChain(execution)[0];
     const requestedModel = request.modelOverride ?? configuredModel;
+    if (request.thinkingOverride !== undefined && !THINKING_LEVELS.includes(request.thinkingOverride)) {
+      return reject("invalid_thinking_override", {
+        thinkingOverride: request.thinkingOverride,
+        note: `supported thinking levels: ${THINKING_LEVELS.join(", ")}`
+      });
+    }
+    const thinkingLevel = request.thinkingOverride ?? execution.thinking_level;
     if (!requestedModel)
       return reject("no_model_configured");
     const modelRuntime = await createGateModelRuntime(sdk);
@@ -78088,6 +78103,8 @@ class NativeActivationHost {
       requested_model: requestedModel,
       resolved_model: resolvedModel,
       model_override: Boolean(request.modelOverride),
+      thinking_level: thinkingLevel ?? null,
+      thinking_override: request.thinkingOverride !== undefined,
       workspace: workspace.worktreePath,
       tools: toolContract.toolsList.join(","),
       custom_tools: `${ASK_TOOL},${ESCALATE_TOOL}`
@@ -78151,7 +78168,7 @@ class NativeActivationHost {
       customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       model: modelCheck.model,
-      ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...thinkingLevel ? { thinkingLevel } : {},
       noTools: "builtin",
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
@@ -78172,7 +78189,8 @@ class NativeActivationHost {
       requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
-      ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...thinkingLevel ? { thinkingLevel } : {},
+      thinkingOverride: request.thinkingOverride !== undefined,
       ...purpose ? { purpose } : {},
       startedAt,
       lastActivityAt: startedAt
@@ -78270,6 +78288,8 @@ class NativeActivationHost {
           requestedModel: snapshot.requestedModel,
           resolvedModel: snapshot.resolvedModel,
           modelOverride: snapshot.modelOverride,
+          ...snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {},
+          thinkingOverride: snapshot.thinkingOverride,
           fallbackUsed: false,
           completedAt: this.now()
         };
@@ -78294,6 +78314,8 @@ class NativeActivationHost {
         requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
+        ...snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {},
+        thinkingOverride: snapshot.thinkingOverride,
         fallbackUsed: false,
         completedAt: this.now()
       };
@@ -78314,6 +78336,8 @@ class NativeActivationHost {
         requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
+        ...snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {},
+        thinkingOverride: snapshot.thinkingOverride,
         fallbackUsed: false,
         completedAt: this.now()
       };
@@ -78501,7 +78525,9 @@ class NativeActivationHost {
     emit("activation_resumed", {
       requested_model: record4.snapshot.requestedModel,
       resolved_model: record4.snapshot.resolvedModel,
-      model_override: record4.snapshot.modelOverride
+      model_override: record4.snapshot.modelOverride,
+      thinking_level: record4.snapshot.thinkingLevel ?? null,
+      thinking_override: record4.snapshot.thinkingOverride
     });
     record4.unsubscribe();
     record4.unsubscribe = record4.session.subscribe((event) => this.onSessionEvent(record4.snapshot, event, emit));

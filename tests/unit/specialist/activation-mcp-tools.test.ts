@@ -70,6 +70,7 @@ function contract(extra = 'SCRUTINY\nLOW — routine.') {
 interface HostFixture {
   bead?: unknown;
   permission?: string;
+  thinkingLevel?: string;
   readContractState?: () => string | undefined;
 }
 
@@ -166,6 +167,7 @@ function hostWith(fixture: HostFixture = {}) {
           response_format: 'text',
           output_type: 'research',
           bare: false,
+          ...(fixture.thinkingLevel ? { thinking_level: fixture.thinkingLevel } : {}),
         },
         prompt: { system: 'You are the researcher.', task_template: 'Do: {{bead_id}}' },
       },
@@ -219,6 +221,32 @@ describe('specialist_dispatch — the MCP dispatch path is the same admission pa
     expect(out.requested_model).toBe('testprov/asked-for-model');
     expect(out.resolved_model).toBe('testprov/test-model');
     expect(out.model_override).toBe(true);
+  });
+
+  it('carries a thinking override through to the view and the session', async () => {
+    const { host } = hostWith({ thinkingLevel: 'low' });
+    const tool = createSpecialistDispatchTool(() => host);
+
+    const out = await tool.execute({
+      specialist: 'researcher',
+      bead_id: 'ISSUE-1',
+      thinking_override: 'high',
+    }) as Record<string, unknown>;
+
+    expect(out.status).toBe('dispatched');
+    expect(out.thinking_level).toBe('high');
+    expect(out.thinking_override).toBe(true);
+  });
+
+  it('preserves the definition thinking level when no override is given', async () => {
+    const { host } = hostWith({ thinkingLevel: 'low' });
+    const tool = createSpecialistDispatchTool(() => host);
+
+    const out = await tool.execute({ specialist: 'researcher', bead_id: 'ISSUE-1' }) as Record<string, unknown>;
+
+    expect(out.status).toBe('dispatched');
+    expect(out.thinking_level).toBe('low');
+    expect(out.thinking_override).toBe(false);
   });
 
   it('records the requested model even when no override was given and it equals the resolved one', async () => {
