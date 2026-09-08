@@ -1456,3 +1456,118 @@ describe('duty to stop unneeded activations (unitAI-llvfi)', () => {
     expect(desc).toContain('specialist_stop_activation when you are done');
   });
 });
+
+describe('human-readable tool-result views (unitAI-55yjs)', () => {
+  // renderResult changes only what the operator SEES: content[].text stays the
+  // byte-identical machine JSON the coordinator parses. Every test below asserts
+  // both halves — the human line renders, and resultText() round-trips unchanged.
+  async function setup() {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    return { pi, host };
+  }
+
+  function linesOf(tool: { renderResult?: Function }, result: unknown, expanded = false) {
+    expect(typeof tool.renderResult).toBe('function');
+    const component = tool.renderResult(result, { expanded }, {}, {});
+    const lines = component.render(80);
+    expect(Array.isArray(lines)).toBe(true);
+    return (lines as string[]).join('\n');
+  }
+
+  function expectMachineJsonUnchanged(result: { content: { type: string; text: string }[] }) {
+    const before = result.content[0].text;
+    expect(() => JSON.parse(before)).not.toThrow();
+    return before;
+  }
+
+  it('specialist_dispatch renders a dispatched line', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_dispatch');
+    const result = await tool.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' });
+    const raw = expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('dispatched');
+    const text = linesOf(tool, result);
+    expect(text).toContain('Dispatched explorer on bd-1');
+    expect(text).toContain('act:aaaa');
+    expect(result.content[0].text).toBe(raw);
+  });
+
+  it('specialist_dispatch renders a rejection reason', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_dispatch');
+    const result = await tool.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1', contract: 'x' });
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('rejected');
+    expect(linesOf(tool, result)).toContain('Rejected:');
+  });
+
+  it('specialist_status renders fleet counts and rows', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_status');
+    const result = await tool.execute('tc1', {});
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).activations).toHaveLength(1);
+    const text = linesOf(tool, result);
+    expect(text).toContain('Fleet: 1 activation(s), 1 pending ask(s)');
+    expect(text).toContain('explorer on bd-1');
+    expect(text).toContain('msg:1');
+  });
+
+  it('specialist_reply renders answered and error outcomes', async () => {
+    const { pi, host } = await setup();
+    const tool = toolNamed(pi, 'specialist_reply');
+    host.answer = vi.fn(async (messageId: string) => ({
+      messageId, inReplyTo: null, activationId: 'act:aaaa', attemptId: 'att:aaaa:1',
+    }));
+    const answered = await tool.execute('tc1', { message_id: 'msg:1', body: 'Option A' });
+    expectMachineJsonUnchanged(answered);
+    expect(resultText(answered).status).toBe('answered');
+    expect(linesOf(tool, answered)).toContain('Answered msg:1 for act:aaaa');
+    host.answer = vi.fn(async () => undefined);
+    const missing = await tool.execute('tc2', { message_id: 'msg:9', body: 'x' });
+    expectMachineJsonUnchanged(missing);
+    expect(resultText(missing).status).toBe('error');
+    expect(linesOf(tool, missing)).toContain('msg:9');
+  });
+
+  it('specialist_resume renders the attempt advance', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_resume');
+    const result = await tool.execute('tc1', { activation_id: 'act:aaaa', prompt: 'more work' });
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('resumed');
+    expect(linesOf(tool, result)).toContain('Resumed act:aaaa');
+  });
+
+  it('specialist_stop_activation renders the stopped id', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_stop_activation');
+    const result = await tool.execute('tc1', { activation_id: 'act:aaaa', reason: 'done' });
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('stopped');
+    expect(linesOf(tool, result)).toContain('Stopped act:aaaa');
+  });
+
+  it('specialist_list renders registry counts and rows', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_list');
+    const result = await tool.execute('tc1', {});
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).detail).toBe('compact');
+    expect(linesOf(tool, result)).toContain('Registry:');
+  });
+
+  it('expanded view appends the full JSON under the summary', async () => {
+    const { pi } = await setup();
+    const tool = toolNamed(pi, 'specialist_dispatch');
+    const result = await tool.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1' });
+    const collapsed = linesOf(tool, result, false);
+    expect(collapsed).not.toContain('"status": "dispatched"');
+    const expanded = linesOf(tool, result, true);
+    expect(expanded).toContain('Dispatched explorer on bd-1');
+    expect(expanded).toContain('"status": "dispatched"');
+  });
+});
