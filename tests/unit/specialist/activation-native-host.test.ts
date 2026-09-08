@@ -157,7 +157,7 @@ function loaderFor(spec: Record<string, unknown>) {
   return { get: async () => spec } as never;
 }
 
-function readOnlySpec() {
+function readOnlySpec(executionExtra: Record<string, unknown> = {}) {
   return {
     specialist: {
       metadata: { name: 'researcher', version: '1.0.0', description: 'd', category: 'c' },
@@ -167,6 +167,7 @@ function readOnlySpec() {
         response_format: 'text',
         output_type: 'research',
         bare: false,
+        ...executionExtra,
       },
       prompt: { system: 'You are the researcher.', task_template: 'Do: {{bead_id}}' },
     },
@@ -364,6 +365,86 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       requestedByParticipantId: 'coordinator',
       modelOverride: 'bogus/model',
     })).rejects.toThrow(/model_unavailable/);
+
+    expect(record.createArgs).toBeUndefined();
+    expect(sink.names).toContain('activation_rejected');
+  });
+
+  it('resolves an explicit thinking override over the definition level and records it', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record, assistantText: 'the answer' });
+
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec({ thinking_level: 'low' })),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      cwd: hostWorkspace(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator',
+      thinkingOverride: 'high',
+    });
+    const result = await handle.result;
+
+    expect(record.createArgs!.thinkingLevel).toBe('high');
+    const snapshot = host.inspect(handle.activationId)!;
+    expect(snapshot.thinkingLevel).toBe('high');
+    expect(snapshot.thinkingOverride).toBe(true);
+    expect(result.thinkingLevel).toBe('high');
+    expect(result.thinkingOverride).toBe(true);
+  });
+
+  it('preserves the definition level when no thinking override is given', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record, assistantText: 'the answer' });
+
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec({ thinking_level: 'low' })),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      cwd: hostWorkspace(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator',
+    });
+    const result = await handle.result;
+
+    expect(record.createArgs!.thinkingLevel).toBe('low');
+    const snapshot = host.inspect(handle.activationId)!;
+    expect(snapshot.thinkingLevel).toBe('low');
+    expect(snapshot.thinkingOverride).toBe(false);
+    expect(result.thinkingLevel).toBe('low');
+    expect(result.thinkingOverride).toBe(false);
+  });
+
+  it('rejects an unknown thinking override before creating a session', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record });
+    const sink = collectingSink();
+
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec({ thinking_level: 'low' })),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: sink,
+      loadSdk: async () => makeSdk(record, session),
+      cwd: hostWorkspace(),
+    });
+
+    await expect(host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator',
+      thinkingOverride: 'turbo' as never,
+    })).rejects.toThrow(/invalid_thinking_override/);
 
     expect(record.createArgs).toBeUndefined();
     expect(sink.names).toContain('activation_rejected');

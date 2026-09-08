@@ -62,6 +62,7 @@ import {
   type ActivationState,
   type ActivationTokenUsage,
   type LiveActivationStats,
+  THINKING_LEVELS,
   type WorkspaceAccess,
   type WorkspaceIdentity,
 } from './types.js';
@@ -272,6 +273,7 @@ export class NativeActivationHost {
     emit('activation_requested', {
       requested_by: request.requestedByParticipantId,
       model_override: request.modelOverride ?? null,
+      thinking_override: request.thinkingOverride ?? null,
     });
 
     const reject = (reason: string, detail: Record<string, unknown> = {}): never => {
@@ -344,6 +346,13 @@ export class NativeActivationHost {
     // forensics and its own acceptance, not a silent widening of acceptance B.
     const configuredModel = resolveModelChain(execution)[0];
     const requestedModel = request.modelOverride ?? configuredModel;
+    if (request.thinkingOverride !== undefined && !(THINKING_LEVELS as readonly string[]).includes(request.thinkingOverride)) {
+      return reject('invalid_thinking_override', {
+        thinkingOverride: request.thinkingOverride,
+        note: `supported thinking levels: ${THINKING_LEVELS.join(', ')}`,
+      });
+    }
+    const thinkingLevel = request.thinkingOverride ?? execution.thinking_level;
     if (!requestedModel) return reject('no_model_configured');
 
     // An explicit override that is unavailable must fail here rather than silently
@@ -415,6 +424,8 @@ export class NativeActivationHost {
       requested_model: requestedModel,
       resolved_model: resolvedModel,
       model_override: Boolean(request.modelOverride),
+      thinking_level: thinkingLevel ?? null,
+      thinking_override: request.thinkingOverride !== undefined,
       workspace: workspace.worktreePath,
       tools: toolContract.toolsList.join(','),
       custom_tools: `${ASK_TOOL},${ESCALATE_TOOL}`,
@@ -500,7 +511,7 @@ export class NativeActivationHost {
       // The pi SDK takes a Model object here. Passing the provider-qualified string
       // instead is accepted silently and then fails mid-turn with an unresolved provider.
       model: modelCheck.model,
-      ...(execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
       // Fail-closed: only the resolved contract's tools, never pi's defaults. `noTools`
       // must be "builtin" rather than `tools: []`, which would also empty customTools.
       noTools: 'builtin',
@@ -537,7 +548,8 @@ export class NativeActivationHost {
       requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
-      ...(execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      thinkingOverride: request.thinkingOverride !== undefined,
       // Captured once at dispatch from the validated contract; the tick stays an in-memory read.
       ...(purpose ? { purpose } : {}),
       startedAt,
@@ -671,6 +683,8 @@ export class NativeActivationHost {
       requestedModel: snapshot.requestedModel,
           resolvedModel: snapshot.resolvedModel,
           modelOverride: snapshot.modelOverride,
+          ...(snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {}),
+          thinkingOverride: snapshot.thinkingOverride,
           fallbackUsed: false,
           completedAt: this.now(),
         };
@@ -701,6 +715,8 @@ export class NativeActivationHost {
       requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
+        ...(snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {}),
+        thinkingOverride: snapshot.thinkingOverride,
         fallbackUsed: false,
         completedAt: this.now(),
       };
@@ -722,6 +738,8 @@ export class NativeActivationHost {
       requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
+        ...(snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {}),
+        thinkingOverride: snapshot.thinkingOverride,
         fallbackUsed: false,
         completedAt: this.now(),
       };
@@ -991,6 +1009,8 @@ export class NativeActivationHost {
       requested_model: record.snapshot.requestedModel,
       resolved_model: record.snapshot.resolvedModel,
       model_override: record.snapshot.modelOverride,
+      thinking_level: record.snapshot.thinkingLevel ?? null,
+      thinking_override: record.snapshot.thinkingOverride,
     });
 
     record.unsubscribe();
