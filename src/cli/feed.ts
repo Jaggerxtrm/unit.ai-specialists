@@ -34,6 +34,7 @@ import {
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { resolveNodeRefWithClient } from '../specialist/node-resolve.js';
 import { queryTimeline } from '../specialist/timeline-query.js';
+import { summarizeNativeActivations } from '../specialist/native-activation-summary.js';
 import { formatSpecialistModel } from '../specialist/model-display.js';
 import {
   bold,
@@ -485,6 +486,43 @@ function parseArgs(argv: string[]): FeedOptions {
 // Snapshot Mode
 // ============================================================================
 
+// unitAI-rrdnt.47: native activations (act:*) have no timeline rows — only
+// forensic rows. When the timeline is empty but forensics exist, render the
+// lifecycle trail instead of "not found". Output is LAST-KNOWN state, said
+// in the open: a separate process cannot see the in-process Fleet registry.
+function renderForensicTrail(
+  sqliteClient: NonNullable<ObservabilitySqliteClient>,
+  jobId: string,
+  json: boolean,
+): boolean {
+  let rows;
+  try {
+    rows = sqliteClient.readForensicEvents({ jobId, limit: 1000 });
+  } catch {
+    return false;
+  }
+  if (rows.length === 0) return false;
+
+  if (json) {
+    for (const row of rows) {
+      console.log(JSON.stringify({ source: 'forensic', last_known: true, live: false, ...row }));
+    }
+    return true;
+  }
+
+  const [summary] = summarizeNativeActivations(rows);
+  console.log(dim(`native activation ${jobId} · LAST-KNOWN trail from forensics — not live (host-session Fleet registry is not visible here)`));
+  if (summary) {
+    const bead = summary.bead_id ? ` · bead ${summary.bead_id}` : '';
+    console.log(dim(`specialist ${summary.specialist}${bead} · last-known state: ${summary.state} · ${summary.turns} turns · ${summary.event_count} events`));
+  }
+  for (const row of rows) {
+    const short = row.event_name.startsWith('activation.') ? row.event_name.slice('activation.'.length) : row.event_name;
+    console.log(`  ${new Date(row.t).toISOString()} ${short}`);
+  }
+  return true;
+}
+
 function printSnapshot(
   sqliteClient: ObservabilitySqliteClient,
   merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>,
@@ -493,6 +531,9 @@ function printSnapshot(
   piProjectors = new Map<string, PiJsonProjector>(),
 ): void {
   if (merged.length === 0) {
+    if (options.jobId && sqliteClient && renderForensicTrail(sqliteClient, options.jobId, options.json)) {
+      return;
+    }
     if (!options.json) {
       if (options.jobId && sqliteClient) {
         console.log(dim(`job ${options.jobId} not found in .specialists/db/observability.db`));
