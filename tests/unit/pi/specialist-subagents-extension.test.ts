@@ -778,6 +778,26 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(lines[0]).toContain('need reply');
   });
 
+  it('registers through the globalThis hook when present (core custom-footer loaded)', async () => {
+    const sections = new Map();
+    const prev = (globalThis as any).__registerFooterSection;
+    (globalThis as any).__registerFooterSection = (key, renderBelow) => { sections.set(key, renderBelow); return () => { sections.delete(key); }; };
+    try {
+      const { pi, ctx } = await boot();   // no options seam: the global hook is the only path
+      await toolNamed(pi, 'specialist_status').execute('tc0', {});
+      await command_tick();
+      expect(sections.has('specialist-fleet')).toBe(true);
+      expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+      expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+      const lines = sections.get('specialist-fleet')(80);
+      expect(lines[0]).toContain('SPECIALISTS');
+      expect(lines[0]).toContain('need reply');
+    } finally {
+      if (prev === undefined) delete (globalThis as any).__registerFooterSection;
+      else (globalThis as any).__registerFooterSection = prev;
+    }
+  });
+
   it('falls back to a belowEditor mirror when the seam is absent, never aboveEditor', async () => {
     const { pi, ctx } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
