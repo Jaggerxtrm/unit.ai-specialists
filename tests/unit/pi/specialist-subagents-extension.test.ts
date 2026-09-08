@@ -811,7 +811,12 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 
   it('collapsed line prioritises needs-reply and row lines carry no forensic ids', async () => {
     const { mod } = await boot();
-    expect(mod.renderCollapsedLine({ activations: [], asks: [] })).toContain('idle');
+    // unitAI-4n9of: hint names only working triggers, never arrow keys.
+    const idle = mod.renderCollapsedLine({ activations: [], asks: [] });
+    expect(idle).toContain('idle');
+    expect(idle).toContain('/fleet inspect');
+    expect(idle).not.toContain('↓');
+    expect(idle).not.toContain('←');
     const fleet = {
       activations: [{
         activation_id: 'act:aaaa', participant_id: 'p', attempt_id: 'a',
@@ -822,6 +827,10 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       asks: [{ message_id: 'msg:1', kind: 'question', activation_id: 'act:aaaa', from: 'x', body: 'Which option?' }],
     };
     expect(mod.renderCollapsedLine(fleet)).toContain('1 need reply');
+    expect(mod.renderCollapsedLine(fleet)).toContain('/fleet inspect');
+    expect(mod.renderCollapsedLine(fleet)).toContain('/fleet:reply');
+    expect(mod.renderCollapsedLine(fleet)).not.toContain('↓');
+    expect(mod.renderCollapsedLine(fleet)).not.toContain('←');
     const rows = mod.renderSectionLines(fleet, { expanded: true });
     expect(rows[1]).toContain('explorer');
     expect(rows[1]).toContain('bd-1');

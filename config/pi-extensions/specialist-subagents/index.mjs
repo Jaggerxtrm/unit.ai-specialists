@@ -130,13 +130,16 @@ export function formatSpendShort(tokenUsage) {
   return `${Math.round(total / 1000)}k`;
 }
 
-/** Collapsed line. Needs-reply outranks idle: always shown when nonzero. */
+/** Collapsed line. Needs-reply outranks idle: always shown when nonzero.
+ * Names only triggers that work (unitAI-4n9of): arrow keys cannot reach a
+ * passive pi extension, so no arrow promise of any kind. */
 export function renderCollapsedLine({ activations, asks }) {
   const { active, waiting, needsReply, total } = fleetSummaryOf({ activations, asks });
-  if (total === 0 && needsReply === 0) return 'SPECIALISTS · idle · ↓/← inspect';
+  if (total === 0 && needsReply === 0) return 'SPECIALISTS · idle · /fleet inspect';
   const parts = [`${active} active`, `${waiting} waiting`];
   if (needsReply > 0) parts.push(`${needsReply} need reply`);
-  return `SPECIALISTS · ${parts.join(' · ')} · ↓/← inspect`;
+  const hint = needsReply > 0 ? '/fleet inspect · /fleet:reply' : '/fleet inspect';
+  return `SPECIALISTS · ${parts.join(' · ')} · ${hint}`;
 }
 
 /** One row per specialist. Forensic IDs never appear here. An activation with a
