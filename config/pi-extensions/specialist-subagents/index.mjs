@@ -153,6 +153,30 @@ const ASK_EVENTS = {
 };
 
 /**
+ * Forensic event names that mean a child is DONE and the coordinator was never told.
+ *
+ * unitAI-rrdnt.64. Only asks woke the coordinator, so a session that dispatched and waited
+ * had to poll `specialist_status` to learn anything had finished — which is the operator's
+ * original complaint, still live after the ask wake shipped. The `.46` Fleet widget does not
+ * close it: the widget repaints for an operator watching a TUI and never wakes the model.
+ *
+ * `activation_settled` is deliberately ABSENT. It precedes output validation, and
+ * `activation_completed` follows it on the success path — waking on both would fire twice
+ * for one activation. These two are terminal and mutually exclusive.
+ *
+ * Admission REFUSAL is also absent, and that is correct rather than an omission: a refusal is
+ * the synchronous return value of the `specialist_dispatch` call the coordinator is already
+ * blocked on, so there is no asynchronous window for silence to hide in. The hole is bounded
+ * to post-admission events, which is why runtime failure IS here — `activation_failed` fires
+ * on a running child whose turn ended with stopReason 'error' or 'aborted', and an unattended
+ * coordinator is as blind to that as to success.
+ */
+const TERMINAL_EVENTS = {
+  activation_completed: 'completed',
+  activation_failed: 'failed',
+};
+
+/**
  * Wrap a forensic sink so asks are also reported to `onAsk`, forwarding everything
  * else untouched.
  *
@@ -162,28 +186,44 @@ const ASK_EVENTS = {
  * because the host tests for their presence — defining them unconditionally over a
  * sink that lacks them would silently change which forensic paths the host takes.
  */
-export function createAskObserverSink(base, onAsk) {
+export function createAskObserverSink(base, onAsk, onTerminal) {
+  const report = (fn, payload) => {
+    if (!fn) return;
+    try {
+      fn(payload);
+    } catch {
+      // A wake that throws leaves the activation exactly as it was: the ask still pending,
+      // the result still readable through specialist_status. That is the degraded path, and
+      // it is the same path taken when no coordinator is listening at all.
+    }
+  };
+
   const wrapped = {
     emit(event) {
       try {
         base.emit(event);
       } finally {
+        const identity = {
+          activationId: event.activationId,
+          attemptId: event.attemptId,
+          specialist: event.specialist,
+          beadId: event.beadId,
+        };
         const kind = ASK_EVENTS[event.name];
         if (kind) {
-          try {
-            onAsk({
-              kind,
-              activationId: event.activationId,
-              attemptId: event.attemptId,
-              specialist: event.specialist,
-              beadId: event.beadId,
-              body: typeof event.payload?.body === 'string' ? event.payload.body : '',
-            });
-          } catch {
-            // A wake that throws leaves the ask exactly as it was: pending, and
-            // readable through specialist_status. That is the degraded path, and
-            // it is the same path taken when no coordinator is listening at all.
-          }
+          report(onAsk, {
+            ...identity,
+            kind,
+            body: typeof event.payload?.body === 'string' ? event.payload.body : '',
+          });
+        }
+        const outcome = TERMINAL_EVENTS[event.name];
+        if (outcome) {
+          report(onTerminal, {
+            ...identity,
+            outcome,
+            error: typeof event.payload?.error === 'string' ? event.payload.error : undefined,
+          });
         }
       }
     },
@@ -207,6 +247,24 @@ export function formatAskWake(ask) {
     'Call specialist_status to read this ask\'s message_id from pending_asks, then ' +
       'answer it with specialist_reply. The child is alive and resumable; it stays ' +
       'blocked until you answer.',
+  ].join('\n');
+}
+
+/** The wake message a finished child produces. Exported so its shape is testable. */
+export function formatSettlementWake(done) {
+  const failed = done.outcome === 'failed';
+  return [
+    `Specialist \`${done.specialist}\` ${failed ? 'FAILED' : 'finished'} and is no longer running.`,
+    '',
+    `activation_id: ${done.activationId}`,
+    ...(done.beadId ? [`bead: ${done.beadId}`] : []),
+    ...(failed && done.error ? ['', `error: ${done.error}`] : []),
+    '',
+    failed
+      ? 'Call specialist_status to read the failure detail. The activation is settled; it can '
+        + 'be resumed with specialist_resume if the cause was transient.'
+      : 'Call specialist_status to read its validated result. The activation is settled and '
+        + 'stays resumable until you dispose it with specialist_stop_activation.',
   ].join('\n');
 }
 
@@ -368,8 +426,9 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     type: 'boolean',
     default: false,
     description:
-      'Do not wake this coordinator when a Specialist asks or escalates. The ask ' +
-      'remains readable through specialist_status; only the notification is suppressed.',
+      'Do not wake this coordinator when a Specialist asks, escalates, finishes or fails. ' +
+      'Everything stays readable through specialist_status; only the notification is ' +
+      'suppressed. With this set you must poll to learn any of it.',
   });
 
   /**
@@ -383,6 +442,39 @@ export default function specialistSubagentsExtension(pi, options = {}) {
    * without it a dispatched-then-waiting coordinator sees the message only when the
    * operator next types, which is the polling they were already doing.
    */
+  /**
+   * Wake the coordinator when a child FINISHES (unitAI-rrdnt.64).
+   *
+   * Always, rather than batched or only-when-idle. Each activation terminates exactly once,
+   * so the volume is bounded by dispatches the coordinator itself made — and a coordinator
+   * that dispatched something is the one participant that wants to know it is done. Batching
+   * would trade the defect being fixed for a smaller version of itself.
+   */
+  const wakeSettled = (done) => {
+    if (pi.getFlag('no-specialist-wake') === true) return;
+
+    const summary = `Specialist ${done.specialist} ${done.outcome === 'failed' ? 'FAILED' : 'finished'}`;
+    const ctx = liveContext({ requireUI: true });
+    if (ctx) {
+      try {
+        ctx.ui.notify(summary, done.outcome === 'failed' ? 'warning' : 'info');
+      } catch {
+        // The UI can disappear while async work settles; the message below is the
+        // load-bearing half and does not depend on it.
+      }
+    }
+
+    pi.sendMessage(
+      {
+        customType: 'specialist_settled',
+        content: formatSettlementWake(done),
+        display: true,
+        details: done,
+      },
+      { deliverAs: 'followUp', triggerTurn: true },
+    );
+  };
+
   const wake = (ask) => {
     if (pi.getFlag('no-specialist-wake') === true) return;
 
@@ -427,8 +519,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     try {
       ctx.ui.notify(
         off
-          ? 'Specialist wake is OFF (--no-specialist-wake): a blocked child will not notify you. Read its question with specialist_status.'
-          : 'Specialist wake is on: a blocked child will start a turn here on its own. Disable with --no-specialist-wake.',
+          ? 'Specialist wake is OFF (--no-specialist-wake): a child that blocks, finishes or fails will not notify you. Poll specialist_status.'
+          : 'Specialist wake is on: a child that blocks, finishes or fails will start a turn here on its own. Disable with --no-specialist-wake.',
         off ? 'warning' : 'info',
       );
     } catch {
@@ -443,7 +535,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       // The wrapper is handed to the test seam as well as to the real constructor,
       // so a test with an injected host still exercises the wake rather than
       // routing around the only path that matters here.
-      const wrapSink = (sink) => createAskObserverSink(sink, wake);
+      const wrapSink = (sink) => createAskObserverSink(sink, wake, wakeSettled);
       host = options.createHost
         ? options.createHost({ wrapSink })
         : createCoordinatorHost({ wrapSink });

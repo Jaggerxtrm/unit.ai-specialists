@@ -1086,3 +1086,95 @@ describe('dispatch guidance must not route work off the native runtime', () => {
     expect(contract).toMatch(/small|quick|short contract/i);
   });
 });
+
+describe('settlement wake — a finished child notifies its coordinator (unitAI-rrdnt.64)', () => {
+  // The operator's original complaint was "he started polling for results". The ask wake
+  // (.45) fixed only asks; a coordinator that dispatched and waited still had to poll to
+  // learn anything had finished. The .46 Fleet widget does not close it either — it repaints
+  // for an operator watching a TUI and never wakes the coordinator model.
+
+  const ev = (name: string, payload?: Record<string, unknown>) => ({
+    activationId: 'act:aaaa', attemptId: 'att:aaaa:1', participantId: 'specialist::explorer',
+    specialist: 'explorer', beadId: 'bd-1', name, payload,
+  });
+
+  function observe() {
+    const asks: unknown[] = [];
+    const done: any[] = [];
+    return { asks, done, sink: (mod: any) => mod.createAskObserverSink(
+      { emit: () => {} }, (a: unknown) => asks.push(a), (d: unknown) => done.push(d)) };
+  }
+
+  it('reports completion and failure, and reports each exactly once', async () => {
+    const mod = await loadExtension();
+    const o = observe();
+    const sink = o.sink(mod);
+
+    sink.emit(ev('activation_settled'));            // precedes validation — must NOT wake
+    sink.emit(ev('activation_completed'));
+    sink.emit(ev('activation_failed', { error: 'provider 429' }));
+
+    expect(o.done.map((d) => d.outcome)).toEqual(['completed', 'failed']);
+    expect(o.done[1].error).toBe('provider 429');
+    expect(o.asks).toEqual([]);
+  });
+
+  it('does not wake on admission refusal, which is a synchronous tool result', async () => {
+    // A refusal is the return value of the dispatch call the coordinator is already blocked
+    // on, so there is no asynchronous window for silence to hide in. A wake there would be
+    // redundant, not missing — the bounded claim is that POST-ADMISSION events are silent.
+    const mod = await loadExtension();
+    const o = observe();
+    o.sink(mod).emit(ev('activation_rejected', { reason: 'bead_contract_incomplete' }));
+    expect(o.done).toEqual([]);
+  });
+
+  it('still forwards every event to the base sink', async () => {
+    const mod = await loadExtension();
+    const seen: string[] = [];
+    const sink = mod.createAskObserverSink(
+      { emit: (e: { name: string }) => seen.push(e.name) }, () => {}, () => {});
+    sink.emit(ev('activation_completed'));
+    sink.emit(ev('activation_rejected'));
+    expect(seen).toEqual(['activation_completed', 'activation_rejected']);
+  });
+
+  it('survives a throwing settlement wake, because forensics outrank notification', async () => {
+    const mod = await loadExtension();
+    const seen: string[] = [];
+    const sink = mod.createAskObserverSink(
+      { emit: (e: { name: string }) => seen.push(e.name) },
+      () => {},
+      () => { throw new Error('no coordinator'); },
+    );
+    expect(() => sink.emit(ev('activation_completed'))).not.toThrow();
+    expect(seen).toEqual(['activation_completed']);
+  });
+
+  it('names the activation and says what to call next', async () => {
+    const mod = await loadExtension();
+    const ok = mod.formatSettlementWake({
+      activationId: 'act:aaaa', specialist: 'explorer', beadId: 'bd-1', outcome: 'completed',
+    });
+    expect(ok).toMatch(/act:aaaa/);
+    expect(ok).toMatch(/specialist_status/);
+    expect(ok).toMatch(/finished/);
+
+    const bad = mod.formatSettlementWake({
+      activationId: 'act:bbbb', specialist: 'executor', outcome: 'failed', error: 'provider 429',
+    });
+    expect(bad).toMatch(/FAILED/);
+    expect(bad).toMatch(/provider 429/);
+    // A failed activation is still resumable; saying so is the difference between an
+    // operator retrying and an operator starting over.
+    expect(bad).toMatch(/specialist_resume/);
+  });
+
+  it('the flag description no longer claims the wake is ask-only', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => makeFakeHost().host });
+    const flag = pi.registeredFlags['no-specialist-wake'];
+    expect(flag.description).toMatch(/finishes or fails/i);
+  });
+});
