@@ -649,6 +649,31 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     expect(out.previous_attempt_id).toBe('att:aaaa:1');
   });
 
+  it('reports the PREVIOUS attempt even though inspect() hands back a live object', async () => {
+    const mod = await loadExtension();
+    const { host } = makeFakeHost();
+    // The real host returns its live snapshot from inspect() and mutates it in place during
+    // resume. A fake that returns a fresh object per call is a BETTER-behaved double than the
+    // product, and it hid this: previous_attempt_id came back equal to attempt_id on a live
+    // run (act:25bc5ad5-cc3 reported att:...:2 for both). Model the aliasing.
+    const live = { activationId: 'act:aaaa', attemptId: 'att:aaaa:1', specialist: 'explorer',
+      beadId: 'bd-1', state: 'settled', access: 'write', workspace: '/ws',
+      participantId: 'specialist::explorer', startedAt: 0, lastActivityAt: 0 };
+    host.inspect = vi.fn(() => live);
+    host.resume = vi.fn(async () => {
+      live.attemptId = 'att:aaaa:2';           // in place, exactly as the host does
+      return { activationId: 'act:aaaa', attemptId: 'att:aaaa:2', result: Promise.resolve({}) };
+    });
+    const pi = makeFakePi();
+    mod.default(pi, { createHost: () => host });
+
+    const out = resultText(await toolNamed(pi, 'specialist_resume')
+      .execute('tc1', { activation_id: 'act:aaaa', prompt: 'go' }));
+
+    expect(out.previous_attempt_id).toBe('att:aaaa:1');
+    expect(out.attempt_id).toBe('att:aaaa:2');
+  });
+
   it('refuses an unknown activation without calling the host', async () => {
     const mod = await loadExtension();
     const { host, calls } = makeFakeHost();

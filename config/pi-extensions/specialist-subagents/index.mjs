@@ -634,6 +634,13 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     async execute(toolCallId, params) {
       const h = getHost();
       const before = h.inspect(params.activation_id);
+      // Capture the VALUE now. `inspect` hands back the host's live snapshot object, not a
+      // copy, and `resume` mutates it in place — so reading `before.attemptId` when the
+      // response is built returns the NEW attempt and previous_attempt_id always equals
+      // attempt_id. Found live (act:25bc5ad5-cc3 reported att:...:2 for both); the unit test
+      // missed it because the fake host returns a fresh object per call and so does not
+      // alias the way the real one does.
+      const previousAttemptId = before?.attemptId;
       if (!before) {
         return {
           content: [{
@@ -677,7 +684,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
           type: 'text',
           text: JSON.stringify({
             status: 'resumed',
-            previous_attempt_id: before.attemptId,
+            previous_attempt_id: previousAttemptId,
             ...(snapshot ? toActivationView(snapshot) : { activation_id: handle.activationId }),
           }, null, 2),
         }],
