@@ -41,7 +41,7 @@ import { validateBeforeRun } from '../specialist/runner.js';
 import { resolveRuntimeToolContract } from '../pi/session.js';
 import { resolveModelChain } from '../specialist/model-chain.js';
 import { BeadsClient } from '../specialist/beads.js';
-import { evaluateBeadReadiness, type BeadGateOptions } from './bead-gate.js';
+import { evaluateBeadReadiness, extractPurposeExcerpt, type BeadGateOptions } from './bead-gate.js';
 import { compileStepContract, type StepContract } from './step-contract.js';
 import { InteractionTransport, type InteractionMessage, type PendingAsk } from './interaction.js';
 import { createPeerDelivery } from './peer-bridge.js';
@@ -512,6 +512,7 @@ export class NativeActivationHost {
       systemPrompt: systemPrompt.text,
     });
 
+    const purpose = extractPurposeExcerpt(bead.description ?? '');
     const startedAt = this.now();
     const snapshot: ActivationSnapshot = {
       activationId, participantId, attemptId,
@@ -530,6 +531,8 @@ export class NativeActivationHost {
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
       ...(execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {}),
+      // Captured once at dispatch from the validated contract; the tick stays an in-memory read.
+      ...(purpose ? { purpose } : {}),
       startedAt,
       lastActivityAt: startedAt,
     };

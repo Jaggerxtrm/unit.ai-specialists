@@ -195,6 +195,12 @@ describe('host liveStats', () => {
     expect(view.token_usage).toEqual({ input_tokens: 100, output_tokens: 50, total_tokens: 150 });
   });
 
+  it('projects purpose when present and omits it when absent (unitAI-uvg4j)', () => {
+    expect(toActivationView(baseSnapshot({ purpose: 'researching activation transport' }), 1_003_000).purpose)
+      .toBe('researching activation transport');
+    expect('purpose' in toActivationView(baseSnapshot(), 1_003_000)).toBe(false);
+  });
+
   it('returns undefined for an unknown activation and omits unset fields', async () => {
     const host = new NativeActivationHost({
       beadGate: { readContractState: () => undefined },

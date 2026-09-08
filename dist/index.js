@@ -75964,6 +75964,19 @@ function extractSections(description) {
   flush();
   return sections;
 }
+var PURPOSE_EXCERPT_MAX = 60;
+function extractPurposeExcerpt(description) {
+  const sections = extractSections(description ?? "");
+  for (const name of ["SCOPE", "SUCCESS"]) {
+    const line = (sections.get(name) ?? "").split(`
+`).map((s) => s.trim()).find(Boolean);
+    if (!line)
+      continue;
+    const flat = line.replace(/\s+/g, " ");
+    return flat.length <= PURPOSE_EXCERPT_MAX ? flat : `${flat.slice(0, PURPOSE_EXCERPT_MAX - 1)}\u2026`;
+  }
+  return;
+}
 function scrutinyLevel(description) {
   const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-\u2014]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
   return match?.[1]?.toUpperCase();
@@ -76587,6 +76600,7 @@ function toActivationView(snapshot, nowMs = Date.now()) {
     elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
     ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {},
     ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
+    ...snapshot.purpose ? { purpose: snapshot.purpose } : {},
     last_activity_at: snapshot.lastActivityAt
   };
 }
@@ -78109,6 +78123,7 @@ class NativeActivationHost {
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
     });
+    const purpose = extractPurposeExcerpt(bead.description ?? "");
     const startedAt = this.now();
     const snapshot = {
       activationId,
@@ -78125,6 +78140,7 @@ class NativeActivationHost {
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
       ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...purpose ? { purpose } : {},
       startedAt,
       lastActivityAt: startedAt
     };

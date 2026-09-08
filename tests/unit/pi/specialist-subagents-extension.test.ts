@@ -956,6 +956,37 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(row).not.toContain('spent');
   });
 
+  it('rows carry the purpose excerpt, truncated to the row budget (unitAI-uvg4j)', async () => {
+    const { mod } = await boot();
+    const base = {
+      activation_id: 'act:x', specialist: 'researcher', bead_id: 'ISSUE-92',
+      state: 'running', resolved_model: 'm', elapsed_s: 47,
+      last_activity_at: Math.floor(Date.now() / 1000),
+    };
+    expect(mod.renderFleetRowLine({ ...base, purpose: 'researching activation transport' }))
+      .toBe('● researcher (m) · ISSUE-92 · researching activation transport · running 47s · working');
+    const long = mod.renderFleetRowLine({ ...base, purpose: `${'p '.repeat(100)}` });
+    expect(long).not.toMatch(/  /);
+    expect(long.split(' · ')[2].length).toBeLessThanOrEqual(mod.PURPOSE_ROW_MAX);
+    expect(mod.renderFleetRowLine(base))
+      .toBe('● researcher (m) · ISSUE-92 · running 47s · working');
+  });
+
+  it('elapsed always renders in seconds and settled rows keep token totals (unitAI-uvg4j)', async () => {
+    const { mod } = await boot();
+    expect(mod.formatElapsedShort(243)).toBe('243s');
+    expect(mod.formatElapsedShort(3700)).toBe('3700s');
+    const settled = mod.renderFleetRowLine({
+      activation_id: 'act:x', specialist: 'researcher', bead_id: 'ISSUE-92',
+      state: 'settled', resolved_model: 'm', elapsed_s: 243,
+      token_usage: { input_tokens: 1500, output_tokens: 600 },
+      last_activity_at: Math.floor(Date.now() / 1000),
+    });
+    expect(settled).toContain('243s');
+    expect(settled).toMatch(/2\.1k/);
+    expect(settled).not.toContain('4m');
+  });
+
   it('needs-reply rows render with a ! marker and sort before idle rows (unitAI-nmxhg)', async () => {
     const { mod } = await boot();
     const now = Math.floor(Date.now() / 1000);

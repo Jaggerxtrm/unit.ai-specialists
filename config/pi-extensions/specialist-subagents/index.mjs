@@ -107,11 +107,16 @@ export function fleetSummaryOf({ activations, asks }) {
 }
 
 export function formatElapsedShort(elapsedS) {
-  const s = Math.max(0, Math.floor(elapsedS ?? 0));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h${m % 60 ? `${m % 60}m` : ''}`;
+  return `${Math.max(0, Math.floor(elapsedS ?? 0))}s`;
+}
+
+/** Row-budget purpose excerpt: single line, whitespace-collapsed, bounded. */
+export const PURPOSE_ROW_MAX = 60;
+
+export function formatPurposeShort(purpose) {
+  const flat = String(purpose ?? '').replace(/\s+/g, ' ').trim();
+  if (!flat) return '';
+  return flat.length <= PURPOSE_ROW_MAX ? flat : `${flat.slice(0, PURPOSE_ROW_MAX - 1)}…`;
 }
 
 // Spend counts only. Window-context % is coordinator-owned and out of scope;
@@ -152,6 +157,7 @@ export function renderFleetRowLine(view, asks = []) {
   }
   const elapsed = formatElapsedShort(view.elapsed_s);
   const tokens = formatSpendShort(view.token_usage);
+  const purpose = formatPurposeShort(view.purpose);
   const idleS = view.last_activity_at != null
     ? Math.max(0, Math.floor(Date.now() / 1000) - view.last_activity_at)
     : null;
@@ -159,8 +165,10 @@ export function renderFleetRowLine(view, asks = []) {
     ? (idleS != null && idleS > 30 ? `idle ${formatElapsedShort(idleS)}` : 'working')
     : view.state;
   // Zero/absent tokens render as nothing: no "0", no "spent" word (unitAI-d99hb).
+  // Spend renders for every state, not only running: final spend stays visible after settle.
   const spend = tokens ? ` · ${tokens}` : '';
-  return `● ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · ${view.state} ${elapsed}${spend} · ${activity}`;
+  const why = purpose ? ` · ${purpose}` : '';
+  return `● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
