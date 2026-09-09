@@ -42,7 +42,7 @@ import { getReadLineNumbersExtensionPath } from './read-line-numbers-extension.j
 import { getExtensionToolPolicyExtensionPath, NATIVE_TOOLS_ENV_KEY } from './extension-tool-policy-extension.js';
 import { resolvePiExtensionsPythonKernelPath } from './python-kernel-extension.js';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
@@ -471,6 +471,73 @@ export function applyExtensionToolPolicyGate(
 
 function isRemoteExtensionSource(source: string): boolean {
   return source.startsWith('npm:') || source.startsWith('git:') || source.startsWith('http://') || source.startsWith('https://');
+}
+
+/**
+ * Canonical identity for a local `-e` extension source (unitAI-il2io).
+ *
+ * The python-kernel ships twice on dev machines: the managed npm copy
+ * (`.../node_modules/@jaggerxtrm/pi-extensions/extensions/python-kernel/index.ts`,
+ * often a symlink into the core checkout) and a raw dev-checkout path
+ * (`/home/.../dev/core/packages/pi-extensions/extensions/python-kernel`,
+ * directory form). Pi treats those as two extensions registering tool
+ * `python` and exits 1 before turn 0. Mapping both forms to the same
+ * realpath (dir -> dir/index.ts, symlinks resolved) lets the spawn dedup
+ * before Pi ever sees the conflict. Remote sources and missing paths
+ * return null (dedup by exact string only).
+ */
+function canonicalizeLocalExtensionIdentity(source: string): string | null {
+  if (isRemoteExtensionSource(source)) return null;
+  let candidate = source;
+  try {
+    const stat = statSync(candidate);
+    if (stat.isDirectory()) {
+      const indexCandidate = join(candidate, 'index.ts');
+      if (existsSync(indexCandidate)) candidate = indexCandidate;
+    }
+  } catch {
+    return null;
+  }
+  try {
+    return realpathSync(candidate);
+  } catch {
+    try {
+      return resolve(candidate);
+    } catch {
+      return null;
+    }
+  }
+}
+
+export function deduplicateExtensionSources(
+  autoInjected: readonly string[],
+  dynamicSources: readonly string[],
+): { kept: string[]; dropped: Array<{ dropped: string; keptAs: string }> } {
+  const seenExact = new Set<string>();
+  const keptByIdentity = new Map<string, string>();
+  for (const auto of autoInjected) {
+    seenExact.add(auto);
+    const identity = canonicalizeLocalExtensionIdentity(auto);
+    if (identity) keptByIdentity.set(identity, auto);
+  }
+  const kept: string[] = [];
+  const dropped: Array<{ dropped: string; keptAs: string }> = [];
+  for (const source of dynamicSources) {
+    if (seenExact.has(source)) {
+      dropped.push({ dropped: source, keptAs: source });
+      continue;
+    }
+    const identity = canonicalizeLocalExtensionIdentity(source);
+    const keptAs = identity ? keptByIdentity.get(identity) : undefined;
+    if (identity && keptAs !== undefined) {
+      dropped.push({ dropped: source, keptAs });
+      continue;
+    }
+    seenExact.add(source);
+    if (identity) keptByIdentity.set(identity, source);
+    kept.push(source);
+  }
+  return { kept, dropped };
 }
 
 export function resolveExecutionExtensionSelection(
@@ -972,7 +1039,25 @@ export class PiAgentSession {
     if (gitnexusContract?.status === 'available' && gitnexusContract.packagePath && existsSync(gitnexusContract.packagePath)) {
       args.push('-e', gitnexusContract.packagePath);
     }
-    for (const source of this.options.extensionSources ?? []) {
+    // unitAI-il2io: never forward two `-e` sources with the same filesystem
+    // identity. The auto-injected python-kernel (managed npm copy) and a
+    // dev-checkout path from execution.extensions resolve to the same
+    // index.ts; Pi would abort with `Tool "python" conflicts` before turn 0.
+    // The managed copy wins and every drop is logged (no silent shadowing).
+    const autoInjectedForDedup: string[] = [
+      ...(pyKernelPath ? [pyKernelPath] : []),
+      ...(gitnexusContract?.status === 'available' && gitnexusContract.packagePath ? [gitnexusContract.packagePath] : []),
+    ];
+    const { kept: dedupedSources, dropped: droppedSources } = deduplicateExtensionSources(
+      autoInjectedForDedup,
+      this.options.extensionSources ?? [],
+    );
+    for (const { dropped, keptAs } of droppedSources) {
+      process.stderr.write(
+        `[python-kernel] DEDUP: skipping duplicate extension source '${dropped}' (same as '${keptAs}'; kept '${keptAs}').\n`,
+      );
+    }
+    for (const source of dedupedSources) {
       args.push('-e', source);
     }
 
