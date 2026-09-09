@@ -25,7 +25,6 @@ if (typeof globalThis.Bun === 'undefined') {
 
 import { spawnSync } from 'node:child_process';
 
-import { SpecialistsServer } from "./server.js";
 import { logger } from "./utils/logger.js";
 
 const sub  = process.argv[2];
@@ -1442,10 +1441,19 @@ async function run() {
     process.exit(1);
   }
 
-  // No subcommand: MCP server mode
-  logger.info("Starting Specialists MCP Server...");
-  const server = new SpecialistsServer();
-  await server.start();
+  // No subcommand: MCP server mode. SDK v2 strict 2026-07-28 by default;
+  // the handwritten 2025-era server stays servable via SPECIALISTS_MCP_SERVER=legacy
+  // until the v2 parity evidence lands (unitAI-aiwva.7).
+  if (process.env.SPECIALISTS_MCP_SERVER === 'legacy') {
+    logger.info("Starting Specialists MCP Server (legacy)...");
+    const { SpecialistsServer } = await import("./server.js");
+    const server = new SpecialistsServer();
+    await server.start();
+    return;
+  }
+  logger.info("Starting Specialists MCP Server (v2, 2026-07-28 strict)...");
+  const { serveV2Stdio } = await import("./mcp/v2-server.js");
+  serveV2Stdio();
 }
 
 run()
