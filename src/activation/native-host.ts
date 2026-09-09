@@ -37,7 +37,7 @@ import { randomUUID } from 'node:crypto';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { buildSystemPrompt } from '../specialist/system-prompt.js';
 import { renderTaskPrompt } from '../specialist/task-prompt.js';
-import { validateBeforeRun } from '../specialist/runner.js';
+import { validateBeforeRun, classifyFallbackError } from '../specialist/runner.js';
 import { resolveRuntimeToolContract } from '../pi/session.js';
 import { resolveModelChain } from '../specialist/model-chain.js';
 import { BeadsClient, collectEpicAncestors } from '../specialist/beads.js';
@@ -49,10 +49,10 @@ import { PeerAdapter, type TransportForensicEvent } from './transport/peer-adapt
 import { acquire as acquireLease, admitToolCall, release as releaseLease } from './workspace-lease.js';
 import { createGuardedTools } from './guarded-tools.js';
 import { createAskTools, ASK_TOOL, ESCALATE_TOOL } from './ask-tool.js';
-import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
+import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent, type PiModelRuntimeLike } from './pi-sdk.js';
 import { nativeSessionTokenUsage, accumulateTokenUsage } from '../specialist/native-activation-observability.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
-import { FleetRegistry, RESUMABLE_STATES, nextAttemptId } from './registry.js';
+import { FleetRegistry, RESUMABLE_STATES, RETRYABLE_STATES, nextAttemptId, type ActivationRecord } from './registry.js';
 import {
   DispatchRejectedError,
   type ActivationHandle,
@@ -108,6 +108,14 @@ function extractTokenUsage(event: PiAgentSessionEvent): ActivationTokenUsage | u
 
 /** Permission tiers that can mutate the workspace. Derived from the resolved grant. */
 const WRITE_TIERS = new Set(['MEDIUM', 'HIGH']);
+
+/**
+ * Error classes the fallback walk advances past. The classifier itself is shared with
+ * the CLI runner (`classifyFallbackError` in runner.ts) — this set is only the native
+ * half of the CLI's `isTransient && !isAuth` rule, restated as classes so the two
+ * cannot drift into disagreeing about what a 429 means.
+ */
+const FALLBACK_RETRYABLE_CLASSES = new Set(['rate_limit', 'timeout', 'transient']);
 
 /**
  * Sink for activation forensics.
@@ -346,13 +354,17 @@ export class NativeActivationHost {
 
     const sdk = await this.loadSdk();
 
-    // Ruling (a), bead unitAI-rrdnt.35: the native runtime never falls back. Only the head
-    // of the configured chain is a candidate, and discarding the tail is deliberate — a
-    // Specialist that quietly ran on a fallback produces results nobody can attribute, and
-    // substituting a configured primary would contradict acceptance D refusing an
-    // unavailable override rather than replacing it. Honouring a chain later needs its own
-    // forensics and its own acceptance, not a silent widening of acceptance B.
-    const configuredModel = resolveModelChain(execution)[0];
+    // The full configured chain is the candidate list (unitAI-3emr7 reverses the
+    // unitAI-rrdnt.35 never-fallback ruling, which settled every 429 as failed and wasted
+    // the run). An explicit override replaces the chain — a chain of one — which mirrors
+    // the CLI `backendOverride` path: a manual switch runs on exactly what was asked for,
+    // never on a silent substitute. The walk itself happens below and in runWithFallback:
+    // a retryable provider error (rate_limit/timeout/transient per the classifier shared
+    // with the CLI runner) advances to the next model and the winner is recorded on the
+    // snapshot, so attribution answers "what actually ran" rather than "what was first".
+    const fullChain = resolveModelChain(execution);
+    const configuredModel = fullChain[0];
+    const modelChain = request.modelOverride ? [request.modelOverride] : fullChain;
     const requestedModel = request.modelOverride ?? configuredModel;
     if (request.thinkingOverride !== undefined && !(THINKING_LEVELS as readonly string[]).includes(request.thinkingOverride)) {
       return reject('invalid_thinking_override', {
@@ -365,16 +377,32 @@ export class NativeActivationHost {
 
     // An explicit override that is unavailable must fail here rather than silently
     // running on something else. Both halves of the gate are required — see model-gate.ts.
+    // Without an override the walk starts here: the first HONOURABLE model wins the
+    // dispatch-time session, and an unavailable primary with a configured fallback is
+    // skipped with forensics rather than spending a turn failing. Post-dispatch provider
+    // failures continue the same walk inside runWithFallback.
     const modelRuntime = await createGateModelRuntime(sdk);
-    const modelCheck = await validateModelAvailable(sdk, modelRuntime, requestedModel);
-    if (!modelCheck.ok) {
+    let modelIndex = 0;
+    let modelCheck = await validateModelAvailable(sdk, modelRuntime, modelChain[0] ?? '');
+    while ((!modelCheck.ok || !modelCheck.model) && modelIndex < modelChain.length - 1) {
+      const skipped = modelChain[modelIndex];
+      emit('model_fallback', {
+        from_model: skipped ?? null,
+        to_model: modelChain[modelIndex + 1],
+        error_class: 'unavailable',
+        terminal: false,
+        note: modelCheck.reason ?? null,
+      });
+      modelIndex += 1;
+      modelCheck = await validateModelAvailable(sdk, modelRuntime, modelChain[modelIndex] ?? '');
+    }
+    if (!modelCheck.ok || !modelCheck.model) {
       return reject('model_unavailable', {
-        requestedModel,
+        requestedModel: modelChain[modelIndex] ?? requestedModel,
         note: modelCheck.reason,
       });
     }
-    const resolvedModel = modelCheck.resolvedModel ?? requestedModel;
-    if (!modelCheck.model) return reject('model_unresolved', { requestedModel });
+    const resolvedModel = modelCheck.resolvedModel ?? modelChain[modelIndex] ?? requestedModel;
 
     const workspace: WorkspaceIdentity = request.workspaceHint ?? {
       repositoryRoot: this.cwd,
@@ -513,7 +541,11 @@ export class NativeActivationHost {
       });
     }
 
-    const { session } = await sdk.createAgentSession({
+    // Session options are built once so every later attempt on a new model — the fallback
+    // walk below, a retry with an override — creates its session identically to the first.
+    // The ask/escalate tools are shared across attempts on purpose: they key off the live
+    // attempt id, not the session, so a fallback keeps the same pending-ask correlation.
+    const baseSessionOptions = {
       customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       // The pi SDK takes a Model object here. Passing the provider-qualified string
@@ -536,7 +568,14 @@ export class NativeActivationHost {
       // asking is not a workspace operation and neither tool can mutate anything.
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text,
-    });
+    };
+
+    const { session } = await sdk.createAgentSession({ ...baseSessionOptions, model: modelCheck.model });
+
+    const createSessionForModel = async (model: { id?: string; provider?: string }): Promise<PiAgentSessionLike> => {
+      const created = await sdk.createAgentSession({ ...baseSessionOptions, model });
+      return created.session;
+    };
 
     const purpose = extractPurposeExcerpt(bead.description ?? '');
     const startedAt = this.now();
@@ -568,9 +607,23 @@ export class NativeActivationHost {
 
     const unsubscribe = session.subscribe((event) => this.onSessionEvent(snapshot, event, emit));
 
-    const result = this.runToSettled(snapshot, session, rendered.initial_prompt, emit);
+    // The result promise owns the fallback walk: the first attempt runs, and a failure
+    // whose class is retryable advances to the next chain model on a FRESH session under
+    // the SAME activation and attempt — dispatch already returned by then, so the walk
+    // must not block it. The registry record is mutated in place (session, snapshot,
+    // unsubscribe) so status/readers observe the winner, not the casualty.
+    const record: ActivationRecord = {
+      snapshot, session, unsubscribe,
+      result: undefined as unknown as Promise<ActivationResult>,
+      stepContract, initialPrompt: rendered.initial_prompt, createSession: createSessionForModel,
+    };
+    const result = this.runWithFallback(record, {
+      modelChain, modelIndex, sdk, modelRuntime,
+      initialPrompt: rendered.initial_prompt, emit,
+    });
+    record.result = result;
 
-    this.registry.register({ snapshot, session, unsubscribe, result, stepContract });
+    this.registry.register(record);
 
     return {
       activationId, participantId, attemptId,
@@ -748,6 +801,220 @@ export class NativeActivationHost {
       };
     }
     // Deliberately no dispose(): a settled Specialist remains alive and resumable.
+  }
+
+  /**
+   * Run the turn-1 attempt, walking the model chain on retryable provider failures.
+   *
+   * The first attempt runs on the dispatch-time session; a failure whose class is
+   * retryable (rate_limit/timeout/transient per the classifier shared with the CLI
+   * runner) disposes that session and continues on the next chain model under the SAME
+   * activation and attempt id. Auth, unknown and abort-class failures settle failed
+   * immediately — retrying those on another model is either wrong (auth) or blind
+   * (unknown), exactly the CLI rule. The winner lands on the snapshot (`resolvedModel`,
+   * `piSessionId`) and on the result (`resolvedModel`, `fallbackUsed`), so attribution
+   * answers what actually ran.
+   *
+   * Runs inside the dispatch result promise: dispatch already returned, so the walk never
+   * blocks admission. A record removed mid-walk (stop) ends the walk — a disposed
+   * activation must never resurrect.
+   */
+  private async runWithFallback(
+    record: ActivationRecord,
+    ctx: {
+      modelChain: string[];
+      modelIndex: number;
+      sdk: PiSdk;
+      modelRuntime: PiModelRuntimeLike;
+      initialPrompt: string;
+      emit: (name: string, payload?: Record<string, unknown>) => void;
+    },
+  ): Promise<ActivationResult> {
+    let index = ctx.modelIndex;
+    // A dispatch-time skip (unavailable primary) already advanced past the chain head.
+    let fallbackUsed = index > 0;
+    let result = await this.runToSettled(record.snapshot, record.session, ctx.initialPrompt, ctx.emit);
+
+    while (result.status === 'failed' && index < ctx.modelChain.length - 1) {
+      if (this.registry.get(record.snapshot.activationId) !== record) break;
+      const detail = result.validation.errors?.[0] ?? 'unknown failure';
+      const errorClass = classifyFallbackError(detail);
+      if (!FALLBACK_RETRYABLE_CLASSES.has(errorClass)) break;
+      const nextModel = ctx.modelChain[index + 1];
+      const fromModel = record.snapshot.resolvedModel;
+      // Validate BEFORE disposing: a fallback that cannot be honoured keeps the failed
+      // session and its context rather than trading them for nothing.
+      const check = await validateModelAvailable(ctx.sdk, ctx.modelRuntime, nextModel);
+      if (!check.ok || !check.model) {
+        ctx.emit('model_fallback', {
+          from_model: fromModel,
+          to_model: nextModel,
+          error_class: errorClass,
+          terminal: true,
+          note: `fallback unavailable: ${check.reason ?? 'unresolvable'}`,
+          resolved_model: fromModel,
+        });
+        break;
+      }
+      ctx.emit('model_fallback', {
+        from_model: fromModel,
+        to_model: nextModel,
+        error_class: errorClass,
+        terminal: false,
+        attempt_n: index + 2,
+        resolved_model: check.resolvedModel ?? nextModel,
+      });
+      let nextSession: PiAgentSessionLike;
+      try {
+        nextSession = await record.createSession(check.model);
+      } catch (error) {
+        ctx.emit('model_fallback', {
+          from_model: fromModel,
+          to_model: nextModel,
+          error_class: errorClass,
+          terminal: true,
+          note: error instanceof Error ? error.message : String(error),
+          resolved_model: fromModel,
+        });
+        break;
+      }
+      try { record.session.dispose(); } catch { /* best effort; the lease is untouched */ }
+      record.unsubscribe();
+      record.session = nextSession;
+      record.snapshot.resolvedModel = check.resolvedModel ?? nextModel;
+      record.snapshot.piSessionId = nextSession.sessionId;
+      record.snapshot.state = 'starting';
+      record.snapshot.lastActivityAt = this.now();
+      record.unsubscribe = nextSession.subscribe((event) => this.onSessionEvent(record.snapshot, event, ctx.emit));
+      ctx.emit('activation_started', { pi_session_id: nextSession.sessionId });
+      index += 1;
+      fallbackUsed = true;
+      result = await this.runToSettled(record.snapshot, record.session, ctx.initialPrompt, ctx.emit);
+    }
+
+    result.fallbackUsed = fallbackUsed;
+    return result;
+  }
+
+  /**
+   * Re-run a FAILED activation in place — the native equivalent of `sp retry`.
+   *
+   * Keeps `activationId` and advances `attemptId`: a retry is a new attempt under one
+   * activation, never a second dispatch, so lineage and the workspace lease survive it.
+   * Without a model override the SAME session is re-prompted, so its context survives
+   * too; with one a new session is built identically except for the model, and the
+   * failed session is disposed. The turn prompt defaults to the dispatch-time render of
+   * the same bead — pass `prompt` to say something new, or dispatch fresh when the bead
+   * itself was rewritten.
+   *
+   * Gating mirrors the CLI retry: failed only. A waiting/settled/needs_reply/escalated
+   * activation resumes (its session is alive); a running one steers or stops first.
+   * A refused model override leaves the activation failed-and-retryable, never
+   * half-advanced. Writers reacquire their own lease for the new attempt — the workspace
+   * is held across the retry, never dropped, so no orphan is possible.
+   */
+  async retry(activationId: string, opts?: { modelOverride?: string; prompt?: string }): Promise<ActivationHandle> {
+    const record = this.registry.get(activationId);
+    if (!record) {
+      throw new DispatchRejectedError('unknown_activation', { activationId });
+    }
+    if (!RETRYABLE_STATES.has(record.snapshot.state)) {
+      const state = record.snapshot.state;
+      const hint = state === 'waiting' || state === 'settled' || state === 'needs_reply' || state === 'escalated'
+        ? `Activation ${activationId} is ${state} — use resume, which keeps the live session.`
+        : `Activation ${activationId} is ${state} — steer it or stop it first.`;
+      throw new DispatchRejectedError('not_resumable', {
+        activationId,
+        note: `state is "${state}". retry only re-runs failed activations. ${hint}`,
+      });
+    }
+
+    // Validate an override BEFORE touching lease or snapshot: a refused model leaves the
+    // activation failed-and-retryable rather than half-advanced.
+    const overrideName = opts?.modelOverride;
+    let overrideModel: { id?: string; provider?: string } | undefined;
+    let overrideResolved: string | undefined;
+    if (overrideName) {
+      const sdk = await this.loadSdk();
+      const check = await validateModelAvailable(sdk, await createGateModelRuntime(sdk), overrideName);
+      if (!check.ok || !check.model) {
+        throw new DispatchRejectedError('model_unavailable', {
+          activationId,
+          requestedModel: overrideName,
+          note: check.reason,
+        });
+      }
+      overrideModel = check.model;
+      overrideResolved = check.resolvedModel ?? overrideName;
+    }
+
+    const attemptId = nextAttemptId(record.snapshot.attemptId);
+    if (record.snapshot.access === 'write') {
+      try {
+        acquireLease({
+          workspace: record.snapshot.workspace,
+          activationId, attemptId, specialist: record.snapshot.specialist,
+        });
+      } catch (error) {
+        if (error instanceof DispatchRejectedError) {
+          this.forensics.emit({
+            activationId, attemptId, participantId: record.snapshot.participantId,
+            specialist: record.snapshot.specialist, beadId: record.snapshot.beadId,
+            name: 'lease_denied',
+            payload: { reason: error.reason, note: error.detail.holder, on: 'retry' },
+          });
+        }
+        throw error;
+      }
+    }
+    record.snapshot.attemptId = attemptId;
+    record.snapshot.state = 'starting';
+    record.snapshot.lastActivityAt = this.now();
+
+    const emit = (name: string, payload?: Record<string, unknown>) =>
+      this.forensics.emit({
+        activationId, attemptId, participantId: record.snapshot.participantId,
+        specialist: record.snapshot.specialist, beadId: record.snapshot.beadId, name, payload,
+      });
+
+    let reusedSession = true;
+    if (overrideModel && overrideResolved && overrideName) {
+      // A new model needs a new session — the model is fixed at creation. The failed
+      // session is disposed; same-session context survives only on the no-override path.
+      const nextSession = await record.createSession(overrideModel);
+      try { record.session.dispose(); } catch { /* best effort */ }
+      record.unsubscribe();
+      record.session = nextSession;
+      record.snapshot.requestedModel = overrideName;
+      record.snapshot.resolvedModel = overrideResolved;
+      record.snapshot.modelOverride = true;
+      record.snapshot.piSessionId = nextSession.sessionId;
+      reusedSession = false;
+    } else {
+      record.unsubscribe();
+    }
+    // Re-subscribe under the new attempt id: the old listener would emit forensics
+    // against the closed attempt (the resume() shape).
+    record.unsubscribe = record.session.subscribe((event) => this.onSessionEvent(record.snapshot, event, emit));
+
+    emit('activation_retried', {
+      requested_model: record.snapshot.requestedModel ?? null,
+      resolved_model: record.snapshot.resolvedModel,
+      model_override: record.snapshot.modelOverride,
+      reused_session: reusedSession,
+    });
+
+    const result = this.runToSettled(record.snapshot, record.session, opts?.prompt ?? record.initialPrompt, emit);
+    record.result = result;
+
+    return {
+      activationId, participantId: record.snapshot.participantId, attemptId,
+      specialist: record.snapshot.specialist, beadId: record.snapshot.beadId,
+      access: record.snapshot.access, workspace: record.snapshot.workspace,
+      resolvedModel: record.snapshot.resolvedModel,
+      stepContract: record.stepContract,
+      result,
+    };
   }
 
   /**

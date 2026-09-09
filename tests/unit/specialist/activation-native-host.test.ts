@@ -1109,3 +1109,310 @@ describe('PRD acceptance Z — a resume conflict is refused (unitAI-rrdnt.36)', 
     expect(hostA.inspect(a.activationId)?.attemptId).toBe(a.attemptId);
   });
 });
+
+/**
+ * unitAI-3emr7 — a 429 must walk the fallback chain (reversing the unitAI-rrdnt.35
+ * never-fallback ruling) and a failed activation must be retryable in place.
+ *
+ * The model sessions are faked; the CLASSIFIER is real (`classifyFallbackError` shared
+ * with the CLI runner) and the LEASE IS REAL (a file store under the tmp workspace).
+ * Faking either would assert the fixture, not the parity the bead demands.
+ */
+describe('NativeActivationHost — fallback walk + retry (unitAI-3emr7)', () => {
+  let sessionCounter = 0;
+
+  /** One session per script: each prompt consumes the next step (last step repeats). */
+  function scriptSession(
+    script: Array<{ text?: string; stopReason?: string; errorMessage?: string; throw?: unknown }>,
+  ): PiAgentSessionLike & { prompts: string[]; disposed: boolean; sessionId: string } {
+    const listeners: Array<(e: PiAgentSessionEvent) => void> = [];
+    const messages: unknown[] = [];
+    let n = 0;
+    const session = {
+      sessionId: `pi-sess-${(sessionCounter += 1)}`,
+      messages,
+      isIdle: true,
+      disposed: false,
+      prompts: [] as string[],
+      async prompt(text: string) {
+        session.prompts.push(text);
+        listeners.forEach(l => l({ type: 'agent_start' }));
+        const step = script[Math.min(n, script.length - 1)];
+        n += 1;
+        if (step.throw) throw step.throw;
+        messages.push({
+          role: 'assistant',
+          content: step.text ?? 'done',
+          ...(step.stopReason ? { stopReason: step.stopReason } : {}),
+          ...(step.errorMessage ? { errorMessage: step.errorMessage } : {}),
+        });
+        listeners.forEach(l => l({ type: 'agent_end', willRetry: false }));
+        listeners.forEach(l => l({ type: 'agent_settled' }));
+      },
+      async steer() {}, async followUp() {}, async abort() {},
+      dispose() { session.disposed = true; },
+      subscribe(l: (e: PiAgentSessionEvent) => void) {
+        listeners.push(l);
+        return () => { const i = listeners.indexOf(l); if (i >= 0) listeners.splice(i, 1); };
+      },
+      getActiveToolNames: () => [] as string[],
+      setActiveToolsByName() {},
+      async waitForIdle() {},
+    };
+    return session as unknown as PiAgentSessionLike & { prompts: string[]; disposed: boolean; sessionId: string };
+  }
+
+  /** Serves one session per created model; resolves each requested pattern to itself. */
+  function chainSdk(created: unknown[], sessions: PiAgentSessionLike[], unavailable: string[] = []): PiSdk {
+    return {
+      createAgentSession: async (options?: Record<string, unknown>) => {
+        created.push((options as { model?: unknown } | undefined)?.model);
+        const session = sessions[created.length - 1];
+        if (!session) throw new Error(`chainSdk: no session scripted for model attempt ${created.length}`);
+        return { session };
+      },
+      ModelRuntime: { create: async () => ({ hasConfiguredAuth: () => true }) },
+      resolveModelScopeWithDiagnostics: (patterns: string[]) => {
+        if (unavailable.includes(patterns[0])) {
+          return {
+            scopedModels: [],
+            diagnostics: [{ type: 'warning', code: 'no-match', message: `No models match pattern "${patterns[0]}"`, pattern: patterns[0] }],
+          };
+        }
+        const [provider, ...rest] = patterns[0].split('/');
+        return { scopedModels: [{ model: { id: rest.join('/') || patterns[0], provider } }], diagnostics: [] };
+      },
+      defineTool: (d) => d,
+      createEditTool: () => ({ name: 'edit', execute: async () => 'edited' }),
+      createWriteTool: () => ({ name: 'write', execute: async () => 'written' }),
+      createBashTool: () => ({ name: 'bash', execute: async () => 'ran' }),
+      createPowerShellTool: () => ({ name: 'powershell', execute: async () => 'ran' }),
+    } as unknown as PiSdk;
+  }
+
+  function chainHost(opts: {
+    executionExtra?: Record<string, unknown>;
+    sessions: PiAgentSessionLike[];
+    unavailable?: string[];
+    permission?: string;
+  }) {
+    const created: unknown[] = [];
+    const sink = collectingSink();
+    const spec = readOnlySpec({ model: 'primaryprov/primary-model', ...(opts.executionExtra ?? {}) });
+    if (opts.permission) (spec.specialist.execution as Record<string, unknown>).permission_required = opts.permission;
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(spec),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: sink,
+      loadSdk: async () => chainSdk(created, opts.sessions, opts.unavailable),
+      cwd: hostWorkspace(),
+    });
+    return { host, sink, created };
+  }
+
+  const quotaError = () => {
+    const error = new Error('Free usage limit exceeded for this model');
+    error.name = 'FreeUsageLimitError';
+    return error;
+  };
+
+  const start = (host: NativeActivationHost) => host.start({
+    specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+  });
+
+  it('walks fallback_models after a thrown FreeUsageLimitError and records the winner', async () => {
+    const fallback = scriptSession([{ text: 'recovered' }]);
+    const { host, sink, created } = chainHost({
+      executionExtra: { fallback_models: ['fallbackprov/fallback-model'] },
+      sessions: [scriptSession([{ throw: quotaError() }]), fallback],
+    });
+
+    const handle = await start(host);
+    const result = await handle.result;
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toBe('recovered');
+    expect(created).toHaveLength(2);
+    expect(result.resolvedModel).toBe('fallbackprov/fallback-model');
+    expect(result.fallbackUsed).toBe(true);
+    const snapshot = host.inspect(handle.activationId)!;
+    expect(snapshot.resolvedModel).toBe('fallbackprov/fallback-model');
+    expect(snapshot.requestedModel).toBe('primaryprov/primary-model');
+    expect(snapshot.piSessionId).toBe(fallback.sessionId);
+    const step = sink.events.find(e => e.name === 'model_fallback');
+    expect(step?.payload).toMatchObject({
+      from_model: 'primaryprov/primary-model',
+      to_model: 'fallbackprov/fallback-model',
+      error_class: 'rate_limit',
+      terminal: false,
+    });
+  });
+
+  it('walks the chain on the silent stopReason-error path too', async () => {
+    const { host, sink, created } = chainHost({
+      executionExtra: { fallback_models: ['fallbackprov/fallback-model'] },
+      sessions: [
+        scriptSession([{ text: '', stopReason: 'error', errorMessage: '429: monthly usage limit reached' }]),
+        scriptSession([{ text: 'recovered' }]),
+      ],
+    });
+
+    const result = await (await start(host)).result;
+
+    expect(result.status).toBe('completed');
+    expect(created).toHaveLength(2);
+    expect(result.resolvedModel).toBe('fallbackprov/fallback-model');
+    expect(result.fallbackUsed).toBe(true);
+    expect(sink.events.find(e => e.name === 'model_fallback')?.payload).toMatchObject({
+      error_class: 'rate_limit',
+      terminal: false,
+    });
+  });
+
+  it('does not walk the chain after an auth failure', async () => {
+    const { host, sink, created } = chainHost({
+      executionExtra: { fallback_models: ['fallbackprov/fallback-model'] },
+      sessions: [scriptSession([{ throw: new Error('401 Unauthorized') }])],
+    });
+
+    const result = await (await start(host)).result;
+
+    expect(result.status).toBe('failed');
+    expect(created).toHaveLength(1);
+    expect(result.fallbackUsed).toBe(false);
+    expect(sink.names).not.toContain('model_fallback');
+  });
+
+  it('skips an unavailable primary with forensics when a fallback is configured', async () => {
+    const { host, sink, created } = chainHost({
+      executionExtra: { fallback_models: ['fallbackprov/fallback-model'] },
+      unavailable: ['primaryprov/primary-model'],
+      sessions: [scriptSession([{ text: 'recovered' }])],
+    });
+
+    const result = await (await start(host)).result;
+
+    expect(result.status).toBe('completed');
+    expect(created).toHaveLength(1);
+    expect(result.resolvedModel).toBe('fallbackprov/fallback-model');
+    expect(result.fallbackUsed).toBe(true);
+    expect(sink.events.find(e => e.name === 'model_fallback')?.payload).toMatchObject({
+      from_model: 'primaryprov/primary-model',
+      error_class: 'unavailable',
+    });
+  });
+
+  it('refuses retry for live and unknown activations with the right pointer', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: collectingSink(),
+      loadSdk: async () => makeSdk(record, fakeSession({ record, holdOpen: true })),
+      cwd: hostWorkspace(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    const refusal = await host.retry(handle.activationId).catch((caught: unknown) => caught);
+    expect((refusal as DispatchRejectedError).reason).toBe('not_resumable');
+    expect((refusal as DispatchRejectedError).detail.note).toMatch(/steer|stop/);
+
+    const unknown = await host.retry('act:nope').catch((caught: unknown) => caught);
+    expect((unknown as DispatchRejectedError).reason).toBe('unknown_activation');
+
+    await host.stop(handle.activationId);
+  });
+
+  it('retries a failed activation in place on the same session', async () => {
+    const session = scriptSession([
+      { text: '', stopReason: 'error', errorMessage: 'permanent boom' },
+      { text: 'recovered' },
+    ]);
+    const { host, sink } = chainHost({ sessions: [session] });
+
+    const handle = await start(host);
+    expect((await handle.result).status).toBe('failed');
+
+    const retried = await host.retry(handle.activationId);
+    expect(retried.activationId).toBe(handle.activationId);
+    expect(retried.attemptId).not.toBe(handle.attemptId);
+    const result = await retried.result;
+    expect(result.status).toBe('completed');
+    expect(result.output).toBe('recovered');
+    expect(session.prompts).toHaveLength(2);
+    expect(result.fallbackUsed).toBe(false);
+    expect(sink.events.find(e => e.name === 'activation_retried')?.payload).toMatchObject({
+      reused_session: true,
+    });
+
+    // A settled activation resumes — retry refuses it with the pointer, not a rerun.
+    const again = await host.retry(handle.activationId).catch((caught: unknown) => caught);
+    expect((again as DispatchRejectedError).reason).toBe('not_resumable');
+    expect((again as DispatchRejectedError).detail.note).toMatch(/resume/);
+  });
+
+  it('retries with a model override on a new session and records it', async () => {
+    const failed = scriptSession([{ text: '', stopReason: 'error', errorMessage: 'permanent boom' }]);
+    const fresh = scriptSession([{ text: 'recovered elsewhere' }]);
+    const { host, sink } = chainHost({ sessions: [failed, fresh] });
+
+    const handle = await start(host);
+    expect((await handle.result).status).toBe('failed');
+
+    const retried = await host.retry(handle.activationId, { modelOverride: 'otherprov/other-model' });
+    const result = await retried.result;
+    expect(result.status).toBe('completed');
+    expect(result.output).toBe('recovered elsewhere');
+    const snapshot = host.inspect(handle.activationId)!;
+    expect(snapshot.resolvedModel).toBe('otherprov/other-model');
+    expect(snapshot.requestedModel).toBe('otherprov/other-model');
+    expect(snapshot.modelOverride).toBe(true);
+    expect(failed.disposed).toBe(true);
+    expect(sink.events.find(e => e.name === 'activation_retried')?.payload).toMatchObject({
+      reused_session: false,
+      model_override: true,
+    });
+  });
+
+  it('leaves a refused override retryable and the lease untouched', async () => {
+    const session = scriptSession([{ text: '', stopReason: 'error', errorMessage: 'permanent boom' }]);
+    const { host } = chainHost({ sessions: [session], unavailable: ['bogus/model'] });
+
+    const handle = await start(host);
+    expect((await handle.result).status).toBe('failed');
+
+    const refusal = await host.retry(handle.activationId, { modelOverride: 'bogus/model' })
+      .catch((caught: unknown) => caught);
+    expect((refusal as DispatchRejectedError).reason).toBe('model_unavailable');
+    // Half-advanced is worse than failed: same attempt, still failed, still retryable.
+    expect(host.inspect(handle.activationId)?.attemptId).toBe(handle.attemptId);
+    expect(host.inspect(handle.activationId)?.state).toBe('failed');
+    expect(session.prompts).toHaveLength(1);
+  });
+
+  it('holds a failed writer lease across the retry — no orphan, no contention with itself', async () => {
+    // The thrown path never emits agent_settled, so the failed writer still holds its
+    // lease — the exact case a naive retry would trip over as contention with itself.
+    // The lease is real (file store under the tmp workspace); the session is faked.
+    const session = scriptSession([{ throw: new Error('permanent boom') }, { text: 'recovered' }]);
+    const { host, sink } = chainHost({ sessions: [session], permission: 'HIGH' });
+
+    const handle = await host.start({
+      specialist: 'executor', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    expect(handle.access).toBe('write');
+    expect((await handle.result).status).toBe('failed');
+    expect(sink.names).toContain('lease_acquired');
+
+    const result = await (await host.retry(handle.activationId)).result;
+    expect(result.status).toBe('completed');
+    expect(session.prompts).toHaveLength(2);
+    expect(sink.names).not.toContain('lease_denied');
+    expect(sink.names).not.toContain('lease_uncertain');
+    expect(sink.names).toContain('activation_retried');
+  });
+});

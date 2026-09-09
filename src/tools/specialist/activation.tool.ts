@@ -348,7 +348,6 @@ export const specialistStopSchema = z.object({
   activation_id: z.string().describe('Activation to stop and dispose.'),
   reason: z.string().optional().describe('Recorded forensically with the disposal.'),
 });
-
 /**
  * Stop and dispose a native activation.
  *
@@ -375,6 +374,75 @@ export function createSpecialistStopActivationTool(getHost: () => NativeActivati
       }
       await getHost().stop(input.activation_id, input.reason ?? 'mcp operator request');
       return { status: 'stopped' as const, activation_id: input.activation_id };
+    },
+  };
+}
+
+export const specialistRetrySchema = z.object({
+  activation_id: z.string().describe('The failed activation to re-run in place.'),
+  model_override: z.string().optional().describe(
+    'Re-run on a named model instead of the one that failed (manual switch after a quota ' +
+    'window kills a run). A new session is built for the new model; without this the SAME ' +
+    'session is re-prompted and its context survives.',
+  ),
+  prompt: z.string().optional().describe(
+    'Replacement turn prompt. Defaults to the dispatch-time render of the same bead.',
+  ),
+});
+
+/**
+ * Re-run a failed native activation in place — the native equivalent of `sp retry`.
+ *
+ * Same activation id, new attempt: the bead, the workspace lease and (without a model
+ * override) the session survive the retry. Failed only — a live or waiting activation
+ * already has its path (reply for an outstanding question, resume for a settled one,
+ * steer/stop for a running one), and retry refuses those states with the right pointer
+ * rather than becoming a second dispatch. An escalation or question that CAN wait stays
+ * an ask answered with specialist_reply; retry is for runs that already died.
+ */
+export function createSpecialistRetryTool(
+  getHost: () => NativeActivationHost,
+  getPusher?: () => RuntimeEventPusher | undefined,
+) {
+  return {
+    name: 'specialist_retry' as const,
+    description:
+      'Re-run a FAILED native activation in place, optionally on a named model. ' +
+      'Keeps the activation id, the bead and the workspace lease; without model_override ' +
+      'the same session is re-prompted with its context intact. Failed only — answer an ' +
+      'outstanding question with specialist_reply and resume a settled activation with ' +
+      'specialist_resume instead.',
+    inputSchema: specialistRetrySchema,
+    async execute(input: z.infer<typeof specialistRetrySchema>) {
+      try {
+        const handle = await getHost().retry(input.activation_id, {
+          ...(input.model_override ? { modelOverride: input.model_override } : {}),
+          ...(input.prompt ? { prompt: input.prompt } : {}),
+        });
+
+        // Same observation contract as dispatch, minus the route: the coordinator address
+        // is a property of the dispatch, so retry must not re-track and clobber it. The
+        // retried result settles the recorded completion and its push, readable through
+        // specialist_status either way.
+        const pusher = getPusher?.();
+        handle.result.then(
+          async (result) => {
+            if (!pusher) return;
+            pusher.settle(result as ActivationResult);
+            await pusher.pushCompletion(handle.activationId).catch(() => { /* degraded to polling */ });
+          },
+          () => { /* observed via specialist_status */ },
+        );
+
+        const snapshot = getHost().inspect(handle.activationId);
+        return {
+          status: 'retried' as const,
+          ...(snapshot ? toActivationView(snapshot) : { activation_id: handle.activationId }),
+        };
+      } catch (error) {
+        if (error instanceof DispatchRejectedError) return rejectionResult(error);
+        throw error;
+      }
     },
   };
 }

@@ -388,8 +388,9 @@ export function formatSettlementWake(done) {
     ...(failed && done.error ? ['', `error: ${done.error}`] : []),
     '',
     failed
-      ? 'Call specialist_status to read the failure detail. The activation is settled; it can '
-        + 'be resumed with specialist_resume if the cause was transient.'
+      ? 'Call specialist_status to read the failure detail, then re-run it with specialist_retry ' +
+        '— same activation, same lease, optionally on another model with model_override. ' +
+        'Answer with specialist_reply instead if it is waiting on a question.'
       : 'Call specialist_status to read its validated result. The activation is settled and '
         + 'stays resumable until you dispose it with specialist_stop_activation.',
   ].map((line) => withRail(line)).join('\n');
@@ -597,6 +598,8 @@ function summarizePayload(payload) {
       return [`Answered ${payload.message_id ?? '?'} for ${payload.activation_id ?? '?'}`];
     case 'resumed':
       return [`Resumed ${payload.activation_id ?? '?'} (${payload.specialist ?? '?'}) — attempt ${payload.previous_attempt_id ?? '?'} → ${payload.attempt_id ?? '?'}`];
+    case 'retried':
+      return [`Retried ${payload.activation_id ?? '?'} (${payload.specialist ?? '?'}) — attempt ${payload.previous_attempt_id ?? '?'} → ${payload.attempt_id ?? '?'}`];
     case 'stopped':
       return [`Stopped ${payload.activation_id ?? '?'}`];
     case 'rejected':
@@ -1136,6 +1139,91 @@ export default function specialistSubagentsExtension(pi, options = {}) {
           type: 'text',
           text: JSON.stringify({
             status: 'resumed',
+            previous_attempt_id: previousAttemptId,
+            ...(snapshot ? toActivationView(snapshot) : { activation_id: handle.activationId }),
+          }, null, 2),
+        }],
+        details: {},
+      };
+    },
+  });
+
+  // unitAI-3emr7: a failed activation is not dead — it is retryable in place. Resume
+  // keeps a LIVE session going; retry re-runs a FAILED one (same activation, new attempt,
+  // same lease). Without model_override the same session is re-prompted with its context
+  // intact; with one a new session is built for the new model. An escalation or question
+  // that CAN wait stays an ask answered with specialist_reply — retry is for runs that
+  // already died, never a way to skip answering.
+  pi.registerTool({
+    name: 'specialist_retry',
+    label: 'Specialist retry',
+    description:
+      'Re-run a FAILED Specialist in place, optionally on a named model. ' +
+      'This is not a second dispatch: the activation_id is kept and the attempt_id advances, ' +
+      'so the bead and the workspace lease survive the retry. Without model_override the ' +
+      'SAME session is re-prompted and its context survives. Failed only — answer an ' +
+      'outstanding question with specialist_reply and resume a settled Specialist with ' +
+      'specialist_resume instead.',
+    promptSnippet: 'Re-run a failed Specialist (specialist_retry: activation_id, model_override?)',
+    renderCall: humanCallOf((args) => `Retry ${args.activation_id ?? '?'}`),
+    renderResult: humanResultOf(),
+    parameters: Type.Object({
+      activation_id: Type.String({ description: 'The failed activation to re-run.' }),
+      model_override: Type.Optional(Type.String({ description: 'Re-run on this model instead of the one that failed.' })),
+      prompt: Type.Optional(Type.String({ description: 'Replacement turn prompt. Defaults to the dispatch-time render of the same bead.' })),
+    }),
+    async execute(toolCallId, params) {
+      const h = getHost();
+      const before = h.inspect(params.activation_id);
+      // Same aliasing trap as specialist_resume: `inspect` returns the live snapshot, so
+      // the previous attempt id is captured before `retry` mutates it in place.
+      const previousAttemptId = before?.attemptId;
+      if (!before) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'error',
+              error: `Unknown activation: ${params.activation_id}`,
+              activation_id: params.activation_id,
+            }, null, 2),
+          }],
+          details: {},
+        };
+      }
+
+      let handle;
+      try {
+        handle = await h.retry(params.activation_id, {
+          ...(params.model_override ? { modelOverride: params.model_override } : {}),
+          ...(params.prompt ? { prompt: params.prompt } : {}),
+        });
+      } catch (error) {
+        // A refused retry is evidence, not a malfunction — the host refuses a live
+        // activation, an unavailable override, and a lease it can no longer reacquire.
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'rejected',
+              activation_id: params.activation_id,
+              reason: error instanceof Error ? error.message : String(error),
+            }, null, 2),
+          }],
+          details: {},
+        };
+      }
+
+      handle.result
+        .then((result) => { results.set(handle.activationId, result); })
+        .catch(() => { /* observed via specialist_status */ });
+
+      const snapshot = h.inspect(handle.activationId);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'retried',
             previous_attempt_id: previousAttemptId,
             ...(snapshot ? toActivationView(snapshot) : { activation_id: handle.activationId }),
           }, null, 2),
