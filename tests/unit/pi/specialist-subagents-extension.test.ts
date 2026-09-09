@@ -1004,9 +1004,10 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       }],
       asks: [],
     };
-    const lines = mod.renderSectionLines(fleet);
+    const lines = mod.renderSectionLines(fleet, { nowMs: 560 }); // frame 7 = ⠧
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines[1]).toMatch(/⠧ researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k · working/);
+    expect(lines[1]).toMatch(/⠧ researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k/);
+    expect(lines[1]).not.toContain('working'); // spinner marker carries it
     expect(lines[1]).not.toContain('spent');
     // Command default: /specialists with no action reports the expanded rows.
     await command('specialists').handler('', ctx);
@@ -1051,8 +1052,8 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(mod.formatSpendShort(undefined)).toBe('');
     expect(mod.formatSpendShort({ input_tokens: 0, output_tokens: 0 })).toBe('');
     for (const view of [base, { ...base, token_usage: { input_tokens: 0, output_tokens: 0 } }]) {
-      const row = mod.renderFleetRowLine(view);
-      expect(row).toBe('    ⠙ explorer (m) · bd-1 · running 41s · working');
+      const row = mod.renderFleetRowLine(view, [], 0); // frame 0 = ⠋
+      expect(row).toBe('    ⠋ explorer (m) · bd-1 · running 41s');
       expect(row).not.toContain('spent');
     }
   });
@@ -1065,33 +1066,36 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
       elapsed_s: 47, token_usage: { input_tokens: 1500, output_tokens: 600 },
       last_activity_at: Math.floor(Date.now() / 1000),
-    });
-    expect(row).toMatch(/running 47s · 2\.1k · working/);
-    expect(row.startsWith('    ⠧ ')).toBe(true); // 47 % 10 = frame 7
+    }, [], 560);
+    expect(row).toMatch(/running 47s · 2\.1k/);
+    expect(row.startsWith('    ⠧ ')).toBe(true); // 560/80 = frame 7
+    expect(row).not.toContain('working');
     expect(row).not.toContain('spent');
   });
 
-  it('working rows tick a braille spinner from elapsed_s; other rows keep markers (unitAI-beqby.18)', async () => {
+  it('working rows tick a ms-resolution spinner from nowMs; working word collapsed (unitAI-beqby.18)', async () => {
     const { mod } = await boot();
     const base = {
       activation_id: 'act:x', specialist: 'explorer', bead_id: 'bd-1', state: 'running',
       resolved_model: 'm', last_activity_at: Math.floor(Date.now() / 1000),
     };
-    // Deterministic: same elapsed_s always yields the same frame, no Date.now in the choice.
-    expect(mod.renderFleetRowLine({ ...base, elapsed_s: 41 }))
-      .toBe(mod.renderFleetRowLine({ ...base, elapsed_s: 41 }));
-    expect(mod.renderFleetRowLine({ ...base, elapsed_s: 41 }))
-      .toBe('    ⠙ explorer (m) · bd-1 · running 41s · working');
-    expect(mod.renderFleetRowLine({ ...base, elapsed_s: 42 }))
-      .toBe('    ⠹ explorer (m) · bd-1 · running 42s · working');
-    // Settled rows keep ●; idle (>30s quiet) keeps ●; needs-reply keeps !.
-    expect(mod.renderFleetRowLine({ ...base, state: 'done', elapsed_s: 41 }))
+    const at = (nowMs, view = base) => mod.renderFleetRowLine(view, [], nowMs);
+    // Deterministic: same nowMs always yields the same frame; elapsed_s ticks
+    // the elapsed text only, never the marker (seconds cannot move at ora speed).
+    expect(at(0)).toBe(at(0));
+    expect(at(0)).toBe('    ⠋ explorer (m) · bd-1 · running 0s');
+    expect(at(80)).toBe('    ⠙ explorer (m) · bd-1 · running 0s');
+    expect(at(0, { ...base, elapsed_s: 42 })).toBe('    ⠋ explorer (m) · bd-1 · running 42s');
+    expect(at(0)).not.toContain('working'); // spinner marker carries it
+    // Settled rows keep ● and their tail; idle (>30s quiet) keeps ● + idle Xs;
+    // needs-reply keeps !.
+    expect(mod.renderFleetRowLine({ ...base, state: 'done', elapsed_s: 41 }, [], 0))
       .toBe('    ● explorer (m) · bd-1 · done 41s · done');
-    expect(mod.renderFleetRowLine({ ...base, elapsed_s: 41, last_activity_at: Math.floor(Date.now() / 1000) - 60 }))
+    expect(mod.renderFleetRowLine({ ...base, elapsed_s: 41, last_activity_at: Math.floor(Date.now() / 1000) - 60 }, [], 0))
       .toMatch(/^    ● .* · idle 60s/);
     const askRow = mod.renderFleetRowLine({ ...base, elapsed_s: 41 }, [
       { activation_id: 'act:x', asked_at: Math.floor(Date.now() / 1000) - 5 },
-    ]);
+    ], 0);
     expect(askRow.startsWith('    ! ')).toBe(true);
   });
 
@@ -1118,7 +1122,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
         from: 'x', body: 'Which option?', asked_at: now - 31,
       }],
     };
-    const lines = mod.renderSectionLines(fleet);
+    const lines = mod.renderSectionLines(fleet, { nowMs: 560 }); // frame 7 = ⠧
     expect(lines[1]).toMatch(/! reviewer \(gpt-5\.6-sol high\) · ISSUE-92 · needs reply 31s/);
     expect(lines[2]).toContain('⠧ researcher');
     expect(lines.join('\n')).not.toContain('act:ask'); // no forensic ids in rows

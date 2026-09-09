@@ -160,15 +160,20 @@ export function renderCollapsedLine({ activations, asks }) {
   return `  └ specialists · ${parts.join(' · ')} · ${hint}`;
 }
 
-/** Braille spinner frames for running-and-working rows. Frame is selected
- * pure-functionally from elapsed_s (no timers or state in the render path). */
+/** Braille spinner frames (ora dots) for running-and-working rows. The frame
+ * is selected pure-functionally from the injected nowMs clock (no timers or
+ * state in the render path): the footer section repaints on every TUI render
+ * pass, so an 80ms frame advances at ora speed. Tests inject nowMs directly. */
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+export const SPINNER_FRAME_MS = 80;
 
 /** One row per specialist. Forensic IDs never appear here. An activation with a
  * pending ask renders as a needs-reply row (`!` marker) outranking idle rows.
- * A running-and-working row leads with a spinner frame ticked by elapsed_s;
- * all other rows keep their existing markers. */
-export function renderFleetRowLine(view, asks = []) {
+ * A running-and-working row leads with a spinner frame ticked by nowMs, and
+ * the redundant `working` word is collapsed into that marker (the spinner IS
+ * the working signal); idle-Xs rows keep their `idle Xs` tail. All other
+ * rows keep their existing markers. */
+export function renderFleetRowLine(view, asks = [], nowMs = Date.now()) {
   const model = view.thinking_level
     ? `${view.resolved_model ?? '?model'} ${view.thinking_level}`
     : (view.resolved_model ?? '?model');
@@ -190,22 +195,26 @@ export function renderFleetRowLine(view, asks = []) {
   // Spend renders for every state, not only running: final spend stays visible after settle.
   const spend = tokens ? ` · ${tokens}` : '';
   const why = purpose ? ` · ${purpose}` : '';
-  const marker = (view.state === 'running' && activity === 'working')
-    ? SPINNER_FRAMES[Math.max(0, Math.floor(view.elapsed_s ?? 0)) % SPINNER_FRAMES.length]
+  const isWorking = view.state === 'running' && activity === 'working';
+  const marker = isWorking
+    ? SPINNER_FRAMES[Math.floor(nowMs / SPINNER_FRAME_MS) % SPINNER_FRAMES.length]
     : '●';
-  return `    ${marker} ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
+  // Working rows end at spend: the spinner marker already says working.
+  // Every other row keeps its trailing activity word (incl. idle Xs).
+  const tail = isWorking ? '' : ` · ${activity}`;
+  return `    ${marker} ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend}${tail}`;
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
  * Expanded by default; needs-reply rows sort first. */
-export function renderSectionLines({ activations, asks }, { expanded = true } = {}) {
+export function renderSectionLines({ activations, asks }, { expanded = true, nowMs = Date.now() } = {}) {
   const lines = [renderCollapsedLine({ activations, asks })];
   if (!expanded) return lines;
   const askIds = new Set((asks ?? []).map((a) => a.activation_id));
   const ordered = [...(activations ?? [])].sort(
     (a, b) => Number(askIds.has(b.activation_id)) - Number(askIds.has(a.activation_id)),
   );
-  const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks));
+  const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks, nowMs));
   lines.push(...rows);
   const overflow = (activations ?? []).length - rows.length;
   if (overflow > 0) lines.push(`    +${overflow} more`);
@@ -1383,7 +1392,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     if (!fleetVisible) return [];
     const fleet = readFleet();
     if (fleet.activations.length === 0 && fleet.asks.length === 0) return [];
-    return renderFleetSection(fleet, { expanded: fleetExpanded });
+    // One clock per paint so every row in the frame shares the spinner frame.
+    return renderFleetSection(fleet, { expanded: fleetExpanded, nowMs: Date.now() });
   };
 
   // Seam lookup order: explicit test seam, then the core footer's global hook,
