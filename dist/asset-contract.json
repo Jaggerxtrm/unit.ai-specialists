@@ -257,9 +257,6 @@
   ],
   "shipped_hooks": [
     {
-      "path": "config/hooks/specialists-memory-cache-sync.mjs"
-    },
-    {
       "path": "config/hooks/specialists-session-start.mjs"
     }
   ],
