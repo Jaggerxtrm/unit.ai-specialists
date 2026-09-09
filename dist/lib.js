@@ -12444,19 +12444,419 @@ ${stderrTail}` : ""}`;
 }
 
 // src/specialist/mandatory-rules.ts
-import { existsSync as existsSync8, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync2 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
-import { resolve as resolve7 } from "node:path";
+import { resolve as resolve5 } from "node:path";
 
 // src/specialist/memory-retrieval.ts
-import { execSync } from "node:child_process";
+var DEFAULT_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "how",
+  "i",
+  "if",
+  "in",
+  "is",
+  "it",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "this",
+  "to",
+  "was",
+  "we",
+  "with",
+  "you",
+  "your",
+  "replace",
+  "implement",
+  "task",
+  "run",
+  "add",
+  "new",
+  "use",
+  "using",
+  "into",
+  "when",
+  "what",
+  "not",
+  "only"
+]);
+var CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+var STATIC_WORKFLOW_RULES_BLOCK = `
+## Beads Workflow Quick Rules
+- Claim work: \`bd update <id> --claim\`
+- Append progress notes: \`bd update <id> --append-notes "..."\`
+- Store reusable insight: \`bd remember "insight"\`
+- Close completed issue: \`bd close <id> --reason "done"\`
 
-// src/specialist/observability-sqlite.ts
-import { existsSync as existsSync7, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync as statSync2 } from "node:fs";
-import { dirname as dirname6, join as join7, normalize, resolve as resolve6 } from "node:path";
+## Session close checklist
+1. \`git add <files>\`
+2. \`git commit -m "..."\`
+3. \`git push\`
+`.trim();
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+function estimateInjectedTokens(text) {
+  return estimateTokens(text);
+}
+
+// src/specialist/mandatory-rules.ts
+class MandatoryRulesBudgetError extends Error {
+  budgetLimit;
+  candidateTokens;
+  mustKeepTokens;
+  injectedSectionIds;
+  evictedSectionIds;
+  outcome = "impossible";
+  constructor(budgetLimit, candidateTokens, mustKeepTokens, injectedSectionIds, evictedSectionIds) {
+    super(`Mandatory rules MUST_KEEP floor requires ${mustKeepTokens} tokens, exceeding budget ${budgetLimit}`);
+    this.budgetLimit = budgetLimit;
+    this.candidateTokens = candidateTokens;
+    this.mustKeepTokens = mustKeepTokens;
+    this.injectedSectionIds = injectedSectionIds;
+    this.evictedSectionIds = evictedSectionIds;
+    this.name = "MandatoryRulesBudgetError";
+  }
+  injectedTokens = 0;
+}
+function formatSectionsBlock(sections) {
+  return sections.length > 0 ? `## MANDATORY_RULES
+${sections.map((section) => section.block).join(`
+
+`)}` : "";
+}
+function estimateTokens2(text) {
+  return text ? Math.max(1, Math.ceil(text.length / 4)) : 0;
+}
+function compileMandatoryRulesBudget(candidateSections, budgetLimit) {
+  const sections = candidateSections.filter((section) => section.block.trim() && section.ruleCount > 0);
+  const candidateTokens = estimateTokens2(formatSectionsBlock(sections));
+  const mustKeep = sections.filter((section) => section.priority === "must_keep");
+  const floorTokens = estimateTokens2(formatSectionsBlock(mustKeep));
+  if (floorTokens > budgetLimit) {
+    throw new MandatoryRulesBudgetError(budgetLimit, candidateTokens, floorTokens, [], sections.map((section) => section.setId));
+  }
+  const retained = new Set(mustKeep);
+  for (const priority of ["important", "optional"]) {
+    for (const section of sections.filter((item) => item.priority === priority)) {
+      const proposed = sections.filter((item) => retained.has(item) || item === section);
+      if (estimateTokens2(formatSectionsBlock(proposed)) <= budgetLimit)
+        retained.add(section);
+    }
+  }
+  const injected = sections.filter((section) => retained.has(section));
+  const block = formatSectionsBlock(injected);
+  const evicted = sections.filter((section) => !retained.has(section));
+  return {
+    block,
+    sections: injected,
+    budgetLimit,
+    candidateTokens,
+    injectedTokens: estimateTokens2(block),
+    injectedSectionIds: injected.map((section) => section.setId),
+    evictedSectionIds: evicted.map((section) => section.setId),
+    payloadDigest: createHash2("sha256").update(block).digest("hex"),
+    outcome: evicted.length === 0 ? "full" : "degraded"
+  };
+}
+function readJsonFile(filePath) {
+  return JSON.parse(readFileSync2(filePath, "utf8"));
+}
+function mergeIndex(base, overlay) {
+  const dedupe = (values) => values ? Array.from(new Set(values)) : undefined;
+  return {
+    required_template_sets: dedupe([
+      ...base.required_template_sets ?? [],
+      ...overlay.required_template_sets ?? []
+    ]),
+    default_template_sets: dedupe([
+      ...base.default_template_sets ?? [],
+      ...overlay.default_template_sets ?? []
+    ])
+  };
+}
+function loadMandatoryRulesIndex(cwd) {
+  const sourcePath = resolve5(cwd, "config/mandatory-rules/index.json");
+  const canonicalCopyPath = resolve5(cwd, ".specialists/default/mandatory-rules/index.json");
+  const userOverlayPath = resolve5(cwd, ".specialists/user/mandatory-rules/index.json");
+  const packageLivePath = resolveCanonicalAssetDir("mandatory-rules");
+  const overlayPath = resolve5(cwd, ".specialists/mandatory-rules/index.json");
+  const packageLiveIndexPath = packageLivePath ? resolve5(packageLivePath, "index.json") : null;
+  const tierPaths = [userOverlayPath, sourcePath, canonicalCopyPath, overlayPath].filter((value) => Boolean(value));
+  const tiers = [];
+  for (const path of tierPaths) {
+    if (existsSync6(path))
+      tiers.push(readJsonFile(path));
+  }
+  if (tiers.length === 0 && packageLiveIndexPath && existsSync6(packageLiveIndexPath)) {
+    tiers.push(readJsonFile(packageLiveIndexPath));
+  }
+  if (tiers.length === 0) {
+    console.warn("[specialist runner] Missing mandatory-rules index (checked config/, .specialists/default/, .specialists/); skipping MANDATORY_RULES injection");
+    return null;
+  }
+  return tiers.reduce((acc, next) => mergeIndex(acc, next));
+}
+function parseQuotedScalar(value) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') || trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+function parseRuleEntry(lines, startIndex) {
+  const entryLine = lines[startIndex]?.trim();
+  if (!entryLine?.startsWith("- "))
+    return null;
+  const firstLine = entryLine.slice(2).trim();
+  const inlineFields = {};
+  if (firstLine.length > 0 && !firstLine.includes(":")) {
+    inlineFields.text = parseQuotedScalar(firstLine);
+  } else if (firstLine.length > 0) {
+    const [key, ...rest] = firstLine.split(":");
+    inlineFields[key.trim()] = parseQuotedScalar(rest.join(":"));
+  }
+  let nextIndex = startIndex + 1;
+  while (nextIndex < lines.length) {
+    const line = lines[nextIndex];
+    if (!line.trim()) {
+      nextIndex += 1;
+      continue;
+    }
+    if (/^\s*-\s+/.test(line))
+      break;
+    if (!/^\s+/.test(line))
+      break;
+    const trimmed = line.trim();
+    const match = trimmed.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if (!match) {
+      nextIndex += 1;
+      continue;
+    }
+    inlineFields[match[1]] = parseQuotedScalar(match[2]);
+    nextIndex += 1;
+  }
+  if (!inlineFields.text)
+    return null;
+  return {
+    rule: {
+      id: inlineFields.id ?? "",
+      level: inlineFields.level ?? "required",
+      text: inlineFields.text,
+      ...inlineFields.when ? { when: inlineFields.when } : {}
+    },
+    nextIndex
+  };
+}
+function parseMandatoryRulesFrontmatter(content, setId) {
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!frontmatterMatch)
+    return [];
+  const lines = frontmatterMatch[1].split(`
+`);
+  const rulesHeaderIndex = lines.findIndex((line) => /^rules:\s*$/.test(line.trim()));
+  if (rulesHeaderIndex === -1)
+    return [];
+  const rules = [];
+  let index = rulesHeaderIndex + 1;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    if (!/^\s*-\s+/.test(line))
+      break;
+    const parsed = parseRuleEntry(lines, index);
+    if (!parsed)
+      break;
+    const ruleIndex = rules.length + 1;
+    rules.push({
+      id: parsed.rule.id || `${setId}-${ruleIndex}`,
+      level: parsed.rule.level,
+      text: parsed.rule.text,
+      ...parsed.rule.when ? { when: parsed.rule.when } : {}
+    });
+    index = parsed.nextIndex;
+  }
+  return rules;
+}
+function readMandatoryRuleSet(cwd, id) {
+  if (!/^[a-z][a-z0-9-]*$/.test(id)) {
+    console.warn(`[specialist runner] Rejecting unsafe mandatory-rules set id '${id}' (must be kebab-case)`);
+    return null;
+  }
+  const packageCanonicalDir = resolveCanonicalAssetDir("mandatory-rules");
+  const candidates = [
+    resolve5(cwd, `.specialists/user/mandatory-rules/${id}.md`),
+    resolve5(cwd, `.specialists/mandatory-rules/${id}.md`),
+    resolve5(cwd, `.specialists/default/mandatory-rules/${id}.md`),
+    resolve5(cwd, `config/mandatory-rules/${id}.md`),
+    ...packageCanonicalDir ? [resolve5(packageCanonicalDir, `${id}.md`)] : []
+  ];
+  const filePath = candidates.find((path) => existsSync6(path));
+  if (!filePath)
+    return null;
+  const content = readFileSync2(filePath, "utf8");
+  const rules = parseMandatoryRulesFrontmatter(content, id);
+  if (rules.length > 0)
+    return { id, rules };
+  const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
+  if (!body)
+    return null;
+  return {
+    id,
+    rules: [{ id: `${id}-1`, level: "required", text: body.replace(/\s+/g, " ") }]
+  };
+}
+function formatMandatoryRulesBlock(sets, inlineRules = []) {
+  if (sets.length === 0 && inlineRules.length === 0)
+    return { block: "", sections: [] };
+  const sections = [
+    ...sets.map((set) => {
+      const rules = set.rules.map((rule) => `- [${rule.level}] ${rule.text}`).join(`
+`);
+      return { setId: set.id, priority: set.priority, ruleCount: set.rules.length, block: `### ${set.id}
+${rules}` };
+    }),
+    ...inlineRules.length > 0 ? [
+      {
+        setId: "specialist-inline-rules",
+        priority: "must_keep",
+        ruleCount: inlineRules.length,
+        block: `### specialist-inline-rules
+${inlineRules.map((rule, index) => `- [${rule.level}] ${rule.text}${rule.id ? ` (id: ${rule.id})` : ` (id: inline-${index + 1})`}`).join(`
+`)}`
+      }
+    ] : []
+  ];
+  return { block: `## MANDATORY_RULES
+${sections.map((section) => section.block).join(`
+
+`)}`, sections };
+}
+function collectMandatoryRuleSets(cwd, setIds) {
+  const seen = new Set;
+  const sets = [];
+  for (const id of setIds) {
+    if (seen.has(id))
+      continue;
+    seen.add(id);
+    const set = readMandatoryRuleSet(cwd, id);
+    if (!set) {
+      console.warn(`[specialist runner] Missing mandatory-rules set: ${id}`);
+      continue;
+    }
+    sets.push(set);
+  }
+  return sets;
+}
+function buildMandatoryRulesInjection(specialistConfig, budgetLimit = Number.POSITIVE_INFINITY) {
+  const cwd = specialistConfig.cwd ?? process.cwd();
+  const index = loadMandatoryRulesIndex(cwd);
+  const mandatoryRules = specialistConfig.specialist?.mandatory_rules;
+  const setIds = [
+    ...index?.required_template_sets ?? [],
+    ...index?.default_template_sets ?? [],
+    ...mandatoryRules?.template_sets ?? []
+  ];
+  const sets = collectMandatoryRuleSets(cwd, setIds);
+  const inlineRules = mandatoryRules?.inline_rules ?? [];
+  const globalsDisabled = mandatoryRules?.disable_default_globals ?? false;
+  const globals = globalsDisabled ? [] : [{
+    id: "workflow-quick-rules",
+    rules: [{
+      id: "workflow-quick-rules-1",
+      level: "required",
+      text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, "").replace(/^- Store reusable insight:.*\n/m, "")
+    }],
+    priority: "must_keep"
+  }];
+  const requiredIds = new Set(index?.required_template_sets ?? []);
+  const defaultIds = new Set(index?.default_template_sets ?? []);
+  const prioritizedSets = sets.map((set) => ({
+    ...set,
+    priority: requiredIds.has(set.id) ? "must_keep" : defaultIds.has(set.id) ? "important" : "optional"
+  }));
+  const formatted = formatMandatoryRulesBlock([...globals, ...prioritizedSets], inlineRules);
+  const compiled = compileMandatoryRulesBudget(formatted.sections, budgetLimit);
+  const injectedSetIds = new Set(compiled.injectedSectionIds);
+  return {
+    ...compiled,
+    setsLoaded: [...globals, ...prioritizedSets].filter((set) => injectedSetIds.has(set.id)).map((set) => set.id),
+    ruleCount: compiled.sections.reduce((count, section) => count + section.ruleCount, 0),
+    inlineRulesCount: injectedSetIds.has("specialist-inline-rules") ? inlineRules.length : 0,
+    globalsDisabled
+  };
+}
+
+// src/specialist/required-platform-rules.ts
+function buildRequiredPlatformRulesInjection(cwd, budgetLimit = Number.POSITIVE_INFINITY) {
+  const resolved = buildMandatoryRulesInjection({
+    cwd,
+    specialist: {
+      mandatory_rules: {
+        disable_default_globals: true,
+        template_sets: [],
+        inline_rules: []
+      }
+    }
+  });
+  const requiredCandidates = resolved.sections.filter((section) => section.priority === "must_keep");
+  const compiled = compileMandatoryRulesBudget(requiredCandidates, budgetLimit);
+  const injectedIds = new Set(compiled.injectedSectionIds);
+  const retainedRequired = requiredCandidates.filter((section) => injectedIds.has(section.setId));
+  return {
+    ...resolved,
+    ...compiled,
+    setsLoaded: retainedRequired.map((section) => section.setId),
+    ruleCount: retainedRequired.reduce((count, section) => count + section.ruleCount, 0),
+    inlineRulesCount: 0,
+    globalsDisabled: true
+  };
+}
+function buildRequiredPlatformRulesBlock(cwd, budgetLimit = Number.POSITIVE_INFINITY) {
+  return buildRequiredPlatformRulesInjection(cwd, budgetLimit).block;
+}
+
+// src/specialist/model-chain.ts
+function resolveModelChain(execution) {
+  const primary = normalizeModel(execution.model);
+  const fallbacks = resolveFallbackModels(execution);
+  return dedupeModels([primary, ...fallbacks].filter((model) => model !== null));
+}
+function resolveFallbackModels(execution) {
+  if (execution.fallback_models && execution.fallback_models.length > 0) {
+    if (normalizeModel(execution.fallback_model ?? null)) {
+      console.debug(`[model-chain] plural fallback_models wins; ignoring fallback_model=${execution.fallback_model}`);
+    }
+    return execution.fallback_models.map(normalizeModel).filter((model) => model !== null);
+  }
+  const fallback = normalizeModel(execution.fallback_model ?? null);
+  return fallback ? [fallback] : [];
+}
+function normalizeModel(model) {
+  const trimmed = model?.trim();
+  return trimmed ? trimmed : null;
+}
+function dedupeModels(models) {
+  return [...new Set(models)];
+}
 
 // src/specialist/observability-db.ts
-import { chmodSync, existsSync as existsSync6, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join as join5, sep as sep2, resolve as resolvePath } from "node:path";
 var OBSERVABILITY_DB_FILENAME = "observability.db";
@@ -12516,16 +12916,20 @@ function resolveObservabilityDbLocation(cwd = process.cwd()) {
 }
 function ensureObservabilityDbFile(location) {
   mkdirSync2(location.dbDirectory, { recursive: true });
-  const alreadyExists = existsSync6(location.dbPath);
+  const alreadyExists = existsSync7(location.dbPath);
   if (alreadyExists) {
     chmodSync(location.dbPath, 420);
   }
   return { created: !alreadyExists };
 }
 
+// src/specialist/observability-sqlite.ts
+import { existsSync as existsSync8, mkdirSync as mkdirSync3, readFileSync as readFileSync4, statSync as statSync2 } from "node:fs";
+import { dirname as dirname6, join as join7, normalize, resolve as resolve7 } from "node:path";
+
 // src/specialist/job-root.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { dirname as dirname5, join as join6, resolve as resolve5 } from "node:path";
+import { dirname as dirname5, join as join6, resolve as resolve6 } from "node:path";
 function resolveCommonGitRoot(cwd) {
   const result = spawnSync2("git", ["rev-parse", "--git-common-dir"], {
     cwd,
@@ -12537,7 +12941,7 @@ function resolveCommonGitRoot(cwd) {
   const gitCommonDir = result.stdout?.trim();
   if (!gitCommonDir)
     return;
-  return dirname5(resolve5(cwd, gitCommonDir));
+  return dirname5(resolve6(cwd, gitCommonDir));
 }
 
 // src/specialist/forensic-events.ts
@@ -13493,7 +13897,7 @@ function stringifyJson(value) {
 function normalizeWorkspacePath(worktreePath) {
   if (!worktreePath || worktreePath.trim().length === 0)
     return null;
-  return normalize(resolve6(worktreePath));
+  return normalize(resolve7(worktreePath));
 }
 function buildAttemptId(jobId, attemptNo) {
   return `${jobId}::attempt::${attemptNo}`;
@@ -13618,26 +14022,6 @@ function initSchema(db) {
       job_id        TEXT PRIMARY KEY,
       output        TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS memories_cache (
-      memory_key           TEXT PRIMARY KEY,
-      memory_value         TEXT NOT NULL,
-      updated_at_ms        INTEGER NOT NULL,
-      last_accessed_at_ms  INTEGER,
-      access_count         INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS memories_cache_meta (
-      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
-      last_sync_at_ms  INTEGER NOT NULL,
-      memory_count     INTEGER NOT NULL
-    );
-
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      key,
-      content,
-      tokenize='porter ascii'
     );
   `);
   const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
@@ -14016,29 +14400,6 @@ function migrateToV9(db) {
 }
 function migrateToV10(db) {
   const hasV10 = db.query("SELECT 1 FROM schema_version WHERE version = 10 LIMIT 1").get();
-  db.run(`
-    CREATE TABLE IF NOT EXISTS memories_cache (
-      memory_key           TEXT PRIMARY KEY,
-      memory_value         TEXT NOT NULL,
-      updated_at_ms        INTEGER NOT NULL,
-      last_accessed_at_ms  INTEGER,
-      access_count         INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS memories_cache_meta (
-      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
-      last_sync_at_ms  INTEGER NOT NULL,
-      memory_count     INTEGER NOT NULL
-    );
-  `);
-  db.run(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      key,
-      content,
-      tokenize='porter ascii'
-    );
-  `);
   if (hasV10) {
     return;
   }
@@ -15501,117 +15862,6 @@ class SqliteClient {
       return row?.output ?? null;
     }, "readResult");
   }
-  syncMemoriesCache(memories, syncedAtMs = Date.now()) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.db.run("DELETE FROM memories_fts");
-        const upsertMemory = this.db.query(`
-          INSERT INTO memories_cache (memory_key, memory_value, updated_at_ms)
-          VALUES (?, ?, ?)
-          ON CONFLICT(memory_key) DO UPDATE SET
-            memory_value = excluded.memory_value,
-            updated_at_ms = excluded.updated_at_ms
-        `);
-        const insertFts = this.db.query("INSERT INTO memories_fts (key, content) VALUES (?, ?)");
-        const seen = new Set;
-        for (const memory of memories) {
-          if (!memory.key || seen.has(memory.key))
-            continue;
-          seen.add(memory.key);
-          upsertMemory.run(memory.key, memory.value, syncedAtMs);
-          insertFts.run(memory.key, `${memory.key} ${memory.value}`);
-        }
-        if (seen.size > 0) {
-          const placeholders = [...seen].map(() => "?").join(", ");
-          this.db.query(`DELETE FROM memories_cache WHERE memory_key NOT IN (${placeholders})`).run(...seen);
-        } else {
-          this.db.run("DELETE FROM memories_cache");
-        }
-        this.db.query(`
-          INSERT INTO memories_cache_meta (singleton_key, last_sync_at_ms, memory_count)
-          VALUES (1, ?, ?)
-          ON CONFLICT(singleton_key) DO UPDATE SET
-            last_sync_at_ms = excluded.last_sync_at_ms,
-            memory_count = excluded.memory_count
-        `).run(syncedAtMs, seen.size);
-      });
-      transaction();
-    }, "syncMemoriesCache");
-  }
-  getMemoriesCacheState() {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT last_sync_at_ms, memory_count
-        FROM memories_cache_meta
-        WHERE singleton_key = 1
-        LIMIT 1
-      `).get();
-      if (!row || typeof row.last_sync_at_ms !== "number" || typeof row.memory_count !== "number") {
-        return null;
-      }
-      return { lastSyncAtMs: row.last_sync_at_ms, memoryCount: row.memory_count };
-    }, "getMemoriesCacheState");
-  }
-  queryRelevantMemories(keywords, limit = 10, nowMs = Date.now()) {
-    return withRetry(() => {
-      const cleanedKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter((keyword) => keyword.length > 0))];
-      if (cleanedKeywords.length === 0)
-        return [];
-      const matchQuery = cleanedKeywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
-      const rows = this.db.query(`
-        SELECT
-          cache.memory_key,
-          cache.memory_value,
-          bm25(memories_fts) AS bm25_score,
-          COALESCE((? - cache.updated_at_ms) / 3600000.0, 999999.0) AS age_hours,
-          cache.access_count
-        FROM memories_fts
-        JOIN memories_cache cache ON cache.memory_key = memories_fts.key
-        WHERE memories_fts MATCH ?
-        ORDER BY bm25_score ASC
-        LIMIT ?
-      `).all(nowMs, matchQuery, Math.max(1, limit * 3));
-      const ranked = rows.map((row) => {
-        const bm25 = Number.isFinite(row.bm25_score) ? row.bm25_score : 100;
-        const bm25Norm = 1 / (1 + Math.max(0, bm25));
-        const recency = Math.exp(-Math.max(0, row.age_hours) / 72);
-        const accessFrequency = Math.min(1, Math.log1p(Math.max(0, row.access_count)) / Math.log(10));
-        const score = 0.5 * bm25Norm + 0.3 * recency + 0.2 * accessFrequency;
-        return {
-          key: row.memory_key,
-          value: row.memory_value,
-          bm25,
-          recency,
-          accessFrequency,
-          score
-        };
-      });
-      ranked.sort((left, right) => right.score - left.score);
-      const selected = ranked.slice(0, Math.max(1, limit));
-      if (selected.length === 0)
-        return [];
-      const accessStmt = this.db.query(`
-        UPDATE memories_cache
-        SET access_count = access_count + 1,
-            last_accessed_at_ms = ?
-        WHERE memory_key = ?
-      `);
-      for (const memory of selected) {
-        accessStmt.run(nowMs, memory.key);
-      }
-      return selected;
-    }, "queryRelevantMemories");
-  }
-  invalidateMemoriesCache() {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.db.run("DELETE FROM memories_fts");
-        this.db.run("DELETE FROM memories_cache");
-        this.db.run("DELETE FROM memories_cache_meta");
-      });
-      transaction();
-    }, "invalidateMemoriesCache");
-  }
   hasActiveJobs(statuses = ["running", "starting"]) {
     return this.listActiveJobs(statuses).length > 0;
   }
@@ -15860,7 +16110,7 @@ class SqliteClient {
         WHERE worktree_column IS NOT NULL AND worktree_column != ''
       `).all();
       for (const row of worktreeRows) {
-        if (existsSync7(row.worktree_column))
+        if (existsSync8(row.worktree_column))
           continue;
         findings.push({
           kind: "stale-pointer",
@@ -15891,565 +16141,9 @@ function openObservabilitySqliteClient(dbPath) {
     return null;
   }
 }
-function createObservabilitySqliteClient(cwd = process.cwd()) {
-  const location = resolveObservabilityDbLocation(cwd);
-  if (!existsSync7(location.dbPath))
-    return null;
-  return openObservabilitySqliteClient(location.dbPath);
-}
 function createObservabilitySqliteClientAtPath(dbPath) {
   mkdirSync3(dirname6(dbPath), { recursive: true });
   return openObservabilitySqliteClient(dbPath);
-}
-
-// src/specialist/memory-retrieval.ts
-var DEFAULT_STOP_WORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "are",
-  "as",
-  "at",
-  "be",
-  "by",
-  "for",
-  "from",
-  "how",
-  "i",
-  "if",
-  "in",
-  "is",
-  "it",
-  "of",
-  "on",
-  "or",
-  "that",
-  "the",
-  "this",
-  "to",
-  "was",
-  "we",
-  "with",
-  "you",
-  "your",
-  "replace",
-  "implement",
-  "task",
-  "run",
-  "add",
-  "new",
-  "use",
-  "using",
-  "into",
-  "when",
-  "what",
-  "not",
-  "only"
-]);
-var MAX_KEYWORDS = 6;
-var MAX_MEMORIES = 10;
-var MAX_MEMORY_TOKENS = 600;
-var CACHE_MAX_AGE_MS = 60 * 60 * 1000;
-var STATIC_WORKFLOW_RULES_BLOCK = `
-## Beads Workflow Quick Rules
-- Claim work: \`bd update <id> --claim\`
-- Append progress notes: \`bd update <id> --append-notes "..."\`
-- Store reusable insight: \`bd remember "insight"\`
-- Close completed issue: \`bd close <id> --reason "done"\`
-
-## Session close checklist
-1. \`git add <files>\`
-2. \`git commit -m "..."\`
-3. \`git push\`
-`.trim();
-function estimateTokens(text) {
-  return Math.ceil(text.length / 4);
-}
-function normalizeToken(raw) {
-  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").trim();
-}
-function extractTokens(input) {
-  return input.split(/\s+/g).map(normalizeToken).filter((token) => token.length >= 3 && !DEFAULT_STOP_WORDS.has(token));
-}
-function extractMemoryKeywords(title, description) {
-  const tokens = [
-    ...extractTokens(title),
-    ...extractTokens(description ?? "")
-  ];
-  const unique = [];
-  const seen = new Set;
-  for (const token of tokens) {
-    if (seen.has(token))
-      continue;
-    seen.add(token);
-    unique.push(token);
-    if (unique.length >= MAX_KEYWORDS)
-      break;
-  }
-  return unique;
-}
-function parseMemoriesPayload(jsonText) {
-  if (!jsonText.trim())
-    return [];
-  const parsed = JSON.parse(jsonText);
-  if (Array.isArray(parsed)) {
-    return parsed.map((entry) => {
-      if (!entry || typeof entry !== "object")
-        return null;
-      const maybeRecord = entry;
-      const key = typeof maybeRecord.key === "string" ? maybeRecord.key : null;
-      const value = typeof maybeRecord.value === "string" ? maybeRecord.value : null;
-      if (!key || value === null)
-        return null;
-      return { key, value };
-    }).filter((entry) => Boolean(entry));
-  }
-  if (parsed && typeof parsed === "object") {
-    return Object.entries(parsed).filter((entry) => typeof entry[0] === "string" && typeof entry[1] === "string").map(([key, value]) => ({ key, value }));
-  }
-  return [];
-}
-function readBdMemories(cwd) {
-  try {
-    const stdout = execSync("bd memories --json", {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 5000
-    });
-    return parseMemoriesPayload(stdout);
-  } catch (error) {
-    const commandError = error;
-    const stderr = typeof commandError.stderr === "string" ? commandError.stderr : commandError.stderr?.toString("utf8") ?? "";
-    if (/no beads database found/i.test(stderr)) {
-      return [];
-    }
-    throw error;
-  }
-}
-function shouldRefreshCache(args) {
-  if (args.cacheCount === null || args.cacheLastSyncAtMs === null)
-    return true;
-  if (args.cacheCount !== args.sourceCount)
-    return true;
-  return args.nowMs - args.cacheLastSyncAtMs > CACHE_MAX_AGE_MS;
-}
-function toMemoryRecord(memory) {
-  return { key: memory.key, value: memory.value };
-}
-function syncMemoriesCacheFromBd(cwd, nowMs = Date.now(), forceFullSync = false) {
-  const sqliteClient = createObservabilitySqliteClient(cwd);
-  if (!sqliteClient) {
-    return { synced: false, memoryCount: 0 };
-  }
-  try {
-    const sourceMemories = readBdMemories(cwd);
-    const cacheState = sqliteClient.getMemoriesCacheState();
-    const needsRefresh = forceFullSync || shouldRefreshCache({
-      nowMs,
-      cacheCount: cacheState?.memoryCount ?? null,
-      cacheLastSyncAtMs: cacheState?.lastSyncAtMs ?? null,
-      sourceCount: sourceMemories.length
-    });
-    if (!needsRefresh) {
-      return { synced: false, memoryCount: sourceMemories.length };
-    }
-    sqliteClient.syncMemoriesCache(sourceMemories, nowMs);
-    return { synced: true, memoryCount: sourceMemories.length };
-  } finally {
-    sqliteClient.close();
-  }
-}
-function buildFilteredMemoryInjection(args) {
-  const keywords = extractMemoryKeywords(args.beadTitle, args.beadDescription);
-  if (keywords.length === 0) {
-    return { block: "", memories: [], estimatedTokens: 0 };
-  }
-  const nowMs = Date.now();
-  try {
-    syncMemoriesCacheFromBd(args.cwd, nowMs, false);
-  } catch {}
-  const sqliteClient = createObservabilitySqliteClient(args.cwd);
-  if (!sqliteClient) {
-    return { block: "", memories: [], estimatedTokens: 0 };
-  }
-  try {
-    const ranked = sqliteClient.queryRelevantMemories(keywords, MAX_MEMORIES, nowMs);
-    if (ranked.length === 0) {
-      return { block: "", memories: [], estimatedTokens: 0 };
-    }
-    const selected = [];
-    let tokenBudget = 0;
-    for (const memory of ranked) {
-      const line = `- ${memory.key}: ${memory.value}`;
-      const lineTokens = estimateTokens(line);
-      if (selected.length > 0 && tokenBudget + lineTokens > MAX_MEMORY_TOKENS)
-        break;
-      selected.push(toMemoryRecord(memory));
-      tokenBudget += lineTokens;
-    }
-    if (selected.length === 0) {
-      return { block: "", memories: [], estimatedTokens: 0 };
-    }
-    const lines = selected.map((memory) => `- ${memory.key}: ${memory.value}`);
-    const block = [
-      "## Filtered Beads Memories",
-      `_Keyword matched from bead context: ${keywords.join(", ")}_`,
-      ...lines
-    ].join(`
-`);
-    return {
-      block,
-      memories: selected,
-      estimatedTokens: estimateTokens(block)
-    };
-  } catch {
-    return { block: "", memories: [], estimatedTokens: 0 };
-  } finally {
-    sqliteClient.close();
-  }
-}
-function estimateInjectedTokens(text) {
-  return estimateTokens(text);
-}
-
-// src/specialist/mandatory-rules.ts
-class MandatoryRulesBudgetError extends Error {
-  budgetLimit;
-  candidateTokens;
-  mustKeepTokens;
-  injectedSectionIds;
-  evictedSectionIds;
-  outcome = "impossible";
-  constructor(budgetLimit, candidateTokens, mustKeepTokens, injectedSectionIds, evictedSectionIds) {
-    super(`Mandatory rules MUST_KEEP floor requires ${mustKeepTokens} tokens, exceeding budget ${budgetLimit}`);
-    this.budgetLimit = budgetLimit;
-    this.candidateTokens = candidateTokens;
-    this.mustKeepTokens = mustKeepTokens;
-    this.injectedSectionIds = injectedSectionIds;
-    this.evictedSectionIds = evictedSectionIds;
-    this.name = "MandatoryRulesBudgetError";
-  }
-  injectedTokens = 0;
-}
-function formatSectionsBlock(sections) {
-  return sections.length > 0 ? `## MANDATORY_RULES
-${sections.map((section) => section.block).join(`
-
-`)}` : "";
-}
-function estimateTokens2(text) {
-  return text ? Math.max(1, Math.ceil(text.length / 4)) : 0;
-}
-function compileMandatoryRulesBudget(candidateSections, budgetLimit) {
-  const sections = candidateSections.filter((section) => section.block.trim() && section.ruleCount > 0);
-  const candidateTokens = estimateTokens2(formatSectionsBlock(sections));
-  const mustKeep = sections.filter((section) => section.priority === "must_keep");
-  const floorTokens = estimateTokens2(formatSectionsBlock(mustKeep));
-  if (floorTokens > budgetLimit) {
-    throw new MandatoryRulesBudgetError(budgetLimit, candidateTokens, floorTokens, [], sections.map((section) => section.setId));
-  }
-  const retained = new Set(mustKeep);
-  for (const priority of ["important", "optional"]) {
-    for (const section of sections.filter((item) => item.priority === priority)) {
-      const proposed = sections.filter((item) => retained.has(item) || item === section);
-      if (estimateTokens2(formatSectionsBlock(proposed)) <= budgetLimit)
-        retained.add(section);
-    }
-  }
-  const injected = sections.filter((section) => retained.has(section));
-  const block = formatSectionsBlock(injected);
-  const evicted = sections.filter((section) => !retained.has(section));
-  return {
-    block,
-    sections: injected,
-    budgetLimit,
-    candidateTokens,
-    injectedTokens: estimateTokens2(block),
-    injectedSectionIds: injected.map((section) => section.setId),
-    evictedSectionIds: evicted.map((section) => section.setId),
-    payloadDigest: createHash2("sha256").update(block).digest("hex"),
-    outcome: evicted.length === 0 ? "full" : "degraded"
-  };
-}
-function readJsonFile(filePath) {
-  return JSON.parse(readFileSync4(filePath, "utf8"));
-}
-function mergeIndex(base, overlay) {
-  const dedupe = (values) => values ? Array.from(new Set(values)) : undefined;
-  return {
-    required_template_sets: dedupe([
-      ...base.required_template_sets ?? [],
-      ...overlay.required_template_sets ?? []
-    ]),
-    default_template_sets: dedupe([
-      ...base.default_template_sets ?? [],
-      ...overlay.default_template_sets ?? []
-    ])
-  };
-}
-function loadMandatoryRulesIndex(cwd) {
-  const sourcePath = resolve7(cwd, "config/mandatory-rules/index.json");
-  const canonicalCopyPath = resolve7(cwd, ".specialists/default/mandatory-rules/index.json");
-  const userOverlayPath = resolve7(cwd, ".specialists/user/mandatory-rules/index.json");
-  const packageLivePath = resolveCanonicalAssetDir("mandatory-rules");
-  const overlayPath = resolve7(cwd, ".specialists/mandatory-rules/index.json");
-  const packageLiveIndexPath = packageLivePath ? resolve7(packageLivePath, "index.json") : null;
-  const tierPaths = [userOverlayPath, sourcePath, canonicalCopyPath, overlayPath].filter((value) => Boolean(value));
-  const tiers = [];
-  for (const path of tierPaths) {
-    if (existsSync8(path))
-      tiers.push(readJsonFile(path));
-  }
-  if (tiers.length === 0 && packageLiveIndexPath && existsSync8(packageLiveIndexPath)) {
-    tiers.push(readJsonFile(packageLiveIndexPath));
-  }
-  if (tiers.length === 0) {
-    console.warn("[specialist runner] Missing mandatory-rules index (checked config/, .specialists/default/, .specialists/); skipping MANDATORY_RULES injection");
-    return null;
-  }
-  return tiers.reduce((acc, next) => mergeIndex(acc, next));
-}
-function parseQuotedScalar(value) {
-  const trimmed = value.trim();
-  if (trimmed.startsWith('"') && trimmed.endsWith('"') || trimmed.startsWith("'") && trimmed.endsWith("'")) {
-    return trimmed.slice(1, -1);
-  }
-  return trimmed;
-}
-function parseRuleEntry(lines, startIndex) {
-  const entryLine = lines[startIndex]?.trim();
-  if (!entryLine?.startsWith("- "))
-    return null;
-  const firstLine = entryLine.slice(2).trim();
-  const inlineFields = {};
-  if (firstLine.length > 0 && !firstLine.includes(":")) {
-    inlineFields.text = parseQuotedScalar(firstLine);
-  } else if (firstLine.length > 0) {
-    const [key, ...rest] = firstLine.split(":");
-    inlineFields[key.trim()] = parseQuotedScalar(rest.join(":"));
-  }
-  let nextIndex = startIndex + 1;
-  while (nextIndex < lines.length) {
-    const line = lines[nextIndex];
-    if (!line.trim()) {
-      nextIndex += 1;
-      continue;
-    }
-    if (/^\s*-\s+/.test(line))
-      break;
-    if (!/^\s+/.test(line))
-      break;
-    const trimmed = line.trim();
-    const match = trimmed.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
-    if (!match) {
-      nextIndex += 1;
-      continue;
-    }
-    inlineFields[match[1]] = parseQuotedScalar(match[2]);
-    nextIndex += 1;
-  }
-  if (!inlineFields.text)
-    return null;
-  return {
-    rule: {
-      id: inlineFields.id ?? "",
-      level: inlineFields.level ?? "required",
-      text: inlineFields.text,
-      ...inlineFields.when ? { when: inlineFields.when } : {}
-    },
-    nextIndex
-  };
-}
-function parseMandatoryRulesFrontmatter(content, setId) {
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?/);
-  if (!frontmatterMatch)
-    return [];
-  const lines = frontmatterMatch[1].split(`
-`);
-  const rulesHeaderIndex = lines.findIndex((line) => /^rules:\s*$/.test(line.trim()));
-  if (rulesHeaderIndex === -1)
-    return [];
-  const rules = [];
-  let index = rulesHeaderIndex + 1;
-  while (index < lines.length) {
-    const line = lines[index];
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-    if (!/^\s*-\s+/.test(line))
-      break;
-    const parsed = parseRuleEntry(lines, index);
-    if (!parsed)
-      break;
-    const ruleIndex = rules.length + 1;
-    rules.push({
-      id: parsed.rule.id || `${setId}-${ruleIndex}`,
-      level: parsed.rule.level,
-      text: parsed.rule.text,
-      ...parsed.rule.when ? { when: parsed.rule.when } : {}
-    });
-    index = parsed.nextIndex;
-  }
-  return rules;
-}
-function readMandatoryRuleSet(cwd, id) {
-  if (!/^[a-z][a-z0-9-]*$/.test(id)) {
-    console.warn(`[specialist runner] Rejecting unsafe mandatory-rules set id '${id}' (must be kebab-case)`);
-    return null;
-  }
-  const packageCanonicalDir = resolveCanonicalAssetDir("mandatory-rules");
-  const candidates = [
-    resolve7(cwd, `.specialists/user/mandatory-rules/${id}.md`),
-    resolve7(cwd, `.specialists/mandatory-rules/${id}.md`),
-    resolve7(cwd, `.specialists/default/mandatory-rules/${id}.md`),
-    resolve7(cwd, `config/mandatory-rules/${id}.md`),
-    ...packageCanonicalDir ? [resolve7(packageCanonicalDir, `${id}.md`)] : []
-  ];
-  const filePath = candidates.find((path) => existsSync8(path));
-  if (!filePath)
-    return null;
-  const content = readFileSync4(filePath, "utf8");
-  const rules = parseMandatoryRulesFrontmatter(content, id);
-  if (rules.length > 0)
-    return { id, rules };
-  const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
-  if (!body)
-    return null;
-  return {
-    id,
-    rules: [{ id: `${id}-1`, level: "required", text: body.replace(/\s+/g, " ") }]
-  };
-}
-function formatMandatoryRulesBlock(sets, inlineRules = []) {
-  if (sets.length === 0 && inlineRules.length === 0)
-    return { block: "", sections: [] };
-  const sections = [
-    ...sets.map((set) => {
-      const rules = set.rules.map((rule) => `- [${rule.level}] ${rule.text}`).join(`
-`);
-      return { setId: set.id, priority: set.priority, ruleCount: set.rules.length, block: `### ${set.id}
-${rules}` };
-    }),
-    ...inlineRules.length > 0 ? [
-      {
-        setId: "specialist-inline-rules",
-        priority: "must_keep",
-        ruleCount: inlineRules.length,
-        block: `### specialist-inline-rules
-${inlineRules.map((rule, index) => `- [${rule.level}] ${rule.text}${rule.id ? ` (id: ${rule.id})` : ` (id: inline-${index + 1})`}`).join(`
-`)}`
-      }
-    ] : []
-  ];
-  return { block: `## MANDATORY_RULES
-${sections.map((section) => section.block).join(`
-
-`)}`, sections };
-}
-function collectMandatoryRuleSets(cwd, setIds) {
-  const seen = new Set;
-  const sets = [];
-  for (const id of setIds) {
-    if (seen.has(id))
-      continue;
-    seen.add(id);
-    const set = readMandatoryRuleSet(cwd, id);
-    if (!set) {
-      console.warn(`[specialist runner] Missing mandatory-rules set: ${id}`);
-      continue;
-    }
-    sets.push(set);
-  }
-  return sets;
-}
-function buildMandatoryRulesInjection(specialistConfig, budgetLimit = Number.POSITIVE_INFINITY) {
-  const cwd = specialistConfig.cwd ?? process.cwd();
-  const index = loadMandatoryRulesIndex(cwd);
-  const mandatoryRules = specialistConfig.specialist?.mandatory_rules;
-  const setIds = [
-    ...index?.required_template_sets ?? [],
-    ...index?.default_template_sets ?? [],
-    ...mandatoryRules?.template_sets ?? []
-  ];
-  const sets = collectMandatoryRuleSets(cwd, setIds);
-  const inlineRules = mandatoryRules?.inline_rules ?? [];
-  const globalsDisabled = mandatoryRules?.disable_default_globals ?? false;
-  const globals = globalsDisabled ? [] : [{
-    id: "workflow-quick-rules",
-    rules: [{ id: "workflow-quick-rules-1", level: "required", text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, "") }],
-    priority: "must_keep"
-  }];
-  const requiredIds = new Set(index?.required_template_sets ?? []);
-  const defaultIds = new Set(index?.default_template_sets ?? []);
-  const prioritizedSets = sets.map((set) => ({
-    ...set,
-    priority: requiredIds.has(set.id) ? "must_keep" : defaultIds.has(set.id) ? "important" : "optional"
-  }));
-  const formatted = formatMandatoryRulesBlock([...globals, ...prioritizedSets], inlineRules);
-  const compiled = compileMandatoryRulesBudget(formatted.sections, budgetLimit);
-  const injectedSetIds = new Set(compiled.injectedSectionIds);
-  return {
-    ...compiled,
-    setsLoaded: [...globals, ...prioritizedSets].filter((set) => injectedSetIds.has(set.id)).map((set) => set.id),
-    ruleCount: compiled.sections.reduce((count, section) => count + section.ruleCount, 0),
-    inlineRulesCount: injectedSetIds.has("specialist-inline-rules") ? inlineRules.length : 0,
-    globalsDisabled
-  };
-}
-
-// src/specialist/required-platform-rules.ts
-function buildRequiredPlatformRulesInjection(cwd, budgetLimit = Number.POSITIVE_INFINITY) {
-  const resolved = buildMandatoryRulesInjection({
-    cwd,
-    specialist: {
-      mandatory_rules: {
-        disable_default_globals: true,
-        template_sets: [],
-        inline_rules: []
-      }
-    }
-  });
-  const requiredCandidates = resolved.sections.filter((section) => section.priority === "must_keep");
-  const compiled = compileMandatoryRulesBudget(requiredCandidates, budgetLimit);
-  const injectedIds = new Set(compiled.injectedSectionIds);
-  const retainedRequired = requiredCandidates.filter((section) => injectedIds.has(section.setId));
-  return {
-    ...resolved,
-    ...compiled,
-    setsLoaded: retainedRequired.map((section) => section.setId),
-    ruleCount: retainedRequired.reduce((count, section) => count + section.ruleCount, 0),
-    inlineRulesCount: 0,
-    globalsDisabled: true
-  };
-}
-function buildRequiredPlatformRulesBlock(cwd, budgetLimit = Number.POSITIVE_INFINITY) {
-  return buildRequiredPlatformRulesInjection(cwd, budgetLimit).block;
-}
-
-// src/specialist/model-chain.ts
-function resolveModelChain(execution) {
-  const primary = normalizeModel(execution.model);
-  const fallbacks = resolveFallbackModels(execution);
-  return dedupeModels([primary, ...fallbacks].filter((model) => model !== null));
-}
-function resolveFallbackModels(execution) {
-  if (execution.fallback_models && execution.fallback_models.length > 0) {
-    if (normalizeModel(execution.fallback_model ?? null)) {
-      console.debug(`[model-chain] plural fallback_models wins; ignoring fallback_model=${execution.fallback_model}`);
-    }
-    return execution.fallback_models.map(normalizeModel).filter((model) => model !== null);
-  }
-  const fallback = normalizeModel(execution.fallback_model ?? null);
-  return fallback ? [fallback] : [];
-}
-function normalizeModel(model) {
-  const trimmed = model?.trim();
-  return trimmed ? trimmed : null;
-}
-function dedupeModels(models) {
-  return [...new Set(models)];
 }
 
 // src/specialist/task-prompt.ts
@@ -16823,6 +16517,77 @@ ${mandatoryRulesBlock}`;
 }
 
 // src/utils/circuitBreaker.ts
+var TRANSIENT_ERROR_PATTERNS = [
+  /\b5\d{2}\b/,
+  /timeout/i,
+  /timed out/i,
+  /econnreset/i,
+  /econnrefused/i,
+  /eai_again/i,
+  /etimedout/i,
+  /network error/i,
+  /service unavailable/i,
+  /bad gateway/i,
+  /gateway timeout/i
+];
+var RATE_LIMIT_ERROR_PATTERNS = [
+  /\b429\b/,
+  /rate.?limit/i,
+  /too many requests/i,
+  /resourceexhausted/i,
+  /request limit reached/i,
+  /quota exceeded/i,
+  /quota exhausted/i,
+  /usage.?limit/i,
+  /free.?usage/i
+];
+var AUTH_ERROR_PATTERNS = [
+  /\b401\b/,
+  /\b403\b/,
+  /unauthorized/i,
+  /forbidden/i,
+  /authentication/i,
+  /\bauth\b/i,
+  /invalid api key/i,
+  /api key/i
+];
+function isTransientError(error) {
+  if (!error)
+    return false;
+  const status = error.status ?? error.statusCode;
+  if (typeof status === "number" && status >= 500 && status < 600) {
+    return true;
+  }
+  if (status === 429)
+    return true;
+  const message = errorMessage(error);
+  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message)) || RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+function isRateLimitError(error) {
+  if (!error)
+    return false;
+  const status = error.status ?? error.statusCode;
+  if (status === 429)
+    return true;
+  const message = errorMessage(error);
+  return RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+function errorMessage(error) {
+  if (error instanceof Error) {
+    return error.name ? `${error.name}: ${error.message}` : error.message;
+  }
+  return typeof error === "string" ? error : JSON.stringify(error);
+}
+function isAuthError(error) {
+  if (!error)
+    return false;
+  const status = error.status ?? error.statusCode;
+  if (status === 401 || status === 403) {
+    return true;
+  }
+  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage(error)));
+}
+
 class CircuitBreaker {
   states = new Map;
   threshold;
@@ -16858,7 +16623,7 @@ class CircuitBreaker {
 }
 
 // src/specialist/system-prompt.ts
-import { execSync as execSync2 } from "node:child_process";
+import { execSync } from "node:child_process";
 import { existsSync as existsSync9 } from "node:fs";
 import { resolve as resolve8 } from "node:path";
 var OUTPUT_TYPE_GUIDANCE = {
@@ -16904,7 +16669,7 @@ function defaultHasGitnexusIndex(cwd) {
 }
 function defaultQueryGitnexusSymbol(cwd, symbol) {
   try {
-    const raw = execSync2(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
+    const raw = execSync(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
       cwd,
       encoding: "utf8",
       timeout: 5000,
@@ -16939,7 +16704,6 @@ function buildSystemPrompt(ctx) {
     responseFormat,
     outputType,
     outputContractSchema,
-    beadContextText,
     readBeadForMemory = defaultReadBeadForMemory,
     hasGitnexusIndex = defaultHasGitnexusIndex,
     queryGitnexusSymbol = defaultQueryGitnexusSymbol
@@ -16952,8 +16716,6 @@ function buildSystemPrompt(ctx) {
 
 ${requiredPlatformRulesBlock}`;
   }
-  let staticTokens = 0;
-  let memoryTokens = 0;
   let gitnexusTokens = 0;
   if (!bare) {
     const sanitizedBeadId = inputBeadId ? sanitizeBeadIdForPrompt(inputBeadId) : "";
@@ -17014,34 +16776,9 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       }
     } catch {}
   }
-  const staticRulesBlock = `
-
----
-${STATIC_WORKFLOW_RULES_BLOCK}
----
-`;
-  if (!bare) {
-    agentsMd += staticRulesBlock;
-    staticTokens = estimateInjectedTokens(staticRulesBlock);
-  }
   if (inputBeadId) {
     const beadForMemory = readBeadForMemory(inputBeadId);
     if (beadForMemory?.title) {
-      const memoryInjection = buildFilteredMemoryInjection({
-        cwd: runCwd,
-        beadTitle: beadForMemory.title,
-        beadDescription: beadForMemory.description
-      });
-      if (!bare && memoryInjection.block) {
-        const memoryBlock = `
-
----
-${memoryInjection.block}
----
-`;
-        agentsMd += memoryBlock;
-        memoryTokens = memoryInjection.estimatedTokens;
-      }
       try {
         if (hasGitnexusIndex(runCwd)) {
           const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? []).slice(0, 2);
@@ -17076,21 +16813,17 @@ ${summaries.join(`
   const components = [
     measurePayloadComponent("system_prompt", "system_prompt", agentsMd)
   ];
-  if (staticTokens > 0)
-    components.push(measurePayloadComponent("memory", "static", STATIC_WORKFLOW_RULES_BLOCK));
-  if (memoryTokens > 0)
-    components.push(measurePayloadComponent("memory", "dynamic", beadContextText || ""));
   if (gitnexusTokens > 0)
     components.push(measurePayloadComponent("memory", "gitnexus", agentsMd.includes("GitNexus") ? "GitNexus" : ""));
   return {
     text: agentsMd,
     components,
-    tokens: { static: staticTokens, memory: memoryTokens, gitnexus: gitnexusTokens }
+    tokens: { static: 0, memory: 0, gitnexus: gitnexusTokens }
   };
 }
 
 // src/specialist/runner.ts
-import { execSync as execSync3, spawnSync as spawnSync4 } from "node:child_process";
+import { execSync as execSync2, spawnSync as spawnSync4 } from "node:child_process";
 import { existsSync as existsSync10, readFileSync as readFileSync5 } from "node:fs";
 import { basename as basename2, resolve as resolve9 } from "node:path";
 import { homedir as homedir3 } from "node:os";
@@ -17321,6 +17054,18 @@ ${warnings.join(`
 ${errors.join(`
 `)}`);
   }
+}
+function classifyFallbackError(error) {
+  if (isAuthError(error))
+    return "auth";
+  if (isRateLimitError(error))
+    return "rate_limit";
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (/timeout|timed out|etimedout|deadline/.test(message))
+    return "timeout";
+  if (isTransientError(error))
+    return "transient";
+  return "unknown";
 }
 
 // src/specialist/timeline-events.ts
@@ -21442,6 +21187,7 @@ function nextAttemptId(current) {
   return `${prefix}:${Number(count) + 1}`;
 }
 var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
+var RETRYABLE_STATES = new Set(["failed"]);
 
 // src/activation/native-host.ts
 var TOKEN_USAGE_KEYS = [
@@ -21477,6 +21223,7 @@ function extractTokenUsage(event) {
   return;
 }
 var WRITE_TIERS = new Set(["MEDIUM", "HIGH"]);
+var FALLBACK_RETRYABLE_CLASSES = new Set(["rate_limit", "timeout", "transient"]);
 var NULL_FORENSIC_SINK = { emit: () => {} };
 
 class NativeActivationHost {
@@ -21563,7 +21310,9 @@ class NativeActivationHost {
       });
     }
     const sdk = await this.loadSdk();
-    const configuredModel = resolveModelChain(execution)[0];
+    const fullChain = resolveModelChain(execution);
+    const configuredModel = fullChain[0];
+    const modelChain = request.modelOverride ? [request.modelOverride] : fullChain;
     const requestedModel = request.modelOverride ?? configuredModel;
     if (request.thinkingOverride !== undefined && !THINKING_LEVELS.includes(request.thinkingOverride)) {
       return reject("invalid_thinking_override", {
@@ -21575,16 +21324,27 @@ class NativeActivationHost {
     if (!requestedModel)
       return reject("no_model_configured");
     const modelRuntime = await createGateModelRuntime(sdk);
-    const modelCheck = await validateModelAvailable(sdk, modelRuntime, requestedModel);
-    if (!modelCheck.ok) {
+    let modelIndex = 0;
+    let modelCheck = await validateModelAvailable(sdk, modelRuntime, modelChain[0] ?? "");
+    while ((!modelCheck.ok || !modelCheck.model) && modelIndex < modelChain.length - 1) {
+      const skipped = modelChain[modelIndex];
+      emit("model_fallback", {
+        from_model: skipped ?? null,
+        to_model: modelChain[modelIndex + 1],
+        error_class: "unavailable",
+        terminal: false,
+        note: modelCheck.reason ?? null
+      });
+      modelIndex += 1;
+      modelCheck = await validateModelAvailable(sdk, modelRuntime, modelChain[modelIndex] ?? "");
+    }
+    if (!modelCheck.ok || !modelCheck.model) {
       return reject("model_unavailable", {
-        requestedModel,
+        requestedModel: modelChain[modelIndex] ?? requestedModel,
         note: modelCheck.reason
       });
     }
-    const resolvedModel = modelCheck.resolvedModel ?? requestedModel;
-    if (!modelCheck.model)
-      return reject("model_unresolved", { requestedModel });
+    const resolvedModel = modelCheck.resolvedModel ?? modelChain[modelIndex] ?? requestedModel;
     const workspace = request.workspaceHint ?? {
       repositoryRoot: this.cwd,
       worktreePath: this.cwd
@@ -21662,15 +21422,15 @@ class NativeActivationHost {
       self: participantId,
       parent: request.requestedByParticipantId,
       onAsk: (kind, body) => {
-        const record2 = this.registry.get(activationId);
-        if (record2)
-          record2.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
+        const record3 = this.registry.get(activationId);
+        if (record3)
+          record3.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
         emit(kind === "escalation" ? "escalation_raised" : "clarification_requested", { body });
       },
       onAnswered: (kind) => {
-        const record2 = this.registry.get(activationId);
-        if (record2)
-          record2.snapshot.state = "running";
+        const record3 = this.registry.get(activationId);
+        if (record3)
+          record3.snapshot.state = "running";
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
@@ -21688,7 +21448,7 @@ class NativeActivationHost {
         note: `these tools mutate and cannot be fenced by the workspace lease on this runtime: ${guardedTools.unguardable.join(", ")}`
       });
     }
-    const { session } = await sdk.createAgentSession({
+    const baseSessionOptions = {
       customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       model: modelCheck.model,
@@ -21696,7 +21456,12 @@ class NativeActivationHost {
       noTools: "builtin",
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
-    });
+    };
+    const { session } = await sdk.createAgentSession({ ...baseSessionOptions, model: modelCheck.model });
+    const createSessionForModel = async (model) => {
+      const created = await sdk.createAgentSession({ ...baseSessionOptions, model });
+      return created.session;
+    };
     const purpose = extractPurposeExcerpt(bead.description ?? "");
     const startedAt = this.now();
     const snapshot = {
@@ -21721,8 +21486,25 @@ class NativeActivationHost {
     };
     emit("activation_started", { pi_session_id: session.sessionId });
     const unsubscribe = session.subscribe((event) => this.onSessionEvent(snapshot, event, emit));
-    const result = this.runToSettled(snapshot, session, rendered.initial_prompt, emit);
-    this.registry.register({ snapshot, session, unsubscribe, result, stepContract });
+    const record2 = {
+      snapshot,
+      session,
+      unsubscribe,
+      result: undefined,
+      stepContract,
+      initialPrompt: rendered.initial_prompt,
+      createSession: createSessionForModel
+    };
+    const result = this.runWithFallback(record2, {
+      modelChain,
+      modelIndex,
+      sdk,
+      modelRuntime,
+      initialPrompt: rendered.initial_prompt,
+      emit
+    });
+    record2.result = result;
+    this.registry.register(record2);
     return {
       activationId,
       participantId,
@@ -21861,6 +21643,174 @@ class NativeActivationHost {
         completedAt: this.now()
       };
     }
+  }
+  async runWithFallback(record2, ctx) {
+    let index = ctx.modelIndex;
+    let fallbackUsed = index > 0;
+    let result = await this.runToSettled(record2.snapshot, record2.session, ctx.initialPrompt, ctx.emit);
+    while (result.status === "failed" && index < ctx.modelChain.length - 1) {
+      if (this.registry.get(record2.snapshot.activationId) !== record2)
+        break;
+      const detail = result.validation.errors?.[0] ?? "unknown failure";
+      const errorClass = classifyFallbackError(detail);
+      if (!FALLBACK_RETRYABLE_CLASSES.has(errorClass))
+        break;
+      const nextModel = ctx.modelChain[index + 1];
+      const fromModel = record2.snapshot.resolvedModel;
+      const check = await validateModelAvailable(ctx.sdk, ctx.modelRuntime, nextModel);
+      if (!check.ok || !check.model) {
+        ctx.emit("model_fallback", {
+          from_model: fromModel,
+          to_model: nextModel,
+          error_class: errorClass,
+          terminal: true,
+          note: `fallback unavailable: ${check.reason ?? "unresolvable"}`,
+          resolved_model: fromModel
+        });
+        break;
+      }
+      ctx.emit("model_fallback", {
+        from_model: fromModel,
+        to_model: nextModel,
+        error_class: errorClass,
+        terminal: false,
+        attempt_n: index + 2,
+        resolved_model: check.resolvedModel ?? nextModel
+      });
+      let nextSession;
+      try {
+        nextSession = await record2.createSession(check.model);
+      } catch (error) {
+        ctx.emit("model_fallback", {
+          from_model: fromModel,
+          to_model: nextModel,
+          error_class: errorClass,
+          terminal: true,
+          note: error instanceof Error ? error.message : String(error),
+          resolved_model: fromModel
+        });
+        break;
+      }
+      try {
+        record2.session.dispose();
+      } catch {}
+      record2.unsubscribe();
+      record2.session = nextSession;
+      record2.snapshot.resolvedModel = check.resolvedModel ?? nextModel;
+      record2.snapshot.piSessionId = nextSession.sessionId;
+      record2.snapshot.state = "starting";
+      record2.snapshot.lastActivityAt = this.now();
+      record2.unsubscribe = nextSession.subscribe((event) => this.onSessionEvent(record2.snapshot, event, ctx.emit));
+      ctx.emit("activation_started", { pi_session_id: nextSession.sessionId });
+      index += 1;
+      fallbackUsed = true;
+      result = await this.runToSettled(record2.snapshot, record2.session, ctx.initialPrompt, ctx.emit);
+    }
+    result.fallbackUsed = fallbackUsed;
+    return result;
+  }
+  async retry(activationId, opts) {
+    const record2 = this.registry.get(activationId);
+    if (!record2) {
+      throw new DispatchRejectedError("unknown_activation", { activationId });
+    }
+    if (!RETRYABLE_STATES.has(record2.snapshot.state)) {
+      const state = record2.snapshot.state;
+      const hint = state === "waiting" || state === "settled" || state === "needs_reply" || state === "escalated" ? `Activation ${activationId} is ${state} — use resume, which keeps the live session.` : `Activation ${activationId} is ${state} — steer it or stop it first.`;
+      throw new DispatchRejectedError("not_resumable", {
+        activationId,
+        note: `state is "${state}". retry only re-runs failed activations. ${hint}`
+      });
+    }
+    const overrideName = opts?.modelOverride;
+    let overrideModel;
+    let overrideResolved;
+    if (overrideName) {
+      const sdk = await this.loadSdk();
+      const check = await validateModelAvailable(sdk, await createGateModelRuntime(sdk), overrideName);
+      if (!check.ok || !check.model) {
+        throw new DispatchRejectedError("model_unavailable", {
+          activationId,
+          requestedModel: overrideName,
+          note: check.reason
+        });
+      }
+      overrideModel = check.model;
+      overrideResolved = check.resolvedModel ?? overrideName;
+    }
+    const attemptId = nextAttemptId(record2.snapshot.attemptId);
+    if (record2.snapshot.access === "write") {
+      try {
+        acquire({
+          workspace: record2.snapshot.workspace,
+          activationId,
+          attemptId,
+          specialist: record2.snapshot.specialist
+        });
+      } catch (error) {
+        if (error instanceof DispatchRejectedError) {
+          this.forensics.emit({
+            activationId,
+            attemptId,
+            participantId: record2.snapshot.participantId,
+            specialist: record2.snapshot.specialist,
+            beadId: record2.snapshot.beadId,
+            name: "lease_denied",
+            payload: { reason: error.reason, note: error.detail.holder, on: "retry" }
+          });
+        }
+        throw error;
+      }
+    }
+    record2.snapshot.attemptId = attemptId;
+    record2.snapshot.state = "starting";
+    record2.snapshot.lastActivityAt = this.now();
+    const emit = (name, payload) => this.forensics.emit({
+      activationId,
+      attemptId,
+      participantId: record2.snapshot.participantId,
+      specialist: record2.snapshot.specialist,
+      beadId: record2.snapshot.beadId,
+      name,
+      payload
+    });
+    let reusedSession = true;
+    if (overrideModel && overrideResolved && overrideName) {
+      const nextSession = await record2.createSession(overrideModel);
+      try {
+        record2.session.dispose();
+      } catch {}
+      record2.unsubscribe();
+      record2.session = nextSession;
+      record2.snapshot.requestedModel = overrideName;
+      record2.snapshot.resolvedModel = overrideResolved;
+      record2.snapshot.modelOverride = true;
+      record2.snapshot.piSessionId = nextSession.sessionId;
+      reusedSession = false;
+    } else {
+      record2.unsubscribe();
+    }
+    record2.unsubscribe = record2.session.subscribe((event) => this.onSessionEvent(record2.snapshot, event, emit));
+    emit("activation_retried", {
+      requested_model: record2.snapshot.requestedModel ?? null,
+      resolved_model: record2.snapshot.resolvedModel,
+      model_override: record2.snapshot.modelOverride,
+      reused_session: reusedSession
+    });
+    const result = this.runToSettled(record2.snapshot, record2.session, opts?.prompt ?? record2.initialPrompt, emit);
+    record2.result = result;
+    return {
+      activationId,
+      participantId: record2.snapshot.participantId,
+      attemptId,
+      specialist: record2.snapshot.specialist,
+      beadId: record2.snapshot.beadId,
+      access: record2.snapshot.access,
+      workspace: record2.snapshot.workspace,
+      resolvedModel: record2.snapshot.resolvedModel,
+      stepContract: record2.stepContract,
+      result
+    };
   }
   async answer(messageId, body) {
     const ask = this.interactions.pendingAsks().find((a) => a.message.messageId === messageId);
@@ -22154,6 +22104,11 @@ var specialistReplySchema = objectType({
 var specialistStopSchema = objectType({
   activation_id: stringType().describe("Activation to stop and dispose."),
   reason: stringType().optional().describe("Recorded forensically with the disposal.")
+});
+var specialistRetrySchema = objectType({
+  activation_id: stringType().describe("The failed activation to re-run in place."),
+  model_override: stringType().optional().describe("Re-run on a named model instead of the one that failed (manual switch after a quota " + "window kills a run). A new session is built for the new model; without this the SAME " + "session is re-prompted and its context survives."),
+  prompt: stringType().optional().describe("Replacement turn prompt. Defaults to the dispatch-time render of the same bead.")
 });
 // src/activation/async-events.ts
 import { randomUUID as randomUUID4 } from "node:crypto";

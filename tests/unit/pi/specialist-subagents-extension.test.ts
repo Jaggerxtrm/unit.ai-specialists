@@ -65,7 +65,7 @@ const ASK = {
 };
 
 function makeFakeHost() {
-  const calls = { start: [], answer: [], stop: [], resume: [] };
+  const calls = { start: [], answer: [], stop: [], resume: [], retry: [] };
   const host = {
     start: vi.fn(async (req) => {
       calls.start.push(req);      return {
@@ -112,6 +112,18 @@ function makeFakeHost() {
         result: Promise.resolve({
           activationId, participantId: 'specialist::explorer', attemptId: 'att:aaaa:2',
           beadId: 'bd-1', status: 'completed', output: 'resumed report',
+          validation: { valid: true }, piSessionId: 'sess-1', configuredModel: 'm',
+          resolvedModel: 'm', modelOverride: false, fallbackUsed: false, completedAt: 200,
+        }),
+      };
+    }),
+    retry: vi.fn(async (activationId, opts) => {
+      calls.retry.push([activationId, opts]);
+      return {
+        activationId, participantId: 'specialist::explorer', attemptId: 'att:aaaa:2',
+        result: Promise.resolve({
+          activationId, participantId: 'specialist::explorer', attemptId: 'att:aaaa:2',
+          beadId: 'bd-1', status: 'completed', output: 'retried report',
           validation: { valid: true }, piSessionId: 'sess-1', configuredModel: 'm',
           resolvedModel: 'm', modelOverride: false, fallbackUsed: false, completedAt: 200,
         }),
@@ -197,7 +209,7 @@ function resultText(result) {
 }
 
 describe('specialist-subagents extension (Pi coordinator surface)', () => {
-  it('registers exactly the six specialist_* tools over the host', async () => {
+  it('registers exactly the seven specialist_* tools over the host', async () => {
     const mod = await loadExtension();
     const pi = makeFakePi();
     mod.default(pi);
@@ -206,6 +218,7 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
       'specialist_status',
       'specialist_reply',
       'specialist_resume',
+      'specialist_retry',
       'specialist_stop_activation',
       'specialist_list',
     ]);
@@ -1516,9 +1529,10 @@ describe('settlement wake — a finished child notifies its coordinator (unitAI-
     });
     expect(bad).toMatch(/FAILED/);
     expect(bad).toMatch(/provider 429/);
-    // A failed activation is still resumable; saying so is the difference between an
-    // operator retrying and an operator starting over.
-    expect(bad).toMatch(/specialist_resume/);
+    // A failed activation is retryable in place; saying so is the difference between an
+    // operator retrying and an operator starting over (unitAI-3emr7: specialist_retry,
+    // not specialist_resume — resume keeps a live session, retry re-runs a dead one).
+    expect(bad).toMatch(/specialist_retry/);
   });
 
   it('the flag description no longer claims the wake is ask-only', async () => {
@@ -1711,6 +1725,16 @@ describe('human-readable tool-result views (unitAI-55yjs)', () => {
     expect(linesOf(tool, result)).toContain('Resumed act:aaaa');
   });
 
+  it('specialist_retry renders the attempt advance', async () => {
+    const { pi, host } = await setup();
+    const tool = toolNamed(pi, 'specialist_retry');
+    const result = await tool.execute('tc1', { activation_id: 'act:aaaa', model_override: 'qwen' });
+    expectMachineJsonUnchanged(result);
+    expect(resultText(result).status).toBe('retried');
+    expect(linesOf(tool, result)).toContain('Retried act:aaaa');
+    expect(host.retry).toHaveBeenCalledWith('act:aaaa', { modelOverride: 'qwen' });
+  });
+
   it('specialist_stop_activation renders the stopped id', async () => {
     const { pi } = await setup();
     const tool = toolNamed(pi, 'specialist_stop_activation');
@@ -1759,6 +1783,7 @@ describe('renderer component contract (unitAI-q02sz)', () => {
     ['specialist_status', {}],
     ['specialist_reply', { message_id: 'msg:1', body: 'x' }],
     ['specialist_resume', { activation_id: 'act:aaaa', prompt: 'more' }],
+    ['specialist_retry', { activation_id: 'act:aaaa' }],
     ['specialist_stop_activation', { activation_id: 'act:aaaa' }],
     ['specialist_list', {}],
   ] as const;
@@ -1782,6 +1807,7 @@ describe('renderer component contract (unitAI-q02sz)', () => {
     ['specialist_dispatch', { specialist: 'explorer', bead_id: 'bd-1' }],
     ['specialist_reply', { message_id: 'msg:1', body: 'x' }],
     ['specialist_resume', { activation_id: 'act:aaaa', prompt: 'more' }],
+    ['specialist_retry', { activation_id: 'act:aaaa' }],
     ['specialist_stop_activation', { activation_id: 'act:aaaa' }],
   ] as const)('%s renderCall exposes dispose/invalidate and array render', async (name, params) => {
     const { pi } = await setup();

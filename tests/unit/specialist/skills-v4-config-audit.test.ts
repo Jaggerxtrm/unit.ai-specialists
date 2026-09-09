@@ -68,7 +68,7 @@ describe('skills-v4 default specialist wiring', () => {
     expect(injection.block).toContain('one worker in XTRM');
     expect(injection.block).toContain('PROBLEM/SUCCESS/SCOPE/NON_GOALS/CONSTRAINTS/VALIDATION/OUTPUT');
     expect(injection.block).toContain('service-knowledge');
-    expect(injection.block).toContain('bd memories');
+    expect(injection.block).toContain('current evidence wins');
     expect(injection.block).toContain('ast-grep');
     expect(injection.block).toContain('python-kernel');
     expect(injection.block).toContain('route through its references');

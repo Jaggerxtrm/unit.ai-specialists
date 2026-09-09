@@ -77,22 +77,6 @@ export interface ChainEpicLinkRecord {
     chain_root_job_id?: string;
     chain_root_bead_id?: string;
 }
-export interface MemoryCacheState {
-    lastSyncAtMs: number;
-    memoryCount: number;
-}
-export interface MemoryCacheInputRecord {
-    key: string;
-    value: string;
-}
-export interface RelevantMemoryRecord {
-    key: string;
-    value: string;
-    bm25: number;
-    recency: number;
-    accessFrequency: number;
-    score: number;
-}
 export interface EpicChainLatestJobRecord {
     chain_id: string;
     epic_id: string;
@@ -381,10 +365,6 @@ export interface ObservabilitySqliteClient {
     }): JobMetricsRecord[];
     listElapsedMsBySpecialist(sinceMs: number, limitPerSpecialist?: number): Record<string, number[]>;
     readResult(jobId: string): string | null;
-    syncMemoriesCache(memories: readonly MemoryCacheInputRecord[], syncedAtMs?: number): void;
-    getMemoriesCacheState(): MemoryCacheState | null;
-    queryRelevantMemories(keywords: readonly string[], limit?: number, nowMs?: number): RelevantMemoryRecord[];
-    invalidateMemoriesCache(): void;
     hasActiveJobs(statuses?: readonly string[]): boolean;
     listActiveJobs(statuses?: readonly string[]): Array<{
         job_id: string;

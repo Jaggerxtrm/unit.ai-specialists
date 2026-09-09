@@ -145,7 +145,7 @@ specialists run memory-curator --prompt "Review runs since <date>"
 | `beads-edit-gate.mjs` | PreToolUse | Require in_progress bead before file edits |
 | `beads-commit-gate.mjs` | PreToolUse | Require issues closed before `git commit` |
 | `beads-stop-gate.mjs` | Stop | Require issues closed before session end |
-| `beads-close-memory-prompt.mjs` | PostToolUse(Bash) | Nudge knowledge capture after `bd close` (→ upgrade to blocking gate: unitAI-pjx) |
+| `beads-close-memory-prompt.mjs` (planned, never shipped — roadmap-only mention, no file) | PostToolUse(Bash) | Planned nudge for knowledge capture after `bd close` (→ blocking gate: unitAI-pjx); never implemented |
 | `specialists-complete.mjs` | UserPromptSubmit | Inject completion banners for background jobs |
 
 **Missing:** SessionStart (`unitAI-f3t`). Project-local install (`unitAI-1vt`). Provenance hook (`unitAI-hos`).

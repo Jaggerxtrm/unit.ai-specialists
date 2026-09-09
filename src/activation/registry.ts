@@ -21,6 +21,18 @@ export interface ActivationRecord {
   result: Promise<unknown>;
   /** Derived, never persisted independently — carried so a resumed handle can return it. */
   stepContract: StepContract;
+  /**
+   * The turn-1 prompt, carried so `retry()` re-runs the same bead contract in place.
+   * An operator-supplied prompt overrides it; a bead edited after dispatch needs one of
+   * the two (fresh dispatch otherwise), because this is the dispatch-time render.
+   */
+  initialPrompt: string;
+  /**
+   * Builds a new session identically to the dispatch-time one, for a new model.
+   * Serves the fallback walk (start) and retry-with-override (retry); the ask/escalate
+   * tools are shared by construction — they key off the live attempt id, not the session.
+   */
+  createSession: (model: { id?: string; provider?: string }) => Promise<PiAgentSessionLike>;
 }
 
 export class FleetRegistry {
@@ -63,3 +75,13 @@ export function nextAttemptId(current: AttemptId): AttemptId {
 
 /** States from which `resume()` may start a new attempt. Running/starting/disposed cannot. */
 export const RESUMABLE_STATES = new Set(['settled', 'waiting', 'needs_reply', 'escalated']);
+
+/**
+ * States from which `retry()` may start a new attempt in place.
+ *
+ * Failed only, by design: every other state already has an operator path (waiting and
+ * settled/needs_reply/escalated resume, running/starting steer or stop first), and a
+ * retry that accepted them would be a second dispatch path wearing a resume name.
+ * Mirrors the CLI `sp retry` gate (error/cancelled only) for the native runtime.
+ */
+export const RETRYABLE_STATES = new Set(['failed']);

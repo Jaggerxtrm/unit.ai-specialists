@@ -285,4 +285,88 @@ export declare function createSpecialistStopActivationTool(getHost: () => Native
         error?: undefined;
     }>;
 };
+export declare const specialistRetrySchema: z.ZodObject<{
+    activation_id: z.ZodString;
+    model_override: z.ZodOptional<z.ZodString>;
+    prompt: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    activation_id: string;
+    prompt?: string | undefined;
+    model_override?: string | undefined;
+}, {
+    activation_id: string;
+    prompt?: string | undefined;
+    model_override?: string | undefined;
+}>;
+/**
+ * Re-run a failed native activation in place — the native equivalent of `sp retry`.
+ *
+ * Same activation id, new attempt: the bead, the workspace lease and (without a model
+ * override) the session survive the retry. Failed only — a live or waiting activation
+ * already has its path (reply for an outstanding question, resume for a settled one,
+ * steer/stop for a running one), and retry refuses those states with the right pointer
+ * rather than becoming a second dispatch. An escalation or question that CAN wait stays
+ * an ask answered with specialist_reply; retry is for runs that already died.
+ */
+export declare function createSpecialistRetryTool(getHost: () => NativeActivationHost, getPusher?: () => RuntimeEventPusher | undefined): {
+    name: "specialist_retry";
+    description: string;
+    inputSchema: z.ZodObject<{
+        activation_id: z.ZodString;
+        model_override: z.ZodOptional<z.ZodString>;
+        prompt: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        activation_id: string;
+        prompt?: string | undefined;
+        model_override?: string | undefined;
+    }, {
+        activation_id: string;
+        prompt?: string | undefined;
+        model_override?: string | undefined;
+    }>;
+    execute(input: z.infer<typeof specialistRetrySchema>): Promise<{
+        status: "rejected";
+        reason: string;
+        detail: {
+            specialist?: string;
+            beadId?: string;
+            missing?: string[];
+            workspace?: string;
+            holder?: string;
+            requestedModel?: string;
+            activationId?: string;
+            note?: string;
+        };
+    } | {
+        activation_id: string;
+        participant_id: string;
+        attempt_id: string;
+        specialist: string;
+        bead_id: string;
+        state: string;
+        access: "read" | "write";
+        worktree_path: string;
+        branch?: string;
+        pi_session_id?: string;
+        /** What was asked for — the override when one was given, the configured model otherwise. */
+        requested_model?: string;
+        resolved_model: string;
+        model_override: boolean;
+        thinking_override: boolean;
+        /** Seconds since dispatch, from the in-memory snapshot — never an observability.db query. */
+        elapsed_s: number;
+        /** Cumulative spend counts. Omitted until the first usage event (never zero-filled). */
+        token_usage?: ActivationTokenUsage;
+        /** Thinking level from session creation. Omitted when unset (never fabricated). */
+        thinking_level?: string;
+        /** One-line purpose excerpt captured at dispatch. Omitted when absent (never fabricated). */
+        purpose?: string;
+        /** Last session-event time. Per-tool "doing X now" inference is out of scope. */
+        last_activity_at: number;
+        status: "retried";
+    } | {
+        activation_id: string;
+        status: "retried";
+    }>;
+};
 //# sourceMappingURL=activation.tool.d.ts.map

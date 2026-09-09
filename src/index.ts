@@ -344,25 +344,6 @@ async function run() {
     return handler({ syncDefaults, syncSkills, noXtrmCheck, global: globalFlag });
   }
 
-  if (sub === 'memory') {
-    if (wantsHelp()) {
-      console.log([
-        '',
-        'Usage: specialists memory <sync|refresh> [--force] [--json]',
-        '',
-        'Sync bd memories into local SQLite FTS cache used for specialist context injection.',
-        '',
-        'Commands:',
-        '  sync       Sync cache when stale or mismatched (use --force to always rebuild)',
-        '  refresh    Invalidate cache then full rebuild from bd memories',
-        '',
-      ].join('\n'));
-      return;
-    }
-    const { run: handler } = await import('./cli/memory.js');
-    return handler(process.argv.slice(3));
-  }
-
   if (sub === 'db') {
     if (wantsHelp()) {
       console.log([
@@ -1102,6 +1083,34 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/resume.js');
+    return handler();
+  }
+
+  if (sub === 'retry') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists retry <job-id> [--model <model>] [--background]',
+        '',
+        'Re-dispatch a terminal (error/cancelled) job, optionally on a named model.',
+        'Manual model switch for activations that died on provider errors (e.g. a',
+        '429 quota window with no fallback configured). The retry reuses the failed',
+        "job's bead and workspace lease via `sp run --job`, so no new lease is taken",
+        'and partial workspace state is preserved.',
+        '',
+        'Examples:',
+        '  specialists retry a1b2c3',
+        '  specialists retry a1b2c3 --model anthropic/claude-sonnet-4-5',
+        '',
+        'Notes:',
+        '  - Only works for error/cancelled jobs. Waiting jobs use resume; running jobs use steer.',
+        '  - Without --model the configured model chain (including fallbacks) is reused.',
+        '  - All normal dispatch guards (concurrency, stale-base, worktree) still apply.',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/retry.js');
     return handler();
   }
 

@@ -40,6 +40,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['epic merge [broken]', 'Do not use; publish epic-owned chains with the documented manual git workflow'],
   ['steer', 'Send a mid-run message to a running job'],
   ['resume', 'Resume a waiting keep-alive session with a next-turn prompt (retains full context)'],
+  ['retry', 'Re-dispatch an error/cancelled job, optionally on a named model (--model)'],
   ['stop', 'Stop a running job'],
   ['attach', 'Legacy tmux attach for jobs with tmux_session; chat-style attach is planned separately'],
   ['status', 'Show health, MCP state, and active jobs'],

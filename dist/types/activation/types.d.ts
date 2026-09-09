@@ -200,12 +200,12 @@ export interface ActivationResult {
     /** True iff an explicit `thinkingOverride` was supplied for this activation. */
     thinkingOverride: boolean;
     /**
-     * Always false on the native runtime, and that is the contract, not an omission.
+     * True when a fallback model produced this result.
      *
-     * A model that cannot be honoured is refused before the AgentSession exists
-     * (`model-gate.ts`), never substituted — a Specialist that quietly ran on a fallback
-     * produces results nobody can attribute. The field stays because a reader must be able
-     * to ask the question and get an answer rather than find no field at all.
+     * Set when the native fallback walk (unitAI-3emr7) advances past the chain head after a
+     * retryable provider error, or when the pre-session walk skips an unavailable primary.
+     * An explicit `modelOverride` is a chain of one, so it never reads as a fallback — the
+     * same rule as the CLI runner's `fallback_used`.
      */
     fallbackUsed: boolean;
     completedAt: number;

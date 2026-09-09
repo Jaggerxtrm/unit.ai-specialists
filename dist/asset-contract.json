@@ -3,14 +3,6 @@
   "package_version": "3.21.6",
   "shipped_skills": [
     {
-      "path": "config/skills/memory-audit-transaction/scripts/pre-bulk-export.sh",
-      "sha256": "e061da64bdca2abc1d6c3b361514361c2339266ccabfce4809dfe716fd8e306e"
-    },
-    {
-      "path": "config/skills/memory-audit-transaction/SKILL.md",
-      "sha256": "3b16310b507a94cc1c531670cd7e61af7696298a340246591d4b65bbb287e137"
-    },
-    {
       "path": "config/skills/setup-specialists/SKILL.md",
       "sha256": "41bc76dea803dfddc4879aa4aaa5fe6f236dda42df2a9c67022950b87ba422fc"
     },
@@ -100,9 +92,6 @@
     },
     {
       "path": "config/specialists/explorer.specialist.json"
-    },
-    {
-      "path": "config/specialists/memory-processor.specialist.json"
     },
     {
       "path": "config/specialists/node-coordinator.specialist.json"
@@ -256,9 +245,6 @@
     }
   ],
   "shipped_hooks": [
-    {
-      "path": "config/hooks/specialists-memory-cache-sync.mjs"
-    },
     {
       "path": "config/hooks/specialists-session-start.mjs"
     }

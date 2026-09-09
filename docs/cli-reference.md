@@ -57,7 +57,6 @@ source_of_truth_for:
 | [`specialists init`](#specialists-init) | | Flag | Description | |
 | [`specialists doctor`](#specialists-doctor) | No flags |
 | [`specialists validate`](#specialists-validate) | `--json`: JSON validation output |
-| [`specialists memory`](#specialists-memory) | `sync\|refresh`, `--force`, `--json`: FTS memory cache management |
 | [`specialists ps`](#specialists-ps) | `--json`: Machine-readable output; `--all`: include terminal jobs; `--follow`/`-f`: live refresh; epic grouping |
 | [`specialists merge`](#specialists-merge) | Standalone chain merge (blocked for epic-owned chains) |
 <!-- END INDEX -->
@@ -601,6 +600,43 @@ Notes:
 - `attach` is the legacy tmux attachment path. It requires tmux and a live `tmux_session` recorded in the job `status.json`.
 - It does **not** provide the new chat TUI/feed/input surface. Use `sp chat <specialist> ...` when launching a new interactive TUI session. TUI attach to an existing job is planned separately in bead `unitAI-hx4ln`.
 - For multi-job interactive tmux selection, use `specialists list --live`.
+
+---
+
+## `specialists retry`
+
+### Synopsis
+
+```bash
+specialists retry <job-id> [--model <model>] [--background]
+```
+
+### Flags
+
+- `--model <model>`: re-dispatch on a named model (manual switch after a quota window kills a run).
+- `--background`: detach like `run --background`.
+
+### Notes
+
+Re-dispatches an `error`/`cancelled` job reusing its bead and workspace lease via `sp run --job`, so no new lease is taken and partial workspace state is preserved. Without `--model` the configured model chain (including fallbacks) is reused — a transient 429 may have cleared. Only valid for terminal jobs: waiting jobs use `resume`, running jobs use `steer`.
+
+Typical recovery after a rate-limited dispatch with no fallback configured:
+
+```bash
+specialists retry a1b2c3 --model anthropic/claude-sonnet-4-5
+```
+
+### Examples
+
+```bash
+specialists retry a1b2c3
+specialists retry a1b2c3 --model qwen
+```
+
+### Exit codes
+
+- `0`: re-dispatch exited 0 (foreground) or was launched (background path exits with the child status).
+- `1`: Missing args, missing job, non-terminal status, job with no bead or workspace, or re-dispatch failure.
 
 ---
 
@@ -1344,48 +1380,6 @@ specialists validate code-review --json
 ### Notes
 
 - `validate` resolves specialist by runtime precedence (`user` -> `default-mirror` -> `package-fallback`) and reports file path + source in output.
-
----
-
-## `specialists memory`
-
-### Synopsis
-
-```bash
-specialists memory <sync|refresh> [--force] [--json]
-```
-
-### Subcommands
-
-| Command | Purpose |
-|---------|--------|
-| `sync` | Sync `bd memories` into local SQLite FTS cache when stale or mismatched |
-| `refresh` | Invalidate cache then full rebuild from `bd memories` |
-
-### Flags
-
-- `--force`: Force full rebuild even if cache appears fresh.
-- `--json`: JSON output.
-
-### Examples
-
-```bash
-specialists memory sync
-specialists memory sync --force
-specialists memory refresh
-specialists memory sync --json
-```
-
-### Exit codes
-
-- `0`: Success.
-- `1`: Invalid args or sync failure.
-
-### Notes
-
-- The FTS cache (`specialist_memories_cache` SQLite table) is used by `buildFilteredMemoryInjection()` for keyword-filtered memory retrieval at specialist spawn.
-- Cache auto-syncs on `specialists init` and via PostToolUse hook (`specialists-memory-cache-sync.mjs`).
-- Cache max age: 1 hour (`CACHE_MAX_AGE_MS = 3600000`).
 
 ---
 

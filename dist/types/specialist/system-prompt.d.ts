@@ -19,7 +19,7 @@ export interface SystemPromptContext {
     responseFormat: ResponseFormat;
     outputType: OutputType;
     outputContractSchema: JsonSchema | undefined;
-    /** `rendered.beadContextText` — used only to size the 'memory'/'dynamic' payload component. */
+    /** `rendered.beadContextText` — retained for caller compat; memory sizing retired (unitAI-cnca3 S1). */
     beadContextText: string;
     /** Overridable for testing; defaults to a fresh BeadsClient(). */
     readBeadForMemory?: (beadId: string) => Pick<BeadRecord, 'title' | 'description'> | null;

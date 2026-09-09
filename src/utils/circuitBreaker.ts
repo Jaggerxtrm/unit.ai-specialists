@@ -34,6 +34,11 @@ const RATE_LIMIT_ERROR_PATTERNS = [
   /request limit reached/i,
   /quota exceeded/i,
   /quota exhausted/i,
+  // Opencode free-tier quota errors surface as FreeUsageLimitError (name and/or
+  // message); without these the fallback chain never engages and the run dies
+  // (unitAI-xxjw2).
+  /usage.?limit/i,
+  /free.?usage/i,
 ] as const;
 
 const AUTH_ERROR_PATTERNS = [
@@ -74,11 +79,13 @@ export function isRateLimitError(error: unknown): boolean {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : typeof error === 'string'
-      ? error
-      : JSON.stringify(error);
+  // Match against the error name too: provider quota errors (e.g. opencode's
+  // FreeUsageLimitError) may carry the signal in `name` while `message` is
+  // generic (unitAI-xxjw2).
+  if (error instanceof Error) {
+    return error.name ? `${error.name}: ${error.message}` : error.message;
+  }
+  return typeof error === 'string' ? error : JSON.stringify(error);
 }
 
 export function isAuthError(error: unknown): boolean {

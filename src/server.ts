@@ -33,9 +33,11 @@ import { createSpecialistListTool, specialistListSchema } from './tools/speciali
 import {
   createSpecialistDispatchTool,
   createSpecialistReplyTool,
+  createSpecialistRetryTool,
   createSpecialistStopActivationTool,
   specialistDispatchSchema,
   specialistReplySchema,
+  specialistRetrySchema,
   specialistStopSchema,
 } from './tools/specialist/activation.tool.js';
 import { NativeActivationHost } from './activation/native-host.js';
@@ -172,6 +174,7 @@ export class SpecialistsServer {
       createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher),
       createSpecialistDispatchTool(getHost, getPusher),
       createSpecialistReplyTool(getHost),
+      createSpecialistRetryTool(getHost, getPusher),
       createSpecialistStopActivationTool(getHost),
       createSpecialistListTool(loader),
     ];
@@ -187,6 +190,7 @@ export class SpecialistsServer {
       use_specialist: useSpecialistSchema,
       specialist_dispatch: specialistDispatchSchema,
       specialist_reply: specialistReplySchema,
+      specialist_retry: specialistRetrySchema,
       specialist_stop_activation: specialistStopSchema,
       specialist_list: specialistListSchema,
       // specialist_status takes no arguments; the empty-object default applies.

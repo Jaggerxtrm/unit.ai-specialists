@@ -209,7 +209,7 @@ describe('init CLI — run()', () => {
     const xtrmHooks = await readdir(xtrmHooksDir).catch(() => []);
     expect(xtrmHooks).not.toContain('specialists-complete.mjs');
     expect(xtrmHooks).toContain('specialists-session-start.mjs');
-    expect(xtrmHooks).toContain('specialists-memory-cache-sync.mjs');
+    expect(xtrmHooks).not.toContain('specialists-memory-cache-sync.mjs');
     const claudeHookPath = join(tempDir, '.claude', 'hooks', 'specialists-session-start.mjs');
     expect(lstatSync(claudeHookPath).isSymbolicLink()).toBe(true);
     const resolvedTarget = join(dirname(claudeHookPath), readlinkSync(claudeHookPath));
@@ -220,13 +220,14 @@ describe('init CLI — run()', () => {
     const settingsPath = join(tempDir, '.claude', 'settings.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf-8'));
     expect(settings.hooks).toBeDefined();
-    expect(settings.hooks.PostToolUse).toBeDefined();
     expect(settings.hooks.SessionStart).toBeDefined();
+    const sessionStartCommands = settings.hooks.SessionStart.flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
+    expect(sessionStartCommands).toContain('node .claude/hooks/specialists-session-start.mjs');
     const submitCommands = (settings.hooks.UserPromptSubmit ?? []).flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
-    const postToolUseCommands = settings.hooks.PostToolUse.flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
+    const postToolUseCommands = (settings.hooks.PostToolUse ?? []).flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
     expect(submitCommands).not.toContain('node .claude/hooks/specialists-complete.mjs');
     expect(postToolUseCommands).not.toContain('node .claude/hooks/specialists-complete.mjs');
-    expect(postToolUseCommands).toContain('node .claude/hooks/specialists-memory-cache-sync.mjs');
+    expect(postToolUseCommands).not.toContain('node .claude/hooks/specialists-memory-cache-sync.mjs');
   });
   it('installs skills to .claude/skills/ (project-local for Claude)', async () => {
     await runInit(tempDir);
@@ -317,7 +318,7 @@ describe('init CLI — run()', () => {
     const resolvedTarget = join(dirname(hookPath), readlinkSync(hookPath));
     expect(resolvedTarget).toBe(join(tempDir, '.xtrm', 'hooks', 'specialists', 'specialists-session-start.mjs'));
   });
-  it('does not warn about memory FTS sync failure when no beads db exists', async () => {
+  it('does not attempt memory FTS sync during init (retired)', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await runInit(tempDir);
     const output = warnSpy.mock.calls.map(call => String(call[0] ?? '')).join('\n');

@@ -394,7 +394,6 @@ describe('live smoke: native Specialist activation', () => {
 
   afterAll(async () => {
     for (const id of [beadId, askBeadId].filter(Boolean)) {
-      run('bd', ['kv', 'set', `memory-acked:${id}`, 'nothing novel:throwaway live-smoke probe bead'], repoRoot);
       run('bd', ['close', id, '--reason=native activation live smoke complete'], repoRoot);
     }
     if (tempRepo) await rm(tempRepo, { recursive: true, force: true });
