@@ -46,6 +46,7 @@ import {
   resolveObservabilityDbLocation,
   resolveRuntimeToolContract,
   SpecialistLoader,
+  THINKING_LEVELS,
   admitCoordinatorToolCall,
   leaseScopeFor,
   readBuildId,
@@ -99,6 +100,17 @@ export const DEFAULT_REQUESTED_BY = 'adapter::pi-extension';
 
 export const FLEET_MAX_ROWS = 8;
 
+// Magenta rail (unitAI-beqby.13): far-left │ gutter in the XTRM accent
+// (\x1b[35m, same family as the magenta helper in src/cli/format-helpers.ts).
+// One rail, no extra chrome. Every specialist event line carries it.
+export const RAIL = '\x1b[35m│\x1b[0m';
+
+export function withRail(line) {
+  const text = String(line ?? '');
+  if (!text) return RAIL;
+  return `${RAIL} ${text}`;
+}
+
 export function fleetSummaryOf({ activations, asks }) {
   const act = activations ?? [];
   const pending = asks ?? [];
@@ -140,11 +152,11 @@ export function formatSpendShort(tokenUsage) {
  * passive pi extension, so no arrow promise of any kind. */
 export function renderCollapsedLine({ activations, asks }) {
   const { active, waiting, needsReply, total } = fleetSummaryOf({ activations, asks });
-  if (total === 0 && needsReply === 0) return '  └ specialists · idle · /specialists inspect';
+  if (total === 0 && needsReply === 0) return withRail('  └ specialists · idle · /specialists inspect');
   const parts = [`${active} active`, `${waiting} waiting`];
   if (needsReply > 0) parts.push(`${needsReply} need reply`);
   const hint = needsReply > 0 ? '/specialists inspect · /specialists:reply' : '/specialists inspect';
-  return `  └ specialists · ${parts.join(' · ')} · ${hint}`;
+  return withRail(`  └ specialists · ${parts.join(' · ')} · ${hint}`);
 }
 
 /** One row per specialist. Forensic IDs never appear here. An activation with a
@@ -156,7 +168,7 @@ export function renderFleetRowLine(view, asks = []) {
   const ask = (asks ?? []).find((a) => a.activation_id === view.activation_id);
   if (ask) {
     const waiting = formatElapsedShort(Date.now() / 1000 - (ask.asked_at ?? Date.now() / 1000));
-    return `    ! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`;
+    return withRail(`    ! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`);
   }
   const elapsed = formatElapsedShort(view.elapsed_s);
   const tokens = formatSpendShort(view.token_usage);
@@ -171,7 +183,7 @@ export function renderFleetRowLine(view, asks = []) {
   // Spend renders for every state, not only running: final spend stays visible after settle.
   const spend = tokens ? ` · ${tokens}` : '';
   const why = purpose ? ` · ${purpose}` : '';
-  return `    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
+  return withRail(`    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`);
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
@@ -186,7 +198,7 @@ export function renderSectionLines({ activations, asks }, { expanded = true } = 
   const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks));
   lines.push(...rows);
   const overflow = (activations ?? []).length - rows.length;
-  if (overflow > 0) lines.push(`    +${overflow} more`);
+  if (overflow > 0) lines.push(withRail(`    +${overflow} more`));
   return lines;
 }
 
@@ -588,7 +600,8 @@ function humanResultOf() {
       try { payload = JSON.parse(raw); } catch { /* fall through to raw lines */ }
       const summary = payload ? summarizePayload(payload) : null;
       const lines = summary ?? (raw ? raw.split('\n') : ['(empty result)']);
-      return summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
+      const body = summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
+      return body.map((line) => withRail(line));
     };
     // pi wraps every tool renderer in a MouseRegion and walks invalidate()
     // on theme/resume; a missing method kills the session (unitAI-q02sz).
@@ -812,6 +825,14 @@ export default function specialistSubagentsExtension(pi, options = {}) {
             'model is refused before the session is created, never silently replaced.',
         }),
       ),
+      thinking_override: Type.Optional(
+        Type.String({
+          description:
+            'Override the thinking level for THIS activation only ' +
+            `(${THINKING_LEVELS.join('|')}). An unknown level is refused before the ` +
+            'session is created, never silently replaced.',
+        }),
+      ),
       requested_by: Type.Optional(
         Type.String({
           description:
@@ -883,6 +904,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
           // Inline-contract dispatch creates a fresh bead with no parent: no lineage.
           ...(epicContextDepth !== undefined && !autoCreatedBeadId ? { epicContextDepth } : {}),
           ...(params.model_override ? { modelOverride: params.model_override } : {}),
+          ...(params.thinking_override ? { thinkingOverride: params.thinking_override } : {}),
           requestedByParticipantId: params.requested_by ?? DEFAULT_REQUESTED_BY,
           ...(params.coordinator_session_id ? { coordinatorSessionId: params.coordinator_session_id } : {}),
         });

@@ -257,6 +257,18 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     });
   });
 
+  it('thinking_override passes through on bead_id dispatch, omitted by default', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host, calls } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const dispatch = toolNamed(pi, 'specialist_dispatch');
+    await dispatch.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1', thinking_override: 'high' });
+    expect(calls.start[0]).toMatchObject({ thinkingOverride: 'high' });
+    await dispatch.execute('tc2', { specialist: 'explorer', bead_id: 'bd-1' });
+    expect(calls.start[1]).not.toHaveProperty('thinkingOverride');
+  });
+
   it('epic_context_depth passes through on bead_id dispatch, omitted by default', async () => {
     const mod = await loadExtension();
     const pi = makeFakePi();
@@ -1040,7 +1052,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(mod.formatSpendShort({ input_tokens: 0, output_tokens: 0 })).toBe('');
     for (const view of [base, { ...base, token_usage: { input_tokens: 0, output_tokens: 0 } }]) {
       const row = mod.renderFleetRowLine(view);
-      expect(row).toBe('    ● explorer (m) · bd-1 · running 41s · working');
+      expect(row).toBe(`${mod.RAIL}     ● explorer (m) · bd-1 · running 41s · working`);
       expect(row).not.toContain('spent');
     }
   });
