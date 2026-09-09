@@ -29,6 +29,7 @@ import { CircuitBreaker } from './utils/circuitBreaker.js';
 import { BeadsClient } from './specialist/beads.js';
 import { createUseSpecialistTool, useSpecialistSchema } from './tools/specialist/use_specialist.tool.js';
 import { createSpecialistStatusTool } from './tools/specialist/specialist_status.tool.js';
+import { createSpecialistListTool, specialistListSchema } from './tools/specialist/specialist_list.tool.js';
 import {
   createSpecialistDispatchTool,
   createSpecialistReplyTool,
@@ -172,6 +173,7 @@ export class SpecialistsServer {
       createSpecialistDispatchTool(getHost, getPusher),
       createSpecialistReplyTool(getHost),
       createSpecialistStopActivationTool(getHost),
+      createSpecialistListTool(loader),
     ];
     this.mcpSessionId = randomUUID();
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
@@ -186,6 +188,7 @@ export class SpecialistsServer {
       specialist_dispatch: specialistDispatchSchema,
       specialist_reply: specialistReplySchema,
       specialist_stop_activation: specialistStopSchema,
+      specialist_list: specialistListSchema,
       // specialist_status takes no arguments; the empty-object default applies.
     };
     this.toolSchemas = schemaMap;
