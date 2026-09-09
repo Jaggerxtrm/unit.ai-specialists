@@ -1,0 +1,1 @@
+{"issue_ids":["unitAI-of6dw"],"open_issue_count":1,"root_id":"unitAI-of6dw","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"d1124bfec878fd05f46c755920d662cff6f3950a3f09cb6942c76e898b5f8b15","title":"harden researcher agent-browser usage: add safe-default flags (--content-boundaries/--max-output/--allowed-domains/--action-policy)"}

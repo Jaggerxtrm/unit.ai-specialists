@@ -1,0 +1,126 @@
+{
+  "content_sha256": "f0cfd525935702671de65fa60b42b3342f4a9cfa417d6bc0851ba3d841ef8f79",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-16T00:54:21Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-65c5f",
+        "issue_id": "unitAI-tmeqw",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-tmeqw",
+      "source_field": "dependencies",
+      "target": "unitAI-65c5f",
+      "target_present_in_snapshot": true,
+      "target_title": "Gate: security audit specialists PR #190",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-tmeqw.12"
+      }
+    ],
+    "id": "unitAI-tmeqw"
+  },
+  "issues": {
+    "unitAI-tmeqw": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "close_reason": "PR #193 merged as b8eb537c after 11/11 tests, green CI, obligations CLEAN, security re-audit PASS_WITH_NOTES, reviewer PASS_WITH_NOTES 95; immutable runner-policy residual remains open P0 unitAI-tmeqw.12 per operator defer directive.",
+        "closed_at": "2026-07-16T14:19:35Z",
+        "comment_count": 0,
+        "created_at": "2026-07-15T22:54:22Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-16T00:54:21Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-65c5f",
+            "issue_id": "unitAI-tmeqw",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The PR #190 security audit found a separate CI trust-boundary defect: pull_request-controlled repository code runs on persistent self-hosted runners, and the OSV PR job also carries pull-request comment write authority. A malicious or compromised PR can execute on a trusted host and potentially abuse writable credentials. This concern is real but intentionally out of scope for PR #190 and must ship independently.\n\nSUCCESS: Open one separate focused security PR, based on current master after PR #190 lands, that prevents untrusted pull_request code from executing on self-hosted runners and removes writable-token exposure from untrusted execution. Preserve trusted push/schedule hard gates and useful PR scan feedback. Enumerate equivalent pull_request jobs first so the fix closes the root trust-boundary class rather than only one YAML line; keep the resulting diff minimal and explicitly justify any job left unchanged.\n\nSCRUTINY: critical\n\nSCOPE: .github/workflows/osv-scanner.yml and any other .github/workflows/*.yml jobs proven to execute pull_request-controlled code on self-hosted runners; least-privilege GitHub permissions/comment handoff; bounded workflow contract tests or static assertions. Begin with an evidence-only workflow inventory before implementation.\n\nNON_GOALS: No changes to PR #190's OSV 0/1 allowlist, classifier semantics, forensic launch_mode fix, application runtime, specialist prompts/assets, npm publication, deployment, or unrelated CI modernization.\n\nCONSTRAINTS: Separate branch/PR only; fork from master after #190 merge. Untrusted PR execution must use ephemeral GitHub-hosted isolation. Privileged comment/update logic must not execute PR-controlled scripts or workflow definitions with write credentials; use a trusted base-code handoff or remove nonessential commenting if that is the smallest safe solution. Pin actions, preserve protected-branch scanning, no force-push/rebase/history rewrite. GitNexus may not index workflows; document that and use exact workflow/test evidence. Independent seconder, test, security, obligations, pr-reviewer, CI, and deploy-monitor gates before closure.\n\nVALIDATION: Static/adversarial tests prove pull_request jobs cannot select self-hosted labels, writable token is absent from untrusted steps, trusted push/schedule behavior remains, and sanitized outputs cannot inject privileged actions. Run workflow syntax/lint, targeted tests, full relevant CI, security audit, reviewer, and post-merge deploy/artifact verification.\n\nOUTPUT: Workflow inventory, chosen minimal trust split, PR URL/head, tests/security/reviewer/CI evidence, residual risks, and post-merge deploy-monitor verdict. Parent orchestrator alone merges and closes.\n",
+        "id": "unitAI-tmeqw",
+        "issue_type": "bug",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "DESIGN GATE: exact current-master workflow inventory found 5 vulnerable workflow files (gitleaks, osv-scanner, package-payload, semgrep, telemetry-contract) and one already-safe runner workflow (pi-compat). Minimal separate PR: conditional ubuntu for PR paths, protected push/schedule keep CI_RUNNER; remove OSV comment + PR write token and unused gitleaks write permission; persist-credentials:false on all PR checkouts; explicit contents:read; static policy test enumerating all PR workflows. Generic design hazards and residual risks recorded in child .3.\nOperator explicitly accepted PR193 residual PR-controlled workflow risk and directed merge now with immutable runner enforcement deferred to unitAI-tmeqw.12. Revised merge gate assesses delta: PR193 must materially reduce current exposure, introduce no new HIGH/CRITICAL risk, retain green CI/tests, and receive security PASS_WITH_NOTES + pr-reviewer approval; residual remains open.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "closed",
+        "title": "Security: isolate untrusted PR CI from self-hosted runners",
+        "updated_at": "2026-07-16T14:19:35Z"
+      }
+    },
+    "unitAI-tmeqw.12": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-16T13:35:53Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-16T15:35:52Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-tmeqw",
+            "issue_id": "unitAI-tmeqw.12",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Final security audit d6aea2 found CRITICAL PR193-SEC-01 (90% confidence): PR #193 changes current workflow definitions and adds a mutable in-PR test, but a malicious PR can change its own workflow `runs-on` to the online repository-level `specialists-runner`; GitHub assigns the runner before the PR-controlled policy test runs. Current external state: repo runner id 1155 `specialists-runner` is online with labels self-hosted/Linux/X64/mercury-lite/specialists; it is repository-level (org Default group has zero runners and unrestricted workflows); fork approval policy is first_time_contributors.\n\nSUCCESS: Immutable external enforcement prevents any pull_request ref/workflow from assigning the specialists self-hosted runner before PR code executes. Then an adversarial PR/workflow scheduling test proves blocked, trusted main/schedule behavior is verified per chosen design, security re-audit passes zero HIGH/CRITICAL, and PR #193 may proceed.\n\nSCRUTINY: critical\n\nSCOPE: Choose one explicitly authorized production remediation: (A) retire/unregister the repo-level specialists runner and route trusted push/schedule jobs to ubuntu-latest; or (B) migrate it to an org runner group restricted to exact specialists workflow files at refs/heads/master. Update managed infra/service config and workflow code/tests as required, with rollback evidence.\n\nNON_GOALS: Do not merge PR #193, weaken/waive the finding, rely on mutable in-PR tests as enforcement, change unrelated runners/repos, publish npm, or alter production runner state without explicit operator authorization.\n\nCONSTRAINTS: Production-impacting and CRITICAL: warn operator, obtain explicit authorization for A or B, use isolated tests, preserve backups/rollback, adversarial security test, independent security re-audit. Parent orchestrator alone merges/closes anchor.\n\nVALIDATION: GitHub API runner/group state before/after; service/registration state; fork/PR attempt selecting self-hosted must remain unassigned/rejected; trusted main/schedule expected job passes; security auditor exact recheck.\n\nOUTPUT: Chosen design/authorization, config/code PRs, before/after policy evidence, rollback, adversarial test, re-audit verdict.\n",
+        "id": "unitAI-tmeqw.12",
+        "issue_type": "bug",
+        "labels": [
+          "contract:deferred"
+        ],
+        "notes": "2026-07-16 operator directive: merge current risk-reducing PRs now; keep immutable runner denial as explicit deferred P0 follow-up. This is not a claim that mutable in-PR policy is sufficient.\nAUDIT 2026-07-30: blocked on operator choice A/B and immutable external GitHub runner-group configuration since 2026-07-16",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 0,
+        "status": "open",
+        "title": "CRITICAL: enforce immutable PR denial on specialists runner",
+        "updated_at": "2026-07-30T14:35:03Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-16T15:35:52Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-tmeqw",
+        "issue_id": "unitAI-tmeqw.12",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-tmeqw.12",
+      "source_field": "dependencies",
+      "target": "unitAI-tmeqw",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-tmeqw",
+  "root_title": "Security: isolate untrusted PR CI from self-hosted runners",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

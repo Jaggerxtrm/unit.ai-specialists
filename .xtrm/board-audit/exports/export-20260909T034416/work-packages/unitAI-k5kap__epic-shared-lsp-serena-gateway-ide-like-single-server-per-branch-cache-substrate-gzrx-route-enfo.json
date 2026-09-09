@@ -1,0 +1,235 @@
+{
+  "content_sha256": "7bb112ab443fb2136440821830e5c9fb473db6cef3510eb784c3a1507ebec967",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-23T10:48:11Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-o6tcj",
+        "issue_id": "unitAI-cn53w",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-cn53w",
+      "source_field": "dependencies",
+      "target": "unitAI-o6tcj",
+      "target_present_in_snapshot": true,
+      "target_title": "Review: system_prompt_mode field wiring across both runner paths",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-20T17:52:58Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-3ofi6",
+        "issue_id": "unitAI-h2o7u",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-h2o7u",
+      "source_field": "dependencies",
+      "target": "unitAI-3ofi6",
+      "target_present_in_snapshot": true,
+      "target_title": "Add sp result --payload flag for complete startup-payload breakdown",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-19T19:07:33Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-c4g0m",
+        "issue_id": "unitAI-k5kap",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-k5kap",
+      "source_field": "dependencies",
+      "target": "unitAI-c4g0m",
+      "target_present_in_snapshot": true,
+      "target_title": "LSP overhead: pool per-repo, skip for short roles, daemonize serena",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-22T14:55:43Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-8d6u8",
+        "issue_id": "unitAI-k5kap",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-k5kap",
+      "source_field": "dependencies",
+      "target": "unitAI-8d6u8",
+      "target_present_in_snapshot": true,
+      "target_title": "Next-session pickup (2026-05-22): release 3.15.5, LSP phase 2, backlog cleanup",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-cn53w"
+      },
+      {
+        "children": [],
+        "id": "unitAI-h2o7u"
+      }
+    ],
+    "id": "unitAI-k5kap"
+  },
+  "issues": {
+    "unitAI-cn53w": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-23T08:48:08Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-05T00:54:31Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-k5kap",
+            "issue_id": "unitAI-cn53w",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-05-23T10:48:11Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-o6tcj",
+            "issue_id": "unitAI-cn53w",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Five tests in tests/unit/pi/session.test.ts (resolver is default-on, resolver LOW path keeps GitNexus/Serena parity, resolver READ_ONLY path honors explorer override, mapPermissionToTools('HIGH'), plus one more) use mockSpawn.mock.calls[0][1] assuming pi is the first spawn. They fail in any worktree where the repo root has no live serena daemon, because serena-pool/index.ts (npm package @jaggerxtrm/pi-extensions) execFileSyncs 'git rev-parse --show-toplevel' and may spawn a daemon BEFORE pi.\n\nSUCCESS: All affected tests use an arg-predicate lookup (mockSpawn.mock.calls.find(([cmd, args]) => cmd === 'pi' || (args as string[]).includes('--mode'))) instead of calls[0], so they pass regardless of whether serena-pool decides to spawn or reuse.\n\nSCOPE: tests/unit/pi/session.test.ts lines 547-625 area.\n\nNON_GOALS: Do not change src/pi/session.ts. Do not modify serena-pool. Do not add new test cases.\n\nCONSTRAINTS: Preserve existing assertions verbatim — only change the call-lookup mechanism.\n\nVALIDATION: bunx vitest run tests/unit/pi/session.test.ts passes 100% in both master cwd and worktree cwd.\n\nOUTPUT: Updated test file, pass evidence from both cwds, residual risks.",
+        "id": "unitAI-cn53w",
+        "issue_type": "task",
+        "priority": 3,
+        "status": "open",
+        "title": "test: stabilize tests/unit/pi/session.test.ts against serena-pool spawn ordering",
+        "updated_at": "2026-05-23T08:48:08Z"
+      }
+    },
+    "unitAI-h2o7u": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-08T09:08:53Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-05-20T17:52:58Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-3ofi6",
+            "issue_id": "unitAI-h2o7u",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-05T00:54:34Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-k5kap",
+            "issue_id": "unitAI-h2o7u",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Initial design for reducing `sp ps` token/scroll noise without losing tree lineage.\n\nPain point:\n- Current `sp ps` in repos with failed/large epics dumps many retained terminal jobs.\n- Bead titles repeat per job row, wasting tokens and making agent context noisy.\n- `sp ps -f` repaints the whole tree every second; in non-TTY/agent logs ANSI clear codes are not interpreted, so output looks duplicated/repainted and can hang/spam.\n- But users and agents still need tree lineage: epic → prep → chain → worktree/branch → job. A flat dashboard loses important relationships.\n\nProposed direction:\n- Keep the `sp ps` command family; avoid adding many new commands.\n- Make default `sp ps` a compact tree, not a flat list and not the current fully-expanded history tree.\n- Show active/running/waiting/actionable branches expanded.\n- Collapse terminal leaves by default, but never silently: show counts and the newest/severest terminal job id, e.g. `… 5 terminal hidden: 2 error, 3 done · newest error abc123 · result abc123`.\n- Show bead title once per bead group, not on every job row. Job rows can use `bead:<id>` only when needed.\n- Keep ungrouped/legacy jobs in an `Ungrouped` section with the same compact rules.\n- Add or refine inspect behavior under the same command: `sp ps <id>` should inspect job/epic/chain/bead when unambiguous; typed prefixes can resolve ambiguity: `job:<id>`, `epic:<id>`, `chain:<id>`, `bead:<id>`.\n- Suggested flags: `sp ps` = compact tree; `--terminal` = include terminal leaves; `--full` = disable budget/truncation; `--all` remains backward-compatible noisy alias; `--json` remains full stable machine contract.\n- `sp ps -f` should follow the compact tree only. If stdout is TTY, use TTY-safe rendering/alternate screen; if non-TTY, do not emit ANSI clear/cursor codes and either print one snapshot or concise timestamped snapshots.\n\nExample target shape:\n\n```text\nsp ps · 2 epics · 4 active · 1 waiting · 17 terminal hidden · updated 14:32:10\n\nEPIC unitAI-0mk8r  waiting  prep 1/1 done · chains 0/1 pass\n  bead unitAI-0mk8r — Overthink sp ps compact tree UX\n  prep\n    ✓ abc123  overthinker  done  4m  8t·12tc\n  chains\n    chain main · root:unitAI-0mk8r · branch:feature/unitAI-0mk8r\n      ▶ def456  reviewer     running  2m  ctx 41%  feed -f def456\n      ? ghi789  implementer  waiting  9m  ctx 65%  resume ghi789 \"...\"\n      … 5 terminal hidden: 2 error, 3 done · newest error jkl012 · result jkl012\n\nUngrouped\n  branch main\n    ▶ mno345  debugger  running  1m  ctx 12%  feed -f mno345\n\nUse: sp ps <id> inspect · sp ps --terminal show hidden · sp ps --full disable budget · sp ps --json machine\n```\n\nAcceptance criteria:\n- A design doc or implementation plan exists for compact tree `sp ps` rendering.\n- Plan specifies default visibility, hidden terminal summary rules, title dedupe, inspect resolution, flags/backward compatibility, and follow/non-TTY behavior.\n- Plan explicitly preserves epic/prep/chain/worktree/job lineage.\n- Plan identifies migration risks for users expecting current verbose output.",
+        "id": "unitAI-h2o7u",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 3,
+        "status": "open",
+        "title": "Design: compact tree sp ps default",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    },
+    "unitAI-k5kap": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "close_reason": "superseded by Core-owned code-intelligence/runtime track; live children (cn53w, h2o7u) stand independently in Specialists",
+        "closed_at": "2026-07-30T15:07:32Z",
+        "comment_count": 0,
+        "created_at": "2026-05-09T07:53:02Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-22T14:55:43Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-8d6u8",
+            "issue_id": "unitAI-k5kap",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-19T19:07:33Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-c4g0m",
+            "issue_id": "unitAI-k5kap",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nToday every specialist with MEDIUM/HIGH permission spawns its own\nSerena MCP + LSP child via pi-mcp-adapter. With ~30 spawns/hour during\nactive sessions this produces:\n- Cold-start cost per specialist (LSP indexing, npm install in worktree)\n- RAM churn (each LSP holds its own type graph)\n- Token waste (every specialist re-discovers symbols already indexed)\n- Per-worktree leak surface (gitnexus and dolt experience same family —\n  see unitAI-ctl0o, unitAI-0wz2p)\n\nThe structural fix is the IDE pattern: a long-lived language-server per\nproject, owned by a session-managing gateway, queried by all clients.\nSpecialists become read-clients of a shared substrate, not LSP launchers.\n\n## SUCCESS\n- Single Serena MCP daemon process per branch (not per specialist),\n  alive across multiple consecutive specialist runs in the same branch.\n- Specialists' direct Serena access denied via gzrx; semantic queries\n  routed through a code-intel-gateway capability.\n- Persistent SQLite cache for documentSymbol / workspaceSymbol /\n  definition / references / outline, keyed by file content hash, valid\n  across specialist invocations.\n- Tree-sitter / ast-grep exposed as first-class tier-2 tool for\n  structural query/rewrite (the cheap ~80% case).\n- Measured: RAM-time per specialist drops materially; cache hit ratio\n  observable; LSP cold-start eliminated for second+ run on same branch.\n\n## SCOPE\nThe epic owns the runtime architecture for code intelligence. Targets:\n- src/specialist/ runtime (where pi extensions are loaded)\n- .specialists/catalog/ + manifest-resolver (gzrx tier policy)\n- New: src/specialist/code-intel-gateway/ (daemon + session pool +\n  cache)\n- New: src/specialist/code-intel-client/ (the surface specialists call)\n- pi-mcp-adapter glue (route Serena calls through gateway)\n\n## NON_GOALS\n- SCIP / LSIF precomputed indexes (deferred — optimization, not\n  structural fix).\n- New language coverage. Same set as today (TS/JS/Python primarily).\n- Replacing gitnexus. gitnexus stays the front-door for graph/recall\n  queries; this epic is the semantic-oracle tier behind it.\n- Replacing Serena. Serena stays as the LSP wrapper; this epic shares\n  it across specialists instead of spawning per-job.\n\n## CONSTRAINTS\n- Cache key: `repo_id + branch + tool-config-hash` (tsconfig.json /\n  pyproject.toml / go.mod). NOT worktree_path — multiple worktrees on\n  the same branch share the LSP session. (Counter-intuitive but it's\n  how IDEs handle multi-window-on-same-project.)\n- Daemon transport: UDS not file-mediated (avoids the bd post-checkout\n  class of bugs we just hit in unitAI-0wz2p — git hooks scaffolding\n  state inside worktrees).\n- Lifecycle: start-on-first-connect, idle-evict after N minutes,\n  RAM-pressure eviction; NOT 'alive forever'.\n- gzrx integration: hard-deny direct `serena.*` at runtime tier when\n  the gateway capability is healthy; auto-fallback to direct Serena if\n  gateway is degraded (matches existing extension-health protocol).\n\n## VALIDATION\n- Soak: 10 consecutive specialist runs on same branch — second through\n  tenth show no LSP cold-start, sub-100ms documentSymbol responses\n  from cache, single Serena process visible in `ps -ef`.\n- gzrx parity: direct `mcp__serena__find_symbol` from a test\n  specialist returns 'tool not allowed', while `mcp__code_intel__*`\n  proxies to the gateway successfully.\n- Telemetry: cache hit/miss counters surface in `sp result` metrics\n  block per specialist run.\n- No regression in existing serena-cheatsheet tests (mandatory rule\n  template_set).\n\n## OUTPUT\nA multi-child epic plan when this is broken down. The head issue\ncaptures intent + constraints. Detailed child decomposition deferred to\na planner pass when the operator promotes this from backlog.\n\n## ARCHITECTURE SKETCH (sequenced; details deferred to child beads)\n1. Design decision (overthinker): gateway protocol (UDS+JSON-RPC vs\n   MCP-over-stdio vs HTTP), cache key composition, eviction policy.\n2. `code-intel-gateway` daemon scaffold: single Serena process, UDS\n   server, session pool, start-on-connect + idle-TTL.\n3. SQLite cache layer: schema, file-hash invalidation, capability\n   coverage.\n4. gzrx policy: deny direct Serena, route via gateway capability;\n   manifest-resolver change + per-tier deny rules.\n5. Specialist-side `code_intel.*` tool surface: proxy capability that\n   publishes documentSymbol/workspaceSymbol/definition/references/etc.\n6. (Parallel) Tree-sitter / ast-grep first-class tool for structural\n   tier-2 query/rewrite — independent of gateway, ships in parallel.\n7. Soak + telemetry: RAM-time per specialist, cache hit ratio, gateway\n   uptime per branch.\n8. Migration: flip default from per-specialist Serena spawn to\n   gateway-routed; deprecate old path with one-release window.\n\n## CROSS-REFS\n- unitAI-c4g0m — original 'LSP overhead' P0; this epic is the\n  structural answer\n- unitAI-ctl0o, unitAI-0wz2p — same lifecycle-failure family (every-\n  job-spawns-its-own-server pattern)\n- existing gzrx machinery: docs/design/gzrx-tool-catalog.md,\n  src/specialist/manifest-resolver.ts (the runtime extension-policy\n  resolver this epic plugs into)\n- gitnexus front-door pattern (already in place for graph queries; this\n  epic adds the LSP-tier behind it)\n\n## DECISION OPEN\nThis is the head issue. Do not start implementation from this bead\nalone. Promote to active by spawning a planner pass to decompose into\nfile-disjoint children with explicit dependencies.\n",
+        "id": "unitAI-k5kap",
+        "issue_type": "epic",
+        "priority": 1,
+        "status": "closed",
+        "title": "Epic: shared LSP/Serena gateway — IDE-like single server per branch, cache substrate, gzrx route enforcement",
+        "updated_at": "2026-07-30T15:07:32Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-05T00:54:31Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-k5kap",
+        "issue_id": "unitAI-cn53w",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-cn53w",
+      "source_field": "dependencies",
+      "target": "unitAI-k5kap",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-05T00:54:34Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-k5kap",
+        "issue_id": "unitAI-h2o7u",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-h2o7u",
+      "source_field": "dependencies",
+      "target": "unitAI-k5kap",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-k5kap",
+  "root_title": "Epic: shared LSP/Serena gateway — IDE-like single server per branch, cache substrate, gzrx route enforcement",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

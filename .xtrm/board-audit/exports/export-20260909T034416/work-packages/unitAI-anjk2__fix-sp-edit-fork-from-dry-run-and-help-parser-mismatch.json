@@ -1,0 +1,66 @@
+{
+  "content_sha256": "2464553cc475c61f614dc0b7574b712259e6cf52e6a1072053cb09abd453cf16",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-12T18:58:32Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-2dt79",
+        "issue_id": "unitAI-anjk2",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-anjk2",
+      "source_field": "dependencies",
+      "target": "unitAI-2dt79",
+      "target_present_in_snapshot": true,
+      "target_title": "Add setup-specialists skill for local model configuration",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-anjk2"
+  },
+  "issues": {
+    "unitAI-anjk2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-12T16:58:33Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-12T18:58:32Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-2dt79",
+            "issue_id": "unitAI-anjk2",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: While adding setup-specialists docs, verified that `sp edit <name> --fork-from <base> --dry-run` still writes `.specialists/user/<name>.specialist.json` before rendering the dry-run diff. Also help advertises `sp edit <name> --fork-from <base> [--dry-run]` as a standalone fork command, but parseArgs rejects it with missing dot-path unless a field/value is supplied.\n\nSUCCESS: Dry-run performs no filesystem writes; either standalone fork works as documented or help/docs clearly require dot-path/value; regression tests cover both.\n\nSCOPE: src/cli/edit.ts, tests for edit command.\n\nVALIDATION: dry-run fork leaves git status unchanged; standalone fork behavior matches help.",
+        "id": "unitAI-anjk2",
+        "issue_type": "bug",
+        "priority": 2,
+        "status": "open",
+        "title": "Fix sp edit --fork-from dry-run and help/parser mismatch",
+        "updated_at": "2026-06-12T16:58:42Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-anjk2",
+  "root_title": "Fix sp edit --fork-from dry-run and help/parser mismatch",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

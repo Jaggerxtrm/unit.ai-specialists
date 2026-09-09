@@ -1,0 +1,45 @@
+{
+  "content_sha256": "bf2e4f830657de29feb1abaa4ee3581595c76dda30a25e164ad654a5456fb23f",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-0eymv"
+  },
+  "issues": {
+    "unitAI-0eymv": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-24T07:23:50Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nOrchestrators (agent panes) detect specialist completion via `specialists ps --json` status. For keep-alive specialists this is unreliable: a finished executor sits in status=waiting indefinitely, so status-based watchers never fire and time out (real case: darth-feedor py_backend-b2gw epic, 2026-08-23/24 — multiple 80-cycle watchers missed ecaa52/190f6a completions; detection fell back to manual feed greps).\n\nThe authoritative signals already exist but are undiscovered:\n1. Project observability SQLite (`<repo>/.specialists/db/observability.db`, table specialist_jobs: status running/waiting/done/failed + updated_at_ms) — zero-byte global ~/.specialists/observability.db is a red herring.\n2. Feed terminal marker `status=COMPLETE exit=agent_end`.\n3. `sp log -f --json --job <id>` already streams lifecycle/control rows incl. DONE events, but its help does not present it as THE completion-detection surface.\n\n## SUCCESS (pick scope during promotion)\n- Minimum: ps help/output documents that waiting != done for keep-alive jobs and points to sp log -f / DB path for reliable detection.\n- Better: new command, e.g. `sp await <job-id> [--timeout <s>] [--include-push <branch>]` — exits 0 when the job reaches terminal state (done/failed OR feed COMPLETE agent_end), printing final summary + last_output; designed for agent-pane watchers (single blocking process instead of jq/grep loops).\n- Optional: ps --json gains terminal_reason / completed_at fields so one call suffices.\n\n## NON_GOALS\nNo change to keep-alive semantics itself.\n\n## EVIDENCE\nRepro: launch any HIGH keep-alive executor with --background, let it finish; ps shows waiting indefinitely while specialist_jobs.status=done and feed shows COMPLETE exit=agent_end.",
+        "id": "unitAI-0eymv",
+        "issue_type": "feature",
+        "labels": [
+          "cli",
+          "dx",
+          "observability"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "cli: document/automate reliable job-completion detection (ps 'waiting' hides finished keep-alive jobs)",
+        "updated_at": "2026-08-24T07:23:50Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-0eymv",
+  "root_title": "cli: document/automate reliable job-completion detection (ps 'waiting' hides finished keep-alive jobs)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

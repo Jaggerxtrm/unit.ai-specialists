@@ -1,0 +1,286 @@
+{
+  "content_sha256": "cb98b6a5f2255e2dedc4e8cbfb90e440cf08aae51aa03b221b2ae8094d168eab",
+  "diagnostics": {
+    "dangling_relations": [
+      {
+        "source": "unitAI-e67up",
+        "target": "external:core:xtrm-ozknq",
+        "type": "related"
+      },
+      {
+        "source": "unitAI-e67up.5",
+        "target": "external:core:xtrm-ozknq.11",
+        "type": "blocks"
+      }
+    ],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-08-02T18:52:02Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "external:core:xtrm-ozknq",
+        "issue_id": "unitAI-e67up",
+        "metadata": "{}",
+        "type": "related"
+      },
+      "source": "unitAI-e67up",
+      "source_field": "dependencies",
+      "target": "external:core:xtrm-ozknq",
+      "target_present_in_snapshot": false,
+      "type": "related"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-02T18:52:08Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "external:core:xtrm-ozknq.11",
+        "issue_id": "unitAI-e67up.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-e67up.5",
+      "source_field": "dependencies",
+      "target": "external:core:xtrm-ozknq.11",
+      "target_present_in_snapshot": false,
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-02T18:52:06Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-e67up.4",
+        "issue_id": "unitAI-e67up.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-e67up.5",
+      "source_field": "dependencies",
+      "target": "unitAI-e67up.4",
+      "target_present_in_snapshot": true,
+      "target_title": "K4-Specialists — Complete Codex role invocation and result parity",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-02T19:00:18Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-e67up.4",
+        "issue_id": "unitAI-e67up.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-e67up.7",
+      "source_field": "dependencies",
+      "target": "unitAI-e67up.4",
+      "target_present_in_snapshot": true,
+      "target_title": "K4-Specialists — Complete Codex role invocation and result parity",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-e67up.5"
+      },
+      {
+        "children": [],
+        "id": "unitAI-e67up.7"
+      }
+    ],
+    "id": "unitAI-e67up"
+  },
+  "issues": {
+    "unitAI-e67up": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-02T16:48:01Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-02T18:52:02Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "external:core:xtrm-ozknq",
+            "issue_id": "unitAI-e67up",
+            "metadata": "{}",
+            "type": "related"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nXT Codex parity needs a native Specialists render and role surface that is distinct from existing Pi-backed openai-codex model execution.\n\n## SUCCESS\nAdd a Codex surface with valid role, view, render, help, model, and $skill-name semantics. Produce a backward-compatible compatibility release before Core publishes the production launcher.\n\n## SCOPE\nThis root owns only Specialists repository changes for K1 characterization, K3-Specialists, K4 invocation/result completion, test coverage, and the K6 sibling compatibility release.\n\n## NON_GOALS\nDo not implement the Core interactive launcher, xtmux lifecycle domains, native Codex subagents, or a direct codex exec backend as a parity prerequisite. Direct Codex execution remains optional K7 work.\n\n## CONSTRAINTS\nKeep interactive Codex surface identity separate from provider IDs such as openai-codex/.... Preserve Pi and Claude render behavior. Use repository-local children only. Represent Core, xtmux, Jira, and programme gates as external references or companion relations.\n\n## VALIDATION\nRun focused unit and integration tests for surface resolution, rendering, $skill-name syntax, role/model validation, and result retrieval. Prove no regression in Pi/Claude rendering and no accidental provider-ID aliasing.\n\n## OUTPUT\nA repository-owned companion graph related to Core xtrm-ozknq and Jira KAN-127. Canonical sequencing note: https://github.com/xtrm-dev/xtrm/blob/ed06ba222307030c7153c43cd2370262706b78a4/docs/shared/xtrm-codex-kan-127-execution-note.md",
+        "external_ref": "jira-KAN-127",
+        "id": "unitAI-e67up",
+        "issue_type": "epic",
+        "labels": [
+          "codex",
+          "cross-repo",
+          "parity"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "XT Codex parity — Specialists native surface companion",
+        "updated_at": "2026-08-02T16:48:01Z"
+      }
+    },
+    "unitAI-e67up.5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-02T16:52:07Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-02T18:52:08Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "external:core:xtrm-ozknq.11",
+            "issue_id": "unitAI-e67up.5",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-02T18:52:06Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-e67up",
+            "issue_id": "unitAI-e67up.5",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-02T18:52:06Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-e67up.4",
+            "issue_id": "unitAI-e67up.5",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-02T19:00:19Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-e67up.7",
+            "issue_id": "unitAI-e67up.5",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 3,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nCore must not publish a production launcher against Specialists behavior that exists only on a branch.\n\n## SUCCESS\nPublish a backward-compatible Specialists compatibility release containing the accepted K3/K4 native Codex surface before the Core launcher release.\n\n## SCOPE\nVersioning, changelog, package publication, compatibility metadata, and post-publish render/invocation verification.\n\n## NON_GOALS\nDo not publish Core or xtmux, add direct codex exec, or introduce optional K7 capabilities.\n\n## CONSTRAINTS\nExecute only after K5 promotion authorization. Remain compatible with the current Core line and any contract-only Core package published earlier.\n\n## VALIDATION\nVerify package contents, registry version, clean install, render/role fixtures, backward compatibility, and the exact version handed to Core K6.\n\n## OUTPUT\nA published Specialists version and immutable release evidence consumed by Core K6.",
+        "id": "unitAI-e67up.5",
+        "issue_type": "task",
+        "labels": [
+          "codex",
+          "cross-repo",
+          "k-phase",
+          "parity"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "spec_id": "https://github.com/xtrm-dev/xtrm/blob/ed06ba222307030c7153c43cd2370262706b78a4/docs/shared/xtrm-codex-kan-127-execution-note.md",
+        "status": "open",
+        "title": "K6-Specialists — Publish the backward-compatible Codex compatibility release",
+        "updated_at": "2026-08-02T16:52:07Z"
+      }
+    },
+    "unitAI-e67up.7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-02T17:00:18Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-08-02T19:00:18Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-e67up",
+            "issue_id": "unitAI-e67up.7",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-02T19:00:18Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-e67up.4",
+            "issue_id": "unitAI-e67up.7",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 1,
+        "description": "## PROBLEM\nThe external Core K5 edge is persisted but not enforced by the local ready view without federation.\n\n## SUCCESS\nClose only after Core xtrm-ozknq.11 records an approved production promotion.\n\n## SCOPE\nRead-only Core promotion evidence check after Specialists K4.\n\n## NON_GOALS\nDo not decide parity from Specialists or publish before authorization.\n\n## CONSTRAINTS\nRecord the Core gate decision, GATE-IFACE evidence reference, parity matrix reference, and compatible versions.\n\n## VALIDATION\nVerify Core K5 is closed as promoted, not rejected or waived.\n\n## OUTPUT\nA local synchronization gate that blocks the Specialists compatibility release.",
+        "id": "unitAI-e67up.7",
+        "issue_type": "task",
+        "labels": [
+          "codex",
+          "cross-repo",
+          "external-gate",
+          "parity"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "spec_id": "https://github.com/xtrm-dev/xtrm/blob/ed06ba222307030c7153c43cd2370262706b78a4/docs/shared/xtrm-codex-kan-127-execution-note.md",
+        "status": "open",
+        "title": "Gate: observe Core K5 production promotion authorization",
+        "updated_at": "2026-08-02T17:00:18Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-08-02T19:00:19Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-e67up.7",
+        "issue_id": "unitAI-e67up.5",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-e67up.5",
+      "source_field": "dependencies",
+      "target": "unitAI-e67up.7",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-02T18:52:06Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-e67up",
+        "issue_id": "unitAI-e67up.5",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-e67up.5",
+      "source_field": "dependencies",
+      "target": "unitAI-e67up",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-02T19:00:18Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-e67up",
+        "issue_id": "unitAI-e67up.7",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-e67up.7",
+      "source_field": "dependencies",
+      "target": "unitAI-e67up",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-e67up",
+  "root_title": "XT Codex parity — Specialists native surface companion",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

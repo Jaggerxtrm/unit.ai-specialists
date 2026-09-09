@@ -1,0 +1,70 @@
+{
+  "content_sha256": "1cf3c1108910d71c12200473f42df644092e295c9e9d3479dc7e81d9148bc6c1",
+  "desired_issues": {
+    "unitAI-53t6m": {
+      "_type": "issue",
+      "assignee": "researcher/02729a",
+      "comment_count": 0,
+      "created_at": "2026-09-08T23:54:19Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "id": "unitAI-53t6m",
+      "issue_type": "task",
+      "notes": "\n\n### researcher · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-08 23:55 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-08 23:59 · git 0487663b_",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 4,
+      "status": "open",
+      "title": "spy run for argv capture",
+      "updated_at": "2026-09-08T23:59:36Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-53t6m"
+  },
+  "issues": {
+    "unitAI-53t6m": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "researcher/02729a",
+        "comment_count": 0,
+        "created_at": "2026-09-08T23:54:19Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "id": "unitAI-53t6m",
+        "issue_type": "task",
+        "notes": "\n\n### researcher · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-08 23:55 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-08 23:59 · git 0487663b_",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 4,
+        "status": "open",
+        "title": "spy run for argv capture",
+        "updated_at": "2026-09-08T23:59:36Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-53t6m",
+  "root_title": "spy run for argv capture",
+  "roundtrip": {
+    "base_package_sha256": "1cf3c1108910d71c12200473f42df644092e295c9e9d3479dc7e81d9148bc6c1",
+    "base_record_sha256": {
+      "unitAI-53t6m": "31f42968ad703642e433950532e8f1fcc8132bf3307d7e6210d1f32e77bb2bd7"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-09T01:44:17Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

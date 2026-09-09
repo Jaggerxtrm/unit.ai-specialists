@@ -1,0 +1,1040 @@
+{
+  "content_sha256": "014f37dce6ff343ffb26eda86c8effc8571ac4f9de6d5e183433d5d13b78368c",
+  "desired_issues": {
+    "unitAI-rrdnt": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-06T11:25:40Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nSpecialists today execute via `sp run` -> PiAgentSession -> `spawn('pi', args)` subprocess RPC (src/pi/session.ts:1022). That makes a Specialist operationally separate from the coordinator's live session, so coordinators fall back to generic Pi subagents, manual sp run, or doing the work directly. Specialists are also one-shot: a child dies at the end of a turn, cannot ask a clarifying question and resume, and cannot be attached to.\n\nSUCCESS\nA canonical NativeActivationHost in xtrm-dev/specialists hosts persistent, interactive, Bead-backed Pi AgentSession children. Pi (via extension) and Claude Code (via MCP plugin) are thin frontends over the same runtime; a future XTRM Chain scheduler can call it without TUI state. observability.db remains the single forensic store. Exactly one writer per mutable workspace, coordinator included.\n\nSCOPE\nImplements ~/dev/xtrm/docs/specialists/PRD-Native-Specialist-Subagents-for-Pi.md (em-dash filename, 4517 lines) phases 0-15, acceptance matrix A-BI. Child beads carry per-phase contracts.\n\nNON_GOALS\nChain scheduler, ResolvedChain lifecycle, Substrate daemon/state-store, native Substrate step-issue creation, seed containers, epic/wave/node runtime, automatic worktree provisioning per Specialist, automatic merge/publish, multi-host or networked Specialist transport, replacing pi-intercom / pi-claude-link / XTRM Channels / Beads, Claude-native Specialist reimplementation. Legacy `sp run` path is not removed in this epic.\n\nCONSTRAINTS\nRuntime stays in xtrm-dev/specialists; no move into Core. Pi extension must NOT be tool -> `sp run` subprocess; Claude integration must NOT be MCP -> Bash -> `sp run`. Both call shared library code directly. SpecialistLoader stays authoritative; no second resolver. No telemetry side database. Public Pi SDK APIs only where possible. Incremental reviewable commits; no giant rewrite of the legacy runner before the shared seams are proven.\n\nVALIDATION\nPRD section 130 acceptance matrix A-BI (47 scenarios) as automated tests plus integration smokes. Per-phase child beads carry their own VALIDATION.\n\nOUTPUT\nWorking native activation runtime, Pi extension, Claude Code plugin/MCP server, adapted using-specialists skill, feature-parity matrix, developer/operator docs.\n\nSCRUTINY\nHIGH. Touches capability/permission resolution, workspace mutation authority, and the forensic store. A lease bug silently allows two concurrent writers in one worktree; a capability regression grants a child tools its Specialist definition denies.",
+      "id": "unitAI-rrdnt",
+      "issue_type": "epic",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "status": "open",
+      "title": "Native interactive XTRM Specialists (Pi AgentSession + Claude Code)",
+      "updated_at": "2026-09-06T11:25:40Z"
+    },
+    "unitAI-rrdnt.24": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-07T10:41:53Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-07T10:41:54Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.24",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\ntests/unit/cli/status.test.ts runs 11 tests in ~84s -- between 4.2s and 8.8s per test -- and passes in isolation. Under full-suite parallelism it intermittently exceeds the 30s per-test testTimeout: a run on master at 7bd186ed produced 2 failures (\"completes without throwing\", \"prints Specialists section header\") while three prior full runs of the same file passed. The failures are load-dependent, not assertions about wrong behaviour.\n\nSUCCESS\nThe status CLI tests are fast enough that full-suite parallelism does not push them past the timeout, or the reason each test needs seconds is understood and documented so the timeout is a deliberate setting rather than a coincidence.\n\nSCOPE\nEstablish where the per-test seconds go -- the likely candidates are repeated subprocess work (git rev-parse, bd, pi version probes) performed per status invocation, and resolveObservabilityDbLocation running spawnSync('git') twice per call against a non-repo temp dir. Then either remove the repeated work in the test setup, stub the subprocess boundary, or justify and raise the timeout for this file specifically.\n\nNON_GOALS\nDoes not change status CLI production behaviour. Does not disable or skip the tests. Does not raise the global testTimeout -- that hides slowness everywhere to fix it in one place.\n\nCONSTRAINTS\nDo not weaken assertions to make the file faster. If the fix is a stub, it must not stub the code path under test. Confirm whether the slowness predates the observability test isolation landed in unitAI-rrdnt.16 by measuring the same file at a commit before it; if isolation contributed, say by how much rather than assuming.\n\nVALIDATION\n1. A measurement showing where the per-test time goes.\n2. The file passes in three consecutive full-suite runs under default parallelism.\n\nOUTPUT\nEither a speed fix or a documented, file-scoped timeout with the measurement behind it.\n\nSCRUTINY\nLOW -- test-infrastructure flakiness, but the kind that trains a team to ignore red.",
+      "id": "unitAI-rrdnt.24",
+      "issue_type": "bug",
+      "notes": "Second sighting of a related-but-distinct failure, 2026-09-07 (unitAI-rrdnt.35): running the native-activation LIVE suite and the full unit suite concurrently produced a 'bead_unreadable' dispatch refusal on a probe bead that the same gate had read successfully minutes earlier. Passes cleanly in isolation. Hypothesis, NOT root-caused: bd lock contention, since several unit tests shell out to bd and each bd op round-trips through the Dolt sync. Recorded so a third sighting has something to match against. Also observed: the live suite's afterAll inherited the default 10s hook budget and timed out once it closed two probe beads instead of one — bd close is not cheap under this sync.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "status CLI tests take ~6s each and time out under full-suite parallelism",
+      "updated_at": "2026-09-08T00:04:33Z"
+    },
+    "unitAI-rrdnt.30": {
+      "_type": "issue",
+      "assignee": "jaggerxtrm",
+      "comment_count": 0,
+      "created_at": "2026-09-07T13:16:18Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-07T13:16:18Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.30",
+          "metadata": "{}",
+          "type": "parent-child"
+        },
+        {
+          "created_at": "2026-09-07T13:16:18Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt.25",
+          "issue_id": "unitAI-rrdnt.30",
+          "metadata": "{}",
+          "type": "discovered-from"
+        },
+        {
+          "created_at": "2026-09-07T23:58:03Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt.45",
+          "issue_id": "unitAI-rrdnt.30",
+          "metadata": "{}",
+          "type": "blocks"
+        }
+      ],
+      "dependency_count": 1,
+      "dependent_count": 0,
+      "description": "PROBLEM\nThe reply-based delivery criterion is implemented and unit-tested, and the inbound path is confirmed by a live coordinator, but no Specialist has yet asked a question over the peer channel and been resumed by a real reply. unitAI-rrdnt.22 (Phase 6 ask/escalate) and unitAI-rrdnt.25 (registration and reply-as-delivery) are both closed, so nothing open tracks the end-to-end proof. Marking the criterion superseded was correct; marking it met is not, and the gap between those two is exactly the finding that produced the fourth boundary.\n\nSUCCESS\nA Specialist running under NativeActivationHost pushes a question to a busy Claude coordinator, that coordinator replies, the reply is correlated by inReplyTo, the pending record moves from sent_unconfirmed to delivered, and the child resumes in the same session. Acceptance AX, observed rather than inferred.\n\nSCRUTINY\nHIGH\n\nRationale: this bead's own CONSTRAINTS record that THREE separate claims about this transport were falsified by live probes after passing on inspection — the procStart format, the receipt premise, and the prior-state boundary on reply confirmation. The receipt premise has since failed a fourth time (unitAI-rrdnt.45: attemptDelivery returned true with no deliver hook, so a pending record reached 'delivered' with no receiver). A path with that record does not get a routine review.\n\nSCOPE\nWiring the existing pieces and running the observation. All parts exist: PeerAdapter.ask() and the reply-as-delivery boundaries (src/activation/transport/), registration (peer-registration.ts), and the ask/escalate path on a live AgentSession (ask-tool.ts, native-host.ts).\n\nNON_GOALS\nNo new transport. No change to the four confirmation boundaries without evidence that one of them is wrong.\n\nCONSTRAINTS\nThe proof must be a live coordinator, not a fixture. Three separate claims about this transport have now been falsified by live probes after passing on inspection or on a reading of pi-claude-link: the procStart format, the receipt premise, and the prior-state boundary on reply confirmation. pi-claude-link is evidence of what pi-claude-link sends, never a specification of what Claude Code sends. Do not close on a green unit test.\n\nVALIDATION\n1. A pending record for a question reaches delivered against a reply carrying inReplyTo equal to its message id.\n2. The Specialist resumes on that reply in the same session.\n3. AY: a completion notification tied to a validated ActivationResult.\n4. With the peer channel unavailable, the same question is still answerable through specialist_status and the record does NOT reach delivered.\n\nOUTPUT\nObserved evidence of AX and AY, and whichever of the four boundaries the observation changes, if any.",
+      "id": "unitAI-rrdnt.30",
+      "issue_type": "task",
+      "notes": "Coordinator note 2026-09-08: NOT satisfied by the pi-extension lane's AX proof. That proof ran over the Pi extension with a pi coordinator and the in-process ask tool; .30 requires the PEER channel with a live Claude coordinator and the inReplyTo correlation. Different path, different evidence.\n\nNow blocked on .45 for a concrete reason: the wakeup lane measured that InteractionTransport.attemptDelivery returned true whenever no deliver hook was wired, so a pending record went straight to 'delivered' without any receipt. .30's VALIDATION 1 asks for a record that reaches delivered AGAINST a reply carrying inReplyTo — which cannot be distinguished from the bug's behaviour until the fix lands. Proving .30 on the current code would prove nothing.\n\nThis is the fourth falsified-claim entry for this transport, and it fits the bead's own CONSTRAINTS: three prior claims passed on inspection and failed live. The receipt premise has now failed twice.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "started_at": "2026-09-07T17:39:26Z",
+      "status": "open",
+      "title": "Prove AX end to end: a real Specialist push confirmed by a real reply",
+      "updated_at": "2026-09-08T11:27:05Z"
+    },
+    "unitAI-rrdnt.38": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-07T17:52:37Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-07T17:52:37Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.38",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nsrc/activation/forensic-sink.ts classifies six event names by severity that\nNativeActivationHost never emits: output_validation_failed, retry_failed, tool_blocked and\nlease_denied as errors, activation_uncertain and lease_uncertain as warnings. Measured at\n5bdff6b5 by comparing the sink's ERROR_EVENTS/WARN_EVENTS sets against every emit('...')\ncall site in native-host.ts. The emitted vocabulary is: activation_requested, _rejected,\n_admitted, _starting, _started, _settled, _completed, _failed, _resumed, _disposed,\nstep_contract_compiled, turn_started, turn_completed, retry_started, retry_completed,\noutput_validation_started, output_validation_passed, compaction_started, compaction_completed.\n\nFour of the six are the negative half of a pair whose positive half IS emitted\n(output_validation_passed without _failed, retry_started/_completed without retry_failed).\nA query or dashboard filtering on the failure names returns nothing, and nothing\ndistinguishes \"no failures occurred\" from \"failures are not recorded\". That is the\ncondition unitAI-rrdnt.4 already fixed once in the console: a surface that reads healthy\nbecause the signal was never wired.\n\ntool_blocked, lease_denied and lease_uncertain cannot be emitted before the writer lease is\nwired (unitAI-rrdnt.36) — there is no block or lease decision to report. output_validation_failed,\nretry_failed and activation_uncertain are emittable today.\n\nSUCCESS\nEvery name the sink classifies is emitted by the runtime at the point the condition occurs,\nor is removed from the sink's severity sets. Both halves of each pair are present. No name\nis classified that no producer can emit.\n\nSCOPE\nsrc/activation/forensic-sink.ts and the emit call sites in src/activation/native-host.ts.\nThe lease-dependent names may land with unitAI-rrdnt.36 instead; if so, split them out\nrather than leaving them classified and unemitted.\n\nNON_GOALS\nDoes not add forensic columns for attempt_id or pi_session_id — that is tracked separately.\nDoes not change the event family, the store, or the timeline mappers. Does not add new\nevent names beyond the six already classified.\n\nCONSTRAINTS\nobservability.db remains the single forensic store; no second telemetry database.\nsrc/activation/native-host.ts is owned by the coordinator lane — coordinate before editing.\nRemoving a name from the sink is an acceptable resolution only when nothing should ever\nemit it; a name that a later phase will emit stays and gets a producer.\n\nVALIDATION\n1. For each of the six names, a test drives the runtime into the condition and asserts the\n   row appears in observability.db with the expected severity. Asserting the sink\n   classifies a name it was handed proves nothing about whether anything emits it.\n2. A check compares the sink's ERROR_EVENTS + WARN_EVENTS sets against the emit call sites\n   and fails on any name with no producer, so this cannot regress silently.\n3. docs/native-activation.md \"Known holes\" row for this item is removed when it closes.\n\nOUTPUT\nEmitted events plus the producer/classifier consistency check, and the docs row retired.\n\nSCRUTINY\nMEDIUM. Forensic completeness, not a capability or permission boundary. The risk is a\nsurface that reads healthy because a failure signal has no producer.",
+      "id": "unitAI-rrdnt.38",
+      "issue_type": "task",
+      "notes": "\n## Narrowed 2026-09-07 after 67be44b1\n\nThree of the original six gained producers when the workspace lease was wired into admission\nand tool calls (67be44b1): lease_denied, lease_uncertain and tool_blocked are all emitted by\nNativeActivationHost now. Verified by re-deriving the emitted set from the tree at ee7f847c\nrather than from the earlier list.\n\nRemaining with no producer: output_validation_failed, retry_failed (ERROR_EVENTS) and\nactivation_uncertain (WARN_EVENTS).\n\nThe pairing observation still holds and is still the reason the gap matters: all three are\nthe negative half of a pair whose positive half IS emitted — output_validation_passed\nwithout _failed, retry_started/_completed without retry_failed. A failure filter over those\npairs returns empty whether or not failures happened, and the positive events being present\nmakes the surface look instrumented.\n\nThe producer/classifier consistency check in VALIDATION is unchanged and is the part that\nprevents this drifting again in either direction.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "Emit the three forensic event names the sink still classifies with no producer",
+      "updated_at": "2026-09-07T18:56:37Z"
+    },
+    "unitAI-rrdnt.39": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-07T17:58:47Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-07T17:58:47Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.39",
+          "metadata": "{}",
+          "type": "parent-child"
+        },
+        {
+          "created_at": "2026-09-07T17:59:03Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt.36",
+          "issue_id": "unitAI-rrdnt.39",
+          "metadata": "{}",
+          "type": "relates-to"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nThe board shows unitAI-rrdnt.21 (workspace writer lease) and unitAI-rrdnt.31 (uncertain workspace reconciliation) both closed and green. A reasonable reader concludes that leasing and reconciliation are in force. Neither is. Verified on the merged tree at 696d3f49: acquire(), release() and admitToolCall() have zero callers in src/; reconcile() has zero callers in src/. Both are harmless only because write-capable activations are refused at admission in src/activation/native-host.ts:199 (writer_not_supported_in_phase_1). A closed bead is the strongest signal this project emits, and two of them currently say something false by implication.\n\nOne correction to the framing this bead was requested under, because it changes what the statement must say. workspace-reconcile.ts IS imported by src/tools/specialist/specialist_status.tool.ts, so the READ path is live: projectUncertainWorkspaces() runs on every specialist_status call and would report a genuinely uncertain workspace today. What is unwired is the ENFORCEMENT path — nothing acquires a lease, nothing checks one before a mutation, and nothing calls reconcile(). The statement must distinguish these, or it will read as false to anyone who greps and finds the import.\n\nSUCCESS\nA reader arriving at the epic learns, without reading code, that lease enforcement and reconciliation exist, are tested, and are called by nothing; that this is currently safe because writers are refused at admission; and which bead changes it.\n\nSCRUTINY\nMEDIUM\n\nRationale: this is an audit of whether closed enforcement beads are actually in force, so its output is a set of claims about guarantees the system does or does not make. Getting it wrong in the optimistic direction reports a guarantee that is not enforced, which is worse than reporting nothing. It changes no runtime behaviour itself, which is why this is MEDIUM rather than HIGH.\n\nSCOPE\nThe unitAI-rrdnt epic description, which is the surface people actually read, and docs/design/native-activation-reconciliation.md as the second surface. The statement names: what exists (workspace-lease.ts, workspace-reconcile.ts), what calls it (nothing on the enforcement path; specialist_status calls the read-only projection), why that is currently safe (native-host.ts:199 refuses write-capable activations), and the bead that changes it (unitAI-rrdnt.36, Phase 10).\n\nAdd the pattern, not just the incident. Three modules in this epic have reached complete, tested, closed and called by nothing: the workspace lease, reconciliation, and per the coordinator the interaction transport, which had no deliver hook wired and so could not carry a question to a coordinator until it was found. All three passed their own suites. The method that caught every one was grepping for the import, not reading the code. A lane that internalises green does not mean reachable will find the fourth faster than any process will.\n\nNON_GOALS\nDoes not wire anything. Does not reopen .21 or .31 — both are correctly closed for what they contracted to deliver. Does not add a lint rule, a CI check, or an unused-export detector; if that is wanted it is a separate bead with its own false-positive budget. Does not edit the closed beads' notes.\n\nCONSTRAINTS\nThe statement must be accurate at the granularity above: enforcement unwired, read projection live. A statement that says reconciliation is entirely uncalled is falsifiable by one grep and will be dismissed along with the warning it carries.\nCite native-host.ts:199 by symbol (writer_not_supported_in_phase_1) as well as line, because the line will move.\n\nVALIDATION\n1. The epic description carries the statement; bd show unitAI-rrdnt displays it without opening a file.\n2. docs/design/native-activation-reconciliation.md carries the same statement.\n3. Each claim in the statement is re-verified against the tree at the time of writing, not copied from this bead: grep for callers of acquire, release, admitToolCall and reconcile in src/, and confirm the admission refusal is still present.\n4. unitAI-rrdnt.36 gains a VALIDATION line requiring this statement to be retired when Phase 10 lands, so the warning does not outlive the gap. Same rule the docs lane applied to the .38 holes-table row.\n\nOUTPUT\nThe enforcement-status statement on both surfaces, and the retirement requirement recorded on unitAI-rrdnt.36.",
+      "id": "unitAI-rrdnt.39",
+      "issue_type": "task",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "status": "open",
+      "title": "State enforcement status on the epic: closed lease and reconciliation beads are not in force",
+      "updated_at": "2026-09-08T11:27:05Z"
+    },
+    "unitAI-rrdnt.50": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-07T23:11:58Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-07T23:11:58Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.50",
+          "metadata": "{}",
+          "type": "parent-child"
+        },
+        {
+          "created_at": "2026-09-07T23:11:58Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt.35",
+          "issue_id": "unitAI-rrdnt.50",
+          "metadata": "{}",
+          "type": "discovered-from"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\ntsconfig.json has include: [\"src/**/*\"] and excludes only node_modules and dist. No file under tests/ is typechecked. `bunx tsc --noEmit` reports clean while a test file calls a method that does not exist on the class it imports.\n\nThis is not hypothetical. The acceptance AX live case in tests/integration/activation/native-activation.live.test.ts called `host.snapshot(activationId)` at two places from the day it was written. NativeActivationHost has no `snapshot` member; the method is `inspect()` (src/activation/native-host.ts:732). The case could never pass — it threw `TypeError: host.snapshot is not a function` before reaching any assertion — and this was found only by running the live suite on 2026-09-07 during unitAI-rrdnt.35. A self-diagnosing failure block added to that same case shortly before would itself have thrown before printing its diagnostic.\n\nThe general form: a green `tsc --noEmit` on this repo is evidence about src/ and nothing else. Any claim of test-side correctness that leans on it is unfounded, and a gated live test that never runs in CI has no other mechanism that would catch the error.\n\nSUCCESS\nType errors in test files fail a typecheck run.\n\nSCOPE\ntsconfig.json, or a second tsconfig for tests, plus whatever the resulting backlog requires. The quality-gate hook wiring if it invokes tsc with an explicit project.\n\nNON_GOALS\nNo test rewrites beyond fixing type errors the widened check surfaces. No change to which tests run, to vitest configuration, or to the live-smoke gating.\n\nCONSTRAINTS\nWidening the include will surface an existing backlog of errors across tests/ — size it before committing to a single-commit fix. The build must not start emitting test files into dist. Vitest globals and the bun:sqlite / bun -e patterns used by the live tests must still typecheck.\n\nVALIDATION\n1. Reintroduce `host.snapshot(...)` in a test file and confirm the typecheck fails on it; revert.\n2. `bunx tsc --noEmit` (or the project-specific invocation) reports zero errors with tests included.\n3. `bun run build` output is unchanged — diff dist before and after.\n\nOUTPUT\nA typecheck that covers tests/, with the surfaced errors fixed or explicitly triaged.\n\nSCRUTINY\nLOW for the config change itself. MEDIUM for the backlog it exposes: a silenced error is worse than an unchecked one.",
+      "id": "unitAI-rrdnt.50",
+      "issue_type": "bug",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "tsconfig excludes tests, so no test file is ever typechecked",
+      "updated_at": "2026-09-07T23:11:58Z"
+    },
+    "unitAI-rrdnt.50.1": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T11:09:19Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T11:09:19Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt.50",
+          "issue_id": "unitAI-rrdnt.50.1",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nunitAI-rrdnt.50 landed the CAPABILITY to typecheck tests (tsconfig.test.json + 'bun run typecheck:tests') but not a clean tree. The baseline is 350 errors, so the check cannot be wired into a blocking gate yet. Until it is, a test file can still reference a method that does not exist — which is exactly how host.snapshot() shipped in a self-diagnosing block that would have thrown before printing.\n\nSUCCESS\n'bun run typecheck:tests' exits 0, and the check runs in CI alongside the src typecheck.\n\nSCRUTINY\nLOW\n\nSCOPE\nTest files only. Measured baseline by file, 2026-09-08 at 71eb1439:\n  111  tests/unit/pi/specialist-subagents-extension.test.ts\n   31  tests/unit/specialist/activation-peer-adapter.test.ts\n   19  tests/unit/specialist/script-runner.test.ts\n   17  tests/unit/cli/run.test.ts\n   14  tests/unit/cli/ps.test.ts\n   11  tests/unit/cli/init-global.test.ts\n  147  spread across the remainder\nThe 111 in the extension file are mostly implicit-any on callbacks, because that suite drives an .mjs extension through a dynamic import and gets no types back. Expect that file to need a typed shim rather than 111 individual annotations.\n\nNON_GOALS\nDoes not change any test's behaviour or assertions. Does not relax strictness in tsconfig.json to make errors disappear — the point is to find defects, and a weakened config finds fewer.\n\nCONSTRAINTS\nThe suite must stay green throughout: 2310 passing, 188 files. A type-only change that alters runtime behaviour is a regression even if tsc goes quiet.\nAt least one error is a real drift signal rather than noise — tests/unit/pi/session.test.ts:778 builds a ResolvedToolContract literal missing exposedExtensionSources, i.e. a fake that no longer matches the type it doubles. Triage for that class before mass-annotating; those are the ones this bead exists to catch.\n\nVALIDATION\n1. 'bun run typecheck:tests' exits 0.\n2. 'bun --bun vitest run tests/unit' still reports 2310 passed.\n3. The gate is wired so a future test referencing a non-existent method fails the build.\n\nOUTPUT\nA clean typecheck:tests, the gate wired, and a note on any real defect the cleanup uncovered.",
+      "id": "unitAI-rrdnt.50.1",
+      "issue_type": "chore",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "Clear the 350 test-file type errors so typecheck:tests can become a gate",
+      "updated_at": "2026-09-08T11:09:19Z"
+    },
+    "unitAI-rrdnt.56": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T11:20:38Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T11:20:38Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.56",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nunitAI-rrdnt.48 added an inline 'contract' parameter to the Pi frontend's specialist_dispatch: either bead_id or contract, exactly one, both refused rather than resolved by preference. The MCP frontend (src/tools/specialist/activation.tool.ts) still requires bead_id and has no contract parameter at all. A coordinator's dispatch call is therefore not portable between the two surfaces, and the friction .48 was filed to remove is removed on only one of them.\n\nFound by the phase12-docs lane while documenting .48, verified at 3b2a2611. It documented the delta rather than the shape, which was the right call for a doc but leaves the product question open.\n\nSUCCESS\nEither MCP accepts an inline contract on the same terms as Pi — same gate, run BEFORE any bead is created, both-or-neither refused — or the asymmetry is deliberate and documented as such with its reason.\n\nSCRUTINY\nLOW\n\nSCOPE\nsrc/tools/specialist/activation.tool.ts and its schema. The readiness gate and createBeadFromContract already exist and are exported through the lib seam; this is wiring, not new mechanism.\n\nNON_GOALS\nDoes not change the Pi frontend. Does not change the gate. Does not relax the requirement that a refused dispatch leaves the board unchanged.\n\nCONSTRAINTS\nThis is a PRODUCT decision before it is an implementation: MCP's bead_id-only shape may be intentional, since the MCP coordinator is Claude Code and has the bd CLI available directly, while the Pi coordinator may not. Decide that first.\nIf MCP follows, it must reuse the SAME extractSections/evaluateBeadReadiness path — a second gate would let the two frontends disagree about admission, which is the failure this epic has spent the day removing.\n\nVALIDATION\nEither an MCP dispatch with an inline contract is admitted and creates its bead, or the doc states the asymmetry and why.\n\nOUTPUT\nThe parameter and its tests, or a documented decision.\n\nREFERENCES\nunitAI-rrdnt.48 (the Pi implementation), unitAI-rrdnt.32 (the doc that found it), unitAI-rrdnt.54 (the same-line format both frontends now accept).",
+      "id": "unitAI-rrdnt.56",
+      "issue_type": "task",
+      "notes": "DEFERRED by operator decision 2026-09-08. MCP is not the Pi coordinator's path — it is for Claude and non-pi agents, and will follow the newer (0728) MCP protocol. Bringing the MCP frontend to parity with a Pi-only convenience is the wrong direction while that migration is pending.\n\nFOR THE RECORD, since this bead was filed as a parity gap: the PRD's MCP obligation is MET. Phase 13 says 'Expose the same native activation runtime through MCP. No CLI shell-out.' — closed as unitAI-rrdnt.33. Inline contracts arrived later on the Pi side via unitAI-rrdnt.48, so this is post-PRD drift between two frontends, not an unmet requirement. Deferring costs nothing against the PRD.\n\nThis is also continuous with unitAI-rrdnt.10, which already demoted MCP as the Claude transport after finding Claude Code's MCP CLIENT lacks sampling/createMessage, ignores resources/subscribe, and discards logging notifications — the peer/roster adapter was promoted to primary for exactly that reason.\n\nREOPEN WHEN: the 0728 protocol migration lands and the question becomes what the MCP surface should look like for non-pi agents, rather than whether it should mirror Pi.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "deferred",
+      "title": "MCP specialist_dispatch has no contract parameter, so dispatch calls are not portable between frontends",
+      "updated_at": "2026-09-08T14:12:52Z"
+    },
+    "unitAI-rrdnt.57": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T11:27:36Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T11:27:36Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.57",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nEvery description of the dispatch contract — the tool parameter text on both frontends, the planning skill, CLAUDE.md, the bead template — calls it the 7-section contract and then appends 'plus a SCRUTINY level'. The gate requires eight things. SCRUTINY is named last, outside the count, in every place a writer looks.\n\nThe result is measurable rather than theoretical. Audited every open bead on this epic with evaluateBeadReadiness on 2026-09-08: FOUR contracts hand-written by the coordinator omitted SCRUTINY and would have been refused at dispatch — a live operator probe bead (refused live, in a real pi session), and epic beads .36, .30 and .39. Four out of four. None was caught by reading; all were caught by running the gate.\n\nThis is the same shape as unitAI-rrdnt.54 one layer out. There the tool description named the sections and never stated the format the parser required; here it states a count that is wrong by one, and the omitted item is exactly the one outside the count.\n\nSUCCESS\nA writer following any description of the contract produces something the gate admits. The count and the requirement agree.\n\nSCRUTINY\nLOW\n\nSCOPE\nThe wording wherever the contract is described: both frontends' tool parameter text, the planning skill, CLAUDE.md's dispatch section, and any bead template. Not the gate — the gate is right.\n\nNON_GOALS\nDoes not make SCRUTINY optional. Does not change which sections are required. Does not change the refusal shape.\n\nCONSTRAINTS\nDo not fix this by making the gate lenient. SCRUTINY drives reviewer escalation on sensitive surfaces and a contract without it is genuinely underspecified — the requirement is correct and only its description is wrong.\nWhatever the new wording is, it must be the SAME on both frontends. Divergent wording between the two is the failure documented in .55 and .56.\n\nVALIDATION\nEvery place that describes the contract states the same count, and that count matches what evaluateBeadReadiness enforces.\n\nOUTPUT\nThe corrected wording, and a note on the audit method: run the gate over the board rather than reading beads, because reading is what missed this four times.",
+      "id": "unitAI-rrdnt.57",
+      "issue_type": "bug",
+      "notes": "PARTLY DONE 2026-09-08. Both frontends now state the valid SCRUTINY levels verbatim (LOW/MEDIUM/HIGH/CRITICAL) and say EIGHT required parts rather than seven — landed in b3c98a1e after an operator hit exactly this, inventing 'normal' and burning a dispatch.\n\nREMAINING: the phrase '7-section contract' still appears in config/skills/using-specialists/SKILL.md and CLAUDE.md. Those are what a coordinator reads BEFORE it ever sees a tool description, so they are the earlier point of failure and the bead is not done.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "The '7-section contract' actually requires eight things, and SCRUTINY is the one always dropped",
+      "updated_at": "2026-09-08T14:06:27Z"
+    },
+    "unitAI-rrdnt.60": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T13:26:59Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T13:26:59Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.60",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nOperator review 2026-09-08, from a real coordinator session, raised six friction points. Three are fixed; these three are not, and they are the ones that cost the most.\n\n1. NO BUILD IDENTITY ON THE SURFACE (this is unitAI-rrdnt.55's shape, sharpened). The operator's only way to tell a stale runtime from broken input was to DIFF THE TOOL DESCRIPTION against source — the loaded copy lacked a sentence the on-disk file had. That tell is discoverable only by reading the repo. Nothing in dispatch or status exposes which build is loaded.\nSuggested shape, which satisfies .55's constraint without per-call imports: surface a stable build identity in specialist_status and annex it to every rejection — 'module loaded <id>, dist on disk <id>'. When they differ, say so IN THE REFUSAL. One refusal with two causes is exactly where messages lie, and this session proved it.\n\n2. THE LEASE IS UNEXPLAINED TO THE CALLER. 'Workspace lease' appears in refusals with no statement of what it is, how to check availability, or that it is held for the duration of a turn. A coordinator meeting workspace_held_by_another_writer has no model of what to do next.\n\n3. LATENCY IS UNSTATED. Descriptions say to check status without any sense of the per-turn budget the runtime comments measure (~1-2 min). Absent that, a coordinator either polls hot or assumes a hang.\n\nALSO RAISED, and worth doing together with the above: tool descriptions mix operating instructions with PRD rationale (VALIDATION 5, .44/.48 cross-refs). For source readers that is valuable; as model-facing text it competes with the instructions. Keep one 'why' line per tool, move the rest to docs.\n\nSUCCESS\nA coordinator meeting a refusal can tell a stale build from a bad contract without reading source, knows what a workspace lease is and how long one is held, and has a latency expectation. Tool descriptions carry operating instructions plus at most one line of rationale.\n\nSCRUTINY\nLOW\n\nSCOPE\nconfig/pi-extensions/specialist-subagents/index.mjs and src/tools/specialist/activation.tool.ts descriptions and refusal rendering; whatever computes the build identity.\n\nNON_GOALS\nDoes not change admission, the gate, or the lease itself. Does not import dist per call — unitAI-rrdnt.55 rules that out and the reasoning stands.\n\nCONSTRAINTS\nBuild identity must be cheap at load and STABLE across identical builds — a timestamp changes every rebuild and would make two identical builds look different. The config fingerprint the runtime already computes is the closer precedent.\nBoth frontends must say the same thing. Divergent wording between them is the defect recorded in .55 and .56.\n\nVALIDATION\n1. A coordinator running a stale build against a valid contract gets a refusal that names staleness as a candidate cause.\n2. Both frontends carry identical lease and latency wording.\n\nOUTPUT\nThe build identity, the refusal annotation, and the trimmed descriptions.\n\nREFERENCES\nOperator review 2026-09-08. Already fixed from the same review: the accepted heading forms (unitAI-rrdnt.54), the SCRUTINY level list and the eight-not-seven correction (unitAI-rrdnt.57), created_bead_id plus a lifecycle note on inline dispatch, and a routing line to `sp run <name> --prompt` for untracked one-offs.",
+      "id": "unitAI-rrdnt.60",
+      "issue_type": "task",
+      "labels": [
+        "contract:ready"
+      ],
+      "notes": "Taken with unitAI-rrdnt.55 as one tranche by the pi-specialists coordinator, 2026-09-08. .60 subsumes .55 fix; do them as one change. dawid-0b is not working these.\nOWNERSHIP CORRECTION 2026-09-08 — this bead was assigned in error and is UNOWNED again.\n\nI assigned it to 'pi-specialists' on the strength of a peer message saying that session was taking .55/.60 as a tranche. The session then corrected me: the activation I was talking to is a READ-ONLY explorer (bead unitAI-v29bw, boundary rules explorer-readonly) with no bd tooling and no mutation surface. It could not have claimed a bead, could not write to one, and cannot do this work from inside that activation.\n\nSo I recorded an owner who was structurally incapable of being one, and had the peer not flagged it, .55 and .60 would have sat idle looking owned. That is worse than unowned: an unowned bead gets picked up, an incorrectly-owned one does not.\n\nMY ERROR, precisely: I treated a peer's statement of intent as a durable ownership fact and wrote it to the board without verifying the session could act on it. Assignment is board state and should follow evidence, not a message. The peer caught it and called it a coordination hazard rather than a detail, which is the right severity.\n\nThese need a fresh WRITE-CAPABLE tracked activation, dispatched as one change (.60 subsumes .55's fix).\nANNEX POINT PINNED CORRECTLY 2026-09-08, superseding how I phrased it above.\n\nI wrote 'annex the build identity to the REFUSAL, not only to status', which puts the refusal first and would bias an implementation toward treating other surfaces as optional. That is wrong for the case that produced this bead.\n\nTHE CORRECT REQUIREMENT: identity must be present on EVERY outcome surface — the refusal, the status read, and the SUCCESSFUL dispatch result alike. The reason is that the incident behind this bead was not a build-identity failure at all. There was no identity anywhere to be wrong. It was a participant that ran a correct, successful dispatch and could not tell afterwards which build had produced the behaviour it observed — and so nearly retracted a correct finding.\n\nA refusal-first design would leave that exact case uncovered, because nothing was refused. 'Identity on every outcome' is the requirement; 'especially on refusals' is a false emphasis that happens to describe only the second-worst symptom.\n\nClarified by the pi-specialists session, which is the participant it happened to.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "Operator review: surface build identity, explain the lease, state latency, trim rationale",
+      "updated_at": "2026-09-08T15:59:08Z"
+    },
+    "unitAI-rrdnt.62": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T14:24:26Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T14:24:26Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.62",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nThe MCP server uses StdioServerTransport (src/server.ts:244) and owns NativeActivationHost as an in-process field (src/server.ts:135). Stdio is connection-scoped: when the client disconnects the process exits, the host goes with it, and EVERY live native Specialist dies mid-flight.\n\nThat contradicts properties the PRD states explicitly. Section 1 requires a Specialist to be 'persistent' and 'resumable'. native-host.ts's own docstring says 'Session lifetime deliberately exceeds turn lifetime: reaching agent_settled makes a Specialist waiting and resumable, never disposed. Disposal is an explicit act.' Under stdio, disposal is NOT an explicit act — a dropped client disposes everything, silently, with no forensic settle and no lease release.\n\nTO BE PRECISE ABOUT WHAT THE PRD DOES AND DOES NOT SAY: it never names a transport. 'streamable', 'http', 'sse' and 'stdio' each appear ZERO times. So this is not a violation of a named-transport requirement; it is a violation of the persistence and resumability requirements the PRD does state, which stdio plus an in-process host cannot satisfy. The stronger argument is the property one, and it does not depend on which protocol revision is current.\n\nHOW THIS GOT MISSED: unitAI-rrdnt.33 (Phase 13) validated that the tools WORK over MCP — a real stdio client against the built dist server reaching state 'running' with a real pi_session_id. It never tested that an activation SURVIVES the client going away. Phase 13 was closed on tool reachability, not on lifetime. I closed it; this is my miss.\n\nSUCCESS\nA native activation survives the MCP client disconnecting and reconnecting, and remains resumable — or the coupling is documented as intended with its consequence stated wherever persistence is claimed.\n\nSCRUTINY\nHIGH\n\nSCOPE\nsrc/server.ts transport selection and host ownership. The decision about whether the host outlives the connection belongs in this bead.\n\nNON_GOALS\nDoes not change the Pi extension, which is unaffected — its host lives in the pi process and has no MCP connection to lose. Does not change tool semantics.\n\nCONSTRAINTS\nThe SDK in tree is @modelcontextprotocol/sdk 1.29.0, whose LATEST_PROTOCOL_VERSION is 2025-11-25 and which also speaks 2025-06-18, 2025-03-26, 2024-11-05 and 2024-10-07. Our server pins nothing and takes the SDK default. Streamable HTTP with a session id is the transport that permits reconnection and parallel clients; moving to it is necessary but NOT sufficient — if the host stays a field on the server object, a process restart still kills every activation. The lifetime question is separate from the transport question and must be answered explicitly.\nDo not treat 'the connection came back' as 'the activation survived'. That is the same inference-from-absence the uncertain-workspace design refuses everywhere else.\n\nVALIDATION\n1. Dispatch a native activation over MCP, drop the client, reconnect, and observe the activation still present and resumable.\n2. A dropped client that DOES kill activations produces forensic settle events and releases workspace leases, rather than vanishing silently.\n\nOUTPUT\nEither a transport plus host-lifetime change that satisfies (1), or a documented decision with the consequence stated wherever the PRD's persistence claim is repeated.\n\nREFERENCES\nRaised by the operator 2026-09-08. Related: unitAI-rrdnt.33 (Phase 13, closed on tool reachability), unitAI-rrdnt.10 (which already demoted MCP as the Claude push transport after finding Claude Code's MCP client lacks the needed surfaces).",
+      "id": "unitAI-rrdnt.62",
+      "issue_type": "bug",
+      "notes": "TRANSPORT AVAILABILITY CHECKED 2026-09-08, against the packages rather than from memory. The target is MCP spec 2026-07-28 (stateless connections), per the operator.\n\n  installed:  @modelcontextprotocol/sdk 1.29.0\n              LATEST_PROTOCOL_VERSION = '2025-11-25'\n              SUPPORTED = ['2025-11-25','2025-06-18','2025-03-26','2024-11-05','2024-10-07']\n  latest published: 1.30.0 — fetched and unpacked to check\n              LATEST_PROTOCOL_VERSION = '2025-11-25'  (unchanged)\n              '2026-07-28' appears ZERO times in its types.js\n\nSo the official TypeScript SDK does NOT yet speak 2026-07-28, even at head. Upgrading 1.29.0 -> 1.30.0 buys nothing for this bead. That reorders the work:\n\n  1. The HOST LIFETIME fix is available NOW and is the larger half of the defect. Decoupling NativeActivationHost from the server object means a dropped client stops killing activations regardless of which transport is underneath. This bead's SUCCESS can be met on the current transport.\n  2. The TRANSPORT move is blocked on the SDK, not on us. Options when it matters: wait for SDK support, implement 2026-07-28 outside the SDK, or move to Streamable HTTP on 2025-11-25 — which already permits reconnection and parallel clients and is a strict improvement on stdio even though it is not the target spec.\n\nDo NOT do (2) before (1). A stateless transport in front of a host that still dies with its process just relocates the failure.\n\nRe-check the SDK before starting: this reading is from 2026-09-08 and a version bump is exactly the kind of fact that goes stale.\nDEFERRED by operator decision 2026-09-08 — the transport migration is a large piece of work in its own right and MCP is not the Pi coordinator's path.\n\nCARRIED FORWARD, so the deferral is not read as 'no problem here': the HOST LIFETIME half is independent of the transport and is the larger half of the defect. NativeActivationHost is a field on the MCP server object, so process exit disposes every live Specialist with no forensic settle and no lease release. That is fixable on stdio today and does not wait for the SDK.\n\nIf MCP is picked up again for Claude and non-pi agents, do the lifetime decoupling FIRST. A stateless transport in front of a host that still dies with its process only relocates the failure.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "status": "deferred",
+      "title": "MCP runs on stdio with an in-process host, so a dropped client kills every live Specialist",
+      "updated_at": "2026-09-08T15:18:20Z"
+    },
+    "unitAI-rrdnt.63": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T15:27:52Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T15:27:52Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt",
+          "issue_id": "unitAI-rrdnt.63",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nThere is no lightweight NATIVE path for a quick, untracked question. specialist_dispatch always creates a durable Bead — from bead_id or from an inline contract — so a coordinator that wants a two-minute answer either writes a contract it does not want tracked, or leaves the native runtime entirely.\n\nObserved live 2026-09-08: a coordinator with a 'small bounded question about this repo' ran `sp run --prompt` as a BACKGROUND TASK instead of dispatching. It did that because the contract parameter told it to — wording I added the same day, which said native dispatch 'is not the path for a throwaway question' and pointed at the CLI. That wording is now removed and guarded by a test, but the underlying gap it was trying to paper over is real and is this bead.\n\nWHY SHELLING OUT IS THE WRONG ANSWER, and why the removed wording was harmful rather than merely imprecise:\n  - PRD Phase 13 says 'No CLI shell-out'. The native runtime exists to end it.\n  - A shelled `sp run` has NO Fleet entry, no ask/answer channel, no workspace lease and no native forensics. The coordinator loses every surface this epic built, silently, and gets a PID and an output file instead.\n  - It is not even cheaper: a native activation is in-process, while sp run spawns.\n\nSUCCESS\nA coordinator can delegate a bounded question natively without creating a board record it does not want, and without leaving the Fleet, the ask channel or forensics.\n\nSCRUTINY\nMEDIUM\n\nSCOPE\nspecialist_dispatch and the Fleet/forensic projections. The decision about what an untracked native activation means belongs in this bead.\n\nNON_GOALS\nDoes not remove the bead requirement for tracked work — the hard gate is the epic's central invariant and stays. Does not reintroduce a free-form prompt parameter on the tracked path.\n\nCONSTRAINTS\nAn ephemeral activation must still be OBSERVABLE. The Fleet must show it and forensics must record it; 'untracked' means no Bead, never no evidence. An invisible activation is worse than a shelled one, because at least the shell leaves a PID.\nWhatever it is called must not read as the easy default. The gap this closes is real, but the failure mode just demonstrated is a coordinator preferring the lighter path for work that should be tracked.\nDo not solve it by weakening the contract gate for tracked dispatches.\n\nVALIDATION\n1. A coordinator answers a bounded question natively with no Bead created.\n2. That activation appears in the Fleet and writes forensic rows.\n3. The tracked path is unchanged and still refuses an incomplete contract.\n\nOUTPUT\nEither the ephemeral native path, or a recorded decision that every native activation is Bead-backed and the CLI is the sanctioned escape hatch — in which case the tool description must say so without implying the CLI is preferable for small work.\n\nREFERENCES\nOperator report 2026-09-08 (suggestion 4). The harmful wording landed in b3c98a1e and was removed with two guard tests.",
+      "id": "unitAI-rrdnt.63",
+      "issue_type": "task",
+      "notes": "OPERATOR RULING 2026-09-08, and it narrows this bead's OUTPUT to one option.\n\nThe `sp` CLI is DEFERRED — the extension is what runs Specialists now. So a one-off either lives INSIDE the extension or it does not exist at all. The 'CLI is the sanctioned escape hatch' branch of this bead's OUTPUT is struck; do not resolve it that way.\n\nREMOVED FROM THE SURFACE ENTIRELY, not just from specialist_dispatch: every mention of the CLI in model-facing text. specialist_list was the second offender and arguably the worse one — every one of its answers ended with 'Full CLI surface: sp help', which lands at exactly the moment a coordinator is deciding how to delegate. Listing notes now say 'Dispatch through specialist_dispatch. Do not shell out to the specialists CLI.'\n\nGuarded by two tests: one walks EVERY registered tool's description and parameter descriptions and fails on /\\bsp (run|help|ps|feed)\\b/, the other asserts the listing RESULT carries no CLI reference. An existing .49 assertion that pinned 'sp help' in the note was updated, not deleted — it encoded the design that has now been ruled out.\n\nThe gap this bead names is unchanged and still real: there is no lightweight native path, and until there is, a coordinator with a two-minute question has only the tracked path. That is now the intended constraint rather than something to route around.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "No lightweight NATIVE path for a quick question, so coordinators shell out to sp run",
+      "updated_at": "2026-09-08T15:29:27Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-07T23:58:03Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt.45",
+        "issue_id": "unitAI-rrdnt.30",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-rrdnt.30",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt.45",
+      "target_present_in_snapshot": true,
+      "target_title": "An escalation does not wake the coordinator: the operator must poll to discover a blocked child",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-07T13:16:18Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt.25",
+        "issue_id": "unitAI-rrdnt.30",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-rrdnt.30",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt.25",
+      "target_present_in_snapshot": true,
+      "target_title": "Register the activation runtime as a Claude peer so pushes can be confirmed — needs a user ruling",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-07T17:59:03Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt.36",
+        "issue_id": "unitAI-rrdnt.39",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-rrdnt.39",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt.36",
+      "target_present_in_snapshot": true,
+      "target_title": "Phase 10 — enable write-capable Specialist roles on the native runtime",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-07T23:11:58Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt.35",
+        "issue_id": "unitAI-rrdnt.50",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-rrdnt.50",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt.35",
+      "target_present_in_snapshot": true,
+      "target_title": "Phase 11 — activation model override, validation and fallback semantics",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.24"
+      },
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.30"
+      },
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.38"
+      },
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.39"
+      },
+      {
+        "children": [
+          {
+            "children": [],
+            "id": "unitAI-rrdnt.50.1"
+          }
+        ],
+        "id": "unitAI-rrdnt.50"
+      },
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.56"
+      },
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.57"
+      },
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.60"
+      },
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.62"
+      },
+      {
+        "children": [],
+        "id": "unitAI-rrdnt.63"
+      }
+    ],
+    "id": "unitAI-rrdnt"
+  },
+  "issues": {
+    "unitAI-rrdnt": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-06T11:25:40Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nSpecialists today execute via `sp run` -> PiAgentSession -> `spawn('pi', args)` subprocess RPC (src/pi/session.ts:1022). That makes a Specialist operationally separate from the coordinator's live session, so coordinators fall back to generic Pi subagents, manual sp run, or doing the work directly. Specialists are also one-shot: a child dies at the end of a turn, cannot ask a clarifying question and resume, and cannot be attached to.\n\nSUCCESS\nA canonical NativeActivationHost in xtrm-dev/specialists hosts persistent, interactive, Bead-backed Pi AgentSession children. Pi (via extension) and Claude Code (via MCP plugin) are thin frontends over the same runtime; a future XTRM Chain scheduler can call it without TUI state. observability.db remains the single forensic store. Exactly one writer per mutable workspace, coordinator included.\n\nSCOPE\nImplements ~/dev/xtrm/docs/specialists/PRD-Native-Specialist-Subagents-for-Pi.md (em-dash filename, 4517 lines) phases 0-15, acceptance matrix A-BI. Child beads carry per-phase contracts.\n\nNON_GOALS\nChain scheduler, ResolvedChain lifecycle, Substrate daemon/state-store, native Substrate step-issue creation, seed containers, epic/wave/node runtime, automatic worktree provisioning per Specialist, automatic merge/publish, multi-host or networked Specialist transport, replacing pi-intercom / pi-claude-link / XTRM Channels / Beads, Claude-native Specialist reimplementation. Legacy `sp run` path is not removed in this epic.\n\nCONSTRAINTS\nRuntime stays in xtrm-dev/specialists; no move into Core. Pi extension must NOT be tool -> `sp run` subprocess; Claude integration must NOT be MCP -> Bash -> `sp run`. Both call shared library code directly. SpecialistLoader stays authoritative; no second resolver. No telemetry side database. Public Pi SDK APIs only where possible. Incremental reviewable commits; no giant rewrite of the legacy runner before the shared seams are proven.\n\nVALIDATION\nPRD section 130 acceptance matrix A-BI (47 scenarios) as automated tests plus integration smokes. Per-phase child beads carry their own VALIDATION.\n\nOUTPUT\nWorking native activation runtime, Pi extension, Claude Code plugin/MCP server, adapted using-specialists skill, feature-parity matrix, developer/operator docs.\n\nSCRUTINY\nHIGH. Touches capability/permission resolution, workspace mutation authority, and the forensic store. A lease bug silently allows two concurrent writers in one worktree; a capability regression grants a child tools its Specialist definition denies.",
+        "id": "unitAI-rrdnt",
+        "issue_type": "epic",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Native interactive XTRM Specialists (Pi AgentSession + Claude Code)",
+        "updated_at": "2026-09-06T11:25:40Z"
+      }
+    },
+    "unitAI-rrdnt.24": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-07T10:41:53Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-07T10:41:54Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.24",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\ntests/unit/cli/status.test.ts runs 11 tests in ~84s -- between 4.2s and 8.8s per test -- and passes in isolation. Under full-suite parallelism it intermittently exceeds the 30s per-test testTimeout: a run on master at 7bd186ed produced 2 failures (\"completes without throwing\", \"prints Specialists section header\") while three prior full runs of the same file passed. The failures are load-dependent, not assertions about wrong behaviour.\n\nSUCCESS\nThe status CLI tests are fast enough that full-suite parallelism does not push them past the timeout, or the reason each test needs seconds is understood and documented so the timeout is a deliberate setting rather than a coincidence.\n\nSCOPE\nEstablish where the per-test seconds go -- the likely candidates are repeated subprocess work (git rev-parse, bd, pi version probes) performed per status invocation, and resolveObservabilityDbLocation running spawnSync('git') twice per call against a non-repo temp dir. Then either remove the repeated work in the test setup, stub the subprocess boundary, or justify and raise the timeout for this file specifically.\n\nNON_GOALS\nDoes not change status CLI production behaviour. Does not disable or skip the tests. Does not raise the global testTimeout -- that hides slowness everywhere to fix it in one place.\n\nCONSTRAINTS\nDo not weaken assertions to make the file faster. If the fix is a stub, it must not stub the code path under test. Confirm whether the slowness predates the observability test isolation landed in unitAI-rrdnt.16 by measuring the same file at a commit before it; if isolation contributed, say by how much rather than assuming.\n\nVALIDATION\n1. A measurement showing where the per-test time goes.\n2. The file passes in three consecutive full-suite runs under default parallelism.\n\nOUTPUT\nEither a speed fix or a documented, file-scoped timeout with the measurement behind it.\n\nSCRUTINY\nLOW -- test-infrastructure flakiness, but the kind that trains a team to ignore red.",
+        "id": "unitAI-rrdnt.24",
+        "issue_type": "bug",
+        "notes": "Second sighting of a related-but-distinct failure, 2026-09-07 (unitAI-rrdnt.35): running the native-activation LIVE suite and the full unit suite concurrently produced a 'bead_unreadable' dispatch refusal on a probe bead that the same gate had read successfully minutes earlier. Passes cleanly in isolation. Hypothesis, NOT root-caused: bd lock contention, since several unit tests shell out to bd and each bd op round-trips through the Dolt sync. Recorded so a third sighting has something to match against. Also observed: the live suite's afterAll inherited the default 10s hook budget and timed out once it closed two probe beads instead of one — bd close is not cheap under this sync.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "status CLI tests take ~6s each and time out under full-suite parallelism",
+        "updated_at": "2026-09-08T00:04:33Z"
+      }
+    },
+    "unitAI-rrdnt.30": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-07T13:16:18Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-07T13:16:18Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.30",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-07T13:16:18Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt.25",
+            "issue_id": "unitAI-rrdnt.30",
+            "metadata": "{}",
+            "type": "discovered-from"
+          },
+          {
+            "created_at": "2026-09-07T23:58:03Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt.45",
+            "issue_id": "unitAI-rrdnt.30",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "PROBLEM\nThe reply-based delivery criterion is implemented and unit-tested, and the inbound path is confirmed by a live coordinator, but no Specialist has yet asked a question over the peer channel and been resumed by a real reply. unitAI-rrdnt.22 (Phase 6 ask/escalate) and unitAI-rrdnt.25 (registration and reply-as-delivery) are both closed, so nothing open tracks the end-to-end proof. Marking the criterion superseded was correct; marking it met is not, and the gap between those two is exactly the finding that produced the fourth boundary.\n\nSUCCESS\nA Specialist running under NativeActivationHost pushes a question to a busy Claude coordinator, that coordinator replies, the reply is correlated by inReplyTo, the pending record moves from sent_unconfirmed to delivered, and the child resumes in the same session. Acceptance AX, observed rather than inferred.\n\nSCRUTINY\nHIGH\n\nRationale: this bead's own CONSTRAINTS record that THREE separate claims about this transport were falsified by live probes after passing on inspection — the procStart format, the receipt premise, and the prior-state boundary on reply confirmation. The receipt premise has since failed a fourth time (unitAI-rrdnt.45: attemptDelivery returned true with no deliver hook, so a pending record reached 'delivered' with no receiver). A path with that record does not get a routine review.\n\nSCOPE\nWiring the existing pieces and running the observation. All parts exist: PeerAdapter.ask() and the reply-as-delivery boundaries (src/activation/transport/), registration (peer-registration.ts), and the ask/escalate path on a live AgentSession (ask-tool.ts, native-host.ts).\n\nNON_GOALS\nNo new transport. No change to the four confirmation boundaries without evidence that one of them is wrong.\n\nCONSTRAINTS\nThe proof must be a live coordinator, not a fixture. Three separate claims about this transport have now been falsified by live probes after passing on inspection or on a reading of pi-claude-link: the procStart format, the receipt premise, and the prior-state boundary on reply confirmation. pi-claude-link is evidence of what pi-claude-link sends, never a specification of what Claude Code sends. Do not close on a green unit test.\n\nVALIDATION\n1. A pending record for a question reaches delivered against a reply carrying inReplyTo equal to its message id.\n2. The Specialist resumes on that reply in the same session.\n3. AY: a completion notification tied to a validated ActivationResult.\n4. With the peer channel unavailable, the same question is still answerable through specialist_status and the record does NOT reach delivered.\n\nOUTPUT\nObserved evidence of AX and AY, and whichever of the four boundaries the observation changes, if any.",
+        "id": "unitAI-rrdnt.30",
+        "issue_type": "task",
+        "notes": "Coordinator note 2026-09-08: NOT satisfied by the pi-extension lane's AX proof. That proof ran over the Pi extension with a pi coordinator and the in-process ask tool; .30 requires the PEER channel with a live Claude coordinator and the inReplyTo correlation. Different path, different evidence.\n\nNow blocked on .45 for a concrete reason: the wakeup lane measured that InteractionTransport.attemptDelivery returned true whenever no deliver hook was wired, so a pending record went straight to 'delivered' without any receipt. .30's VALIDATION 1 asks for a record that reaches delivered AGAINST a reply carrying inReplyTo — which cannot be distinguished from the bug's behaviour until the fix lands. Proving .30 on the current code would prove nothing.\n\nThis is the fourth falsified-claim entry for this transport, and it fits the bead's own CONSTRAINTS: three prior claims passed on inspection and failed live. The receipt premise has now failed twice.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-07T17:39:26Z",
+        "status": "open",
+        "title": "Prove AX end to end: a real Specialist push confirmed by a real reply",
+        "updated_at": "2026-09-08T11:27:05Z"
+      }
+    },
+    "unitAI-rrdnt.38": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-07T17:52:37Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-07T17:52:37Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.38",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nsrc/activation/forensic-sink.ts classifies six event names by severity that\nNativeActivationHost never emits: output_validation_failed, retry_failed, tool_blocked and\nlease_denied as errors, activation_uncertain and lease_uncertain as warnings. Measured at\n5bdff6b5 by comparing the sink's ERROR_EVENTS/WARN_EVENTS sets against every emit('...')\ncall site in native-host.ts. The emitted vocabulary is: activation_requested, _rejected,\n_admitted, _starting, _started, _settled, _completed, _failed, _resumed, _disposed,\nstep_contract_compiled, turn_started, turn_completed, retry_started, retry_completed,\noutput_validation_started, output_validation_passed, compaction_started, compaction_completed.\n\nFour of the six are the negative half of a pair whose positive half IS emitted\n(output_validation_passed without _failed, retry_started/_completed without retry_failed).\nA query or dashboard filtering on the failure names returns nothing, and nothing\ndistinguishes \"no failures occurred\" from \"failures are not recorded\". That is the\ncondition unitAI-rrdnt.4 already fixed once in the console: a surface that reads healthy\nbecause the signal was never wired.\n\ntool_blocked, lease_denied and lease_uncertain cannot be emitted before the writer lease is\nwired (unitAI-rrdnt.36) — there is no block or lease decision to report. output_validation_failed,\nretry_failed and activation_uncertain are emittable today.\n\nSUCCESS\nEvery name the sink classifies is emitted by the runtime at the point the condition occurs,\nor is removed from the sink's severity sets. Both halves of each pair are present. No name\nis classified that no producer can emit.\n\nSCOPE\nsrc/activation/forensic-sink.ts and the emit call sites in src/activation/native-host.ts.\nThe lease-dependent names may land with unitAI-rrdnt.36 instead; if so, split them out\nrather than leaving them classified and unemitted.\n\nNON_GOALS\nDoes not add forensic columns for attempt_id or pi_session_id — that is tracked separately.\nDoes not change the event family, the store, or the timeline mappers. Does not add new\nevent names beyond the six already classified.\n\nCONSTRAINTS\nobservability.db remains the single forensic store; no second telemetry database.\nsrc/activation/native-host.ts is owned by the coordinator lane — coordinate before editing.\nRemoving a name from the sink is an acceptable resolution only when nothing should ever\nemit it; a name that a later phase will emit stays and gets a producer.\n\nVALIDATION\n1. For each of the six names, a test drives the runtime into the condition and asserts the\n   row appears in observability.db with the expected severity. Asserting the sink\n   classifies a name it was handed proves nothing about whether anything emits it.\n2. A check compares the sink's ERROR_EVENTS + WARN_EVENTS sets against the emit call sites\n   and fails on any name with no producer, so this cannot regress silently.\n3. docs/native-activation.md \"Known holes\" row for this item is removed when it closes.\n\nOUTPUT\nEmitted events plus the producer/classifier consistency check, and the docs row retired.\n\nSCRUTINY\nMEDIUM. Forensic completeness, not a capability or permission boundary. The risk is a\nsurface that reads healthy because a failure signal has no producer.",
+        "id": "unitAI-rrdnt.38",
+        "issue_type": "task",
+        "notes": "\n## Narrowed 2026-09-07 after 67be44b1\n\nThree of the original six gained producers when the workspace lease was wired into admission\nand tool calls (67be44b1): lease_denied, lease_uncertain and tool_blocked are all emitted by\nNativeActivationHost now. Verified by re-deriving the emitted set from the tree at ee7f847c\nrather than from the earlier list.\n\nRemaining with no producer: output_validation_failed, retry_failed (ERROR_EVENTS) and\nactivation_uncertain (WARN_EVENTS).\n\nThe pairing observation still holds and is still the reason the gap matters: all three are\nthe negative half of a pair whose positive half IS emitted — output_validation_passed\nwithout _failed, retry_started/_completed without retry_failed. A failure filter over those\npairs returns empty whether or not failures happened, and the positive events being present\nmakes the surface look instrumented.\n\nThe producer/classifier consistency check in VALIDATION is unchanged and is the part that\nprevents this drifting again in either direction.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Emit the three forensic event names the sink still classifies with no producer",
+        "updated_at": "2026-09-07T18:56:37Z"
+      }
+    },
+    "unitAI-rrdnt.39": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-07T17:58:47Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-07T17:58:47Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.39",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-07T17:59:03Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt.36",
+            "issue_id": "unitAI-rrdnt.39",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nThe board shows unitAI-rrdnt.21 (workspace writer lease) and unitAI-rrdnt.31 (uncertain workspace reconciliation) both closed and green. A reasonable reader concludes that leasing and reconciliation are in force. Neither is. Verified on the merged tree at 696d3f49: acquire(), release() and admitToolCall() have zero callers in src/; reconcile() has zero callers in src/. Both are harmless only because write-capable activations are refused at admission in src/activation/native-host.ts:199 (writer_not_supported_in_phase_1). A closed bead is the strongest signal this project emits, and two of them currently say something false by implication.\n\nOne correction to the framing this bead was requested under, because it changes what the statement must say. workspace-reconcile.ts IS imported by src/tools/specialist/specialist_status.tool.ts, so the READ path is live: projectUncertainWorkspaces() runs on every specialist_status call and would report a genuinely uncertain workspace today. What is unwired is the ENFORCEMENT path — nothing acquires a lease, nothing checks one before a mutation, and nothing calls reconcile(). The statement must distinguish these, or it will read as false to anyone who greps and finds the import.\n\nSUCCESS\nA reader arriving at the epic learns, without reading code, that lease enforcement and reconciliation exist, are tested, and are called by nothing; that this is currently safe because writers are refused at admission; and which bead changes it.\n\nSCRUTINY\nMEDIUM\n\nRationale: this is an audit of whether closed enforcement beads are actually in force, so its output is a set of claims about guarantees the system does or does not make. Getting it wrong in the optimistic direction reports a guarantee that is not enforced, which is worse than reporting nothing. It changes no runtime behaviour itself, which is why this is MEDIUM rather than HIGH.\n\nSCOPE\nThe unitAI-rrdnt epic description, which is the surface people actually read, and docs/design/native-activation-reconciliation.md as the second surface. The statement names: what exists (workspace-lease.ts, workspace-reconcile.ts), what calls it (nothing on the enforcement path; specialist_status calls the read-only projection), why that is currently safe (native-host.ts:199 refuses write-capable activations), and the bead that changes it (unitAI-rrdnt.36, Phase 10).\n\nAdd the pattern, not just the incident. Three modules in this epic have reached complete, tested, closed and called by nothing: the workspace lease, reconciliation, and per the coordinator the interaction transport, which had no deliver hook wired and so could not carry a question to a coordinator until it was found. All three passed their own suites. The method that caught every one was grepping for the import, not reading the code. A lane that internalises green does not mean reachable will find the fourth faster than any process will.\n\nNON_GOALS\nDoes not wire anything. Does not reopen .21 or .31 — both are correctly closed for what they contracted to deliver. Does not add a lint rule, a CI check, or an unused-export detector; if that is wanted it is a separate bead with its own false-positive budget. Does not edit the closed beads' notes.\n\nCONSTRAINTS\nThe statement must be accurate at the granularity above: enforcement unwired, read projection live. A statement that says reconciliation is entirely uncalled is falsifiable by one grep and will be dismissed along with the warning it carries.\nCite native-host.ts:199 by symbol (writer_not_supported_in_phase_1) as well as line, because the line will move.\n\nVALIDATION\n1. The epic description carries the statement; bd show unitAI-rrdnt displays it without opening a file.\n2. docs/design/native-activation-reconciliation.md carries the same statement.\n3. Each claim in the statement is re-verified against the tree at the time of writing, not copied from this bead: grep for callers of acquire, release, admitToolCall and reconcile in src/, and confirm the admission refusal is still present.\n4. unitAI-rrdnt.36 gains a VALIDATION line requiring this statement to be retired when Phase 10 lands, so the warning does not outlive the gap. Same rule the docs lane applied to the .38 holes-table row.\n\nOUTPUT\nThe enforcement-status statement on both surfaces, and the retirement requirement recorded on unitAI-rrdnt.36.",
+        "id": "unitAI-rrdnt.39",
+        "issue_type": "task",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "State enforcement status on the epic: closed lease and reconciliation beads are not in force",
+        "updated_at": "2026-09-08T11:27:05Z"
+      }
+    },
+    "unitAI-rrdnt.50": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-07T23:11:58Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-07T23:11:58Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.50",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-07T23:11:58Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt.35",
+            "issue_id": "unitAI-rrdnt.50",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\ntsconfig.json has include: [\"src/**/*\"] and excludes only node_modules and dist. No file under tests/ is typechecked. `bunx tsc --noEmit` reports clean while a test file calls a method that does not exist on the class it imports.\n\nThis is not hypothetical. The acceptance AX live case in tests/integration/activation/native-activation.live.test.ts called `host.snapshot(activationId)` at two places from the day it was written. NativeActivationHost has no `snapshot` member; the method is `inspect()` (src/activation/native-host.ts:732). The case could never pass — it threw `TypeError: host.snapshot is not a function` before reaching any assertion — and this was found only by running the live suite on 2026-09-07 during unitAI-rrdnt.35. A self-diagnosing failure block added to that same case shortly before would itself have thrown before printing its diagnostic.\n\nThe general form: a green `tsc --noEmit` on this repo is evidence about src/ and nothing else. Any claim of test-side correctness that leans on it is unfounded, and a gated live test that never runs in CI has no other mechanism that would catch the error.\n\nSUCCESS\nType errors in test files fail a typecheck run.\n\nSCOPE\ntsconfig.json, or a second tsconfig for tests, plus whatever the resulting backlog requires. The quality-gate hook wiring if it invokes tsc with an explicit project.\n\nNON_GOALS\nNo test rewrites beyond fixing type errors the widened check surfaces. No change to which tests run, to vitest configuration, or to the live-smoke gating.\n\nCONSTRAINTS\nWidening the include will surface an existing backlog of errors across tests/ — size it before committing to a single-commit fix. The build must not start emitting test files into dist. Vitest globals and the bun:sqlite / bun -e patterns used by the live tests must still typecheck.\n\nVALIDATION\n1. Reintroduce `host.snapshot(...)` in a test file and confirm the typecheck fails on it; revert.\n2. `bunx tsc --noEmit` (or the project-specific invocation) reports zero errors with tests included.\n3. `bun run build` output is unchanged — diff dist before and after.\n\nOUTPUT\nA typecheck that covers tests/, with the surfaced errors fixed or explicitly triaged.\n\nSCRUTINY\nLOW for the config change itself. MEDIUM for the backlog it exposes: a silenced error is worse than an unchecked one.",
+        "id": "unitAI-rrdnt.50",
+        "issue_type": "bug",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "tsconfig excludes tests, so no test file is ever typechecked",
+        "updated_at": "2026-09-07T23:11:58Z"
+      }
+    },
+    "unitAI-rrdnt.50.1": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T11:09:19Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T11:09:19Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt.50",
+            "issue_id": "unitAI-rrdnt.50.1",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nunitAI-rrdnt.50 landed the CAPABILITY to typecheck tests (tsconfig.test.json + 'bun run typecheck:tests') but not a clean tree. The baseline is 350 errors, so the check cannot be wired into a blocking gate yet. Until it is, a test file can still reference a method that does not exist — which is exactly how host.snapshot() shipped in a self-diagnosing block that would have thrown before printing.\n\nSUCCESS\n'bun run typecheck:tests' exits 0, and the check runs in CI alongside the src typecheck.\n\nSCRUTINY\nLOW\n\nSCOPE\nTest files only. Measured baseline by file, 2026-09-08 at 71eb1439:\n  111  tests/unit/pi/specialist-subagents-extension.test.ts\n   31  tests/unit/specialist/activation-peer-adapter.test.ts\n   19  tests/unit/specialist/script-runner.test.ts\n   17  tests/unit/cli/run.test.ts\n   14  tests/unit/cli/ps.test.ts\n   11  tests/unit/cli/init-global.test.ts\n  147  spread across the remainder\nThe 111 in the extension file are mostly implicit-any on callbacks, because that suite drives an .mjs extension through a dynamic import and gets no types back. Expect that file to need a typed shim rather than 111 individual annotations.\n\nNON_GOALS\nDoes not change any test's behaviour or assertions. Does not relax strictness in tsconfig.json to make errors disappear — the point is to find defects, and a weakened config finds fewer.\n\nCONSTRAINTS\nThe suite must stay green throughout: 2310 passing, 188 files. A type-only change that alters runtime behaviour is a regression even if tsc goes quiet.\nAt least one error is a real drift signal rather than noise — tests/unit/pi/session.test.ts:778 builds a ResolvedToolContract literal missing exposedExtensionSources, i.e. a fake that no longer matches the type it doubles. Triage for that class before mass-annotating; those are the ones this bead exists to catch.\n\nVALIDATION\n1. 'bun run typecheck:tests' exits 0.\n2. 'bun --bun vitest run tests/unit' still reports 2310 passed.\n3. The gate is wired so a future test referencing a non-existent method fails the build.\n\nOUTPUT\nA clean typecheck:tests, the gate wired, and a note on any real defect the cleanup uncovered.",
+        "id": "unitAI-rrdnt.50.1",
+        "issue_type": "chore",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Clear the 350 test-file type errors so typecheck:tests can become a gate",
+        "updated_at": "2026-09-08T11:09:19Z"
+      }
+    },
+    "unitAI-rrdnt.56": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T11:20:38Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T11:20:38Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.56",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nunitAI-rrdnt.48 added an inline 'contract' parameter to the Pi frontend's specialist_dispatch: either bead_id or contract, exactly one, both refused rather than resolved by preference. The MCP frontend (src/tools/specialist/activation.tool.ts) still requires bead_id and has no contract parameter at all. A coordinator's dispatch call is therefore not portable between the two surfaces, and the friction .48 was filed to remove is removed on only one of them.\n\nFound by the phase12-docs lane while documenting .48, verified at 3b2a2611. It documented the delta rather than the shape, which was the right call for a doc but leaves the product question open.\n\nSUCCESS\nEither MCP accepts an inline contract on the same terms as Pi — same gate, run BEFORE any bead is created, both-or-neither refused — or the asymmetry is deliberate and documented as such with its reason.\n\nSCRUTINY\nLOW\n\nSCOPE\nsrc/tools/specialist/activation.tool.ts and its schema. The readiness gate and createBeadFromContract already exist and are exported through the lib seam; this is wiring, not new mechanism.\n\nNON_GOALS\nDoes not change the Pi frontend. Does not change the gate. Does not relax the requirement that a refused dispatch leaves the board unchanged.\n\nCONSTRAINTS\nThis is a PRODUCT decision before it is an implementation: MCP's bead_id-only shape may be intentional, since the MCP coordinator is Claude Code and has the bd CLI available directly, while the Pi coordinator may not. Decide that first.\nIf MCP follows, it must reuse the SAME extractSections/evaluateBeadReadiness path — a second gate would let the two frontends disagree about admission, which is the failure this epic has spent the day removing.\n\nVALIDATION\nEither an MCP dispatch with an inline contract is admitted and creates its bead, or the doc states the asymmetry and why.\n\nOUTPUT\nThe parameter and its tests, or a documented decision.\n\nREFERENCES\nunitAI-rrdnt.48 (the Pi implementation), unitAI-rrdnt.32 (the doc that found it), unitAI-rrdnt.54 (the same-line format both frontends now accept).",
+        "id": "unitAI-rrdnt.56",
+        "issue_type": "task",
+        "notes": "DEFERRED by operator decision 2026-09-08. MCP is not the Pi coordinator's path — it is for Claude and non-pi agents, and will follow the newer (0728) MCP protocol. Bringing the MCP frontend to parity with a Pi-only convenience is the wrong direction while that migration is pending.\n\nFOR THE RECORD, since this bead was filed as a parity gap: the PRD's MCP obligation is MET. Phase 13 says 'Expose the same native activation runtime through MCP. No CLI shell-out.' — closed as unitAI-rrdnt.33. Inline contracts arrived later on the Pi side via unitAI-rrdnt.48, so this is post-PRD drift between two frontends, not an unmet requirement. Deferring costs nothing against the PRD.\n\nThis is also continuous with unitAI-rrdnt.10, which already demoted MCP as the Claude transport after finding Claude Code's MCP CLIENT lacks sampling/createMessage, ignores resources/subscribe, and discards logging notifications — the peer/roster adapter was promoted to primary for exactly that reason.\n\nREOPEN WHEN: the 0728 protocol migration lands and the question becomes what the MCP surface should look like for non-pi agents, rather than whether it should mirror Pi.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "deferred",
+        "title": "MCP specialist_dispatch has no contract parameter, so dispatch calls are not portable between frontends",
+        "updated_at": "2026-09-08T14:12:52Z"
+      }
+    },
+    "unitAI-rrdnt.57": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T11:27:36Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T11:27:36Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.57",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nEvery description of the dispatch contract — the tool parameter text on both frontends, the planning skill, CLAUDE.md, the bead template — calls it the 7-section contract and then appends 'plus a SCRUTINY level'. The gate requires eight things. SCRUTINY is named last, outside the count, in every place a writer looks.\n\nThe result is measurable rather than theoretical. Audited every open bead on this epic with evaluateBeadReadiness on 2026-09-08: FOUR contracts hand-written by the coordinator omitted SCRUTINY and would have been refused at dispatch — a live operator probe bead (refused live, in a real pi session), and epic beads .36, .30 and .39. Four out of four. None was caught by reading; all were caught by running the gate.\n\nThis is the same shape as unitAI-rrdnt.54 one layer out. There the tool description named the sections and never stated the format the parser required; here it states a count that is wrong by one, and the omitted item is exactly the one outside the count.\n\nSUCCESS\nA writer following any description of the contract produces something the gate admits. The count and the requirement agree.\n\nSCRUTINY\nLOW\n\nSCOPE\nThe wording wherever the contract is described: both frontends' tool parameter text, the planning skill, CLAUDE.md's dispatch section, and any bead template. Not the gate — the gate is right.\n\nNON_GOALS\nDoes not make SCRUTINY optional. Does not change which sections are required. Does not change the refusal shape.\n\nCONSTRAINTS\nDo not fix this by making the gate lenient. SCRUTINY drives reviewer escalation on sensitive surfaces and a contract without it is genuinely underspecified — the requirement is correct and only its description is wrong.\nWhatever the new wording is, it must be the SAME on both frontends. Divergent wording between the two is the failure documented in .55 and .56.\n\nVALIDATION\nEvery place that describes the contract states the same count, and that count matches what evaluateBeadReadiness enforces.\n\nOUTPUT\nThe corrected wording, and a note on the audit method: run the gate over the board rather than reading beads, because reading is what missed this four times.",
+        "id": "unitAI-rrdnt.57",
+        "issue_type": "bug",
+        "notes": "PARTLY DONE 2026-09-08. Both frontends now state the valid SCRUTINY levels verbatim (LOW/MEDIUM/HIGH/CRITICAL) and say EIGHT required parts rather than seven — landed in b3c98a1e after an operator hit exactly this, inventing 'normal' and burning a dispatch.\n\nREMAINING: the phrase '7-section contract' still appears in config/skills/using-specialists/SKILL.md and CLAUDE.md. Those are what a coordinator reads BEFORE it ever sees a tool description, so they are the earlier point of failure and the bead is not done.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "The '7-section contract' actually requires eight things, and SCRUTINY is the one always dropped",
+        "updated_at": "2026-09-08T14:06:27Z"
+      }
+    },
+    "unitAI-rrdnt.60": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T13:26:59Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T13:26:59Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.60",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nOperator review 2026-09-08, from a real coordinator session, raised six friction points. Three are fixed; these three are not, and they are the ones that cost the most.\n\n1. NO BUILD IDENTITY ON THE SURFACE (this is unitAI-rrdnt.55's shape, sharpened). The operator's only way to tell a stale runtime from broken input was to DIFF THE TOOL DESCRIPTION against source — the loaded copy lacked a sentence the on-disk file had. That tell is discoverable only by reading the repo. Nothing in dispatch or status exposes which build is loaded.\nSuggested shape, which satisfies .55's constraint without per-call imports: surface a stable build identity in specialist_status and annex it to every rejection — 'module loaded <id>, dist on disk <id>'. When they differ, say so IN THE REFUSAL. One refusal with two causes is exactly where messages lie, and this session proved it.\n\n2. THE LEASE IS UNEXPLAINED TO THE CALLER. 'Workspace lease' appears in refusals with no statement of what it is, how to check availability, or that it is held for the duration of a turn. A coordinator meeting workspace_held_by_another_writer has no model of what to do next.\n\n3. LATENCY IS UNSTATED. Descriptions say to check status without any sense of the per-turn budget the runtime comments measure (~1-2 min). Absent that, a coordinator either polls hot or assumes a hang.\n\nALSO RAISED, and worth doing together with the above: tool descriptions mix operating instructions with PRD rationale (VALIDATION 5, .44/.48 cross-refs). For source readers that is valuable; as model-facing text it competes with the instructions. Keep one 'why' line per tool, move the rest to docs.\n\nSUCCESS\nA coordinator meeting a refusal can tell a stale build from a bad contract without reading source, knows what a workspace lease is and how long one is held, and has a latency expectation. Tool descriptions carry operating instructions plus at most one line of rationale.\n\nSCRUTINY\nLOW\n\nSCOPE\nconfig/pi-extensions/specialist-subagents/index.mjs and src/tools/specialist/activation.tool.ts descriptions and refusal rendering; whatever computes the build identity.\n\nNON_GOALS\nDoes not change admission, the gate, or the lease itself. Does not import dist per call — unitAI-rrdnt.55 rules that out and the reasoning stands.\n\nCONSTRAINTS\nBuild identity must be cheap at load and STABLE across identical builds — a timestamp changes every rebuild and would make two identical builds look different. The config fingerprint the runtime already computes is the closer precedent.\nBoth frontends must say the same thing. Divergent wording between them is the defect recorded in .55 and .56.\n\nVALIDATION\n1. A coordinator running a stale build against a valid contract gets a refusal that names staleness as a candidate cause.\n2. Both frontends carry identical lease and latency wording.\n\nOUTPUT\nThe build identity, the refusal annotation, and the trimmed descriptions.\n\nREFERENCES\nOperator review 2026-09-08. Already fixed from the same review: the accepted heading forms (unitAI-rrdnt.54), the SCRUTINY level list and the eight-not-seven correction (unitAI-rrdnt.57), created_bead_id plus a lifecycle note on inline dispatch, and a routing line to `sp run <name> --prompt` for untracked one-offs.",
+        "id": "unitAI-rrdnt.60",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "Taken with unitAI-rrdnt.55 as one tranche by the pi-specialists coordinator, 2026-09-08. .60 subsumes .55 fix; do them as one change. dawid-0b is not working these.\nOWNERSHIP CORRECTION 2026-09-08 — this bead was assigned in error and is UNOWNED again.\n\nI assigned it to 'pi-specialists' on the strength of a peer message saying that session was taking .55/.60 as a tranche. The session then corrected me: the activation I was talking to is a READ-ONLY explorer (bead unitAI-v29bw, boundary rules explorer-readonly) with no bd tooling and no mutation surface. It could not have claimed a bead, could not write to one, and cannot do this work from inside that activation.\n\nSo I recorded an owner who was structurally incapable of being one, and had the peer not flagged it, .55 and .60 would have sat idle looking owned. That is worse than unowned: an unowned bead gets picked up, an incorrectly-owned one does not.\n\nMY ERROR, precisely: I treated a peer's statement of intent as a durable ownership fact and wrote it to the board without verifying the session could act on it. Assignment is board state and should follow evidence, not a message. The peer caught it and called it a coordination hazard rather than a detail, which is the right severity.\n\nThese need a fresh WRITE-CAPABLE tracked activation, dispatched as one change (.60 subsumes .55's fix).\nANNEX POINT PINNED CORRECTLY 2026-09-08, superseding how I phrased it above.\n\nI wrote 'annex the build identity to the REFUSAL, not only to status', which puts the refusal first and would bias an implementation toward treating other surfaces as optional. That is wrong for the case that produced this bead.\n\nTHE CORRECT REQUIREMENT: identity must be present on EVERY outcome surface — the refusal, the status read, and the SUCCESSFUL dispatch result alike. The reason is that the incident behind this bead was not a build-identity failure at all. There was no identity anywhere to be wrong. It was a participant that ran a correct, successful dispatch and could not tell afterwards which build had produced the behaviour it observed — and so nearly retracted a correct finding.\n\nA refusal-first design would leave that exact case uncovered, because nothing was refused. 'Identity on every outcome' is the requirement; 'especially on refusals' is a false emphasis that happens to describe only the second-worst symptom.\n\nClarified by the pi-specialists session, which is the participant it happened to.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Operator review: surface build identity, explain the lease, state latency, trim rationale",
+        "updated_at": "2026-09-08T15:59:08Z"
+      }
+    },
+    "unitAI-rrdnt.62": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T14:24:26Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T14:24:26Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.62",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nThe MCP server uses StdioServerTransport (src/server.ts:244) and owns NativeActivationHost as an in-process field (src/server.ts:135). Stdio is connection-scoped: when the client disconnects the process exits, the host goes with it, and EVERY live native Specialist dies mid-flight.\n\nThat contradicts properties the PRD states explicitly. Section 1 requires a Specialist to be 'persistent' and 'resumable'. native-host.ts's own docstring says 'Session lifetime deliberately exceeds turn lifetime: reaching agent_settled makes a Specialist waiting and resumable, never disposed. Disposal is an explicit act.' Under stdio, disposal is NOT an explicit act — a dropped client disposes everything, silently, with no forensic settle and no lease release.\n\nTO BE PRECISE ABOUT WHAT THE PRD DOES AND DOES NOT SAY: it never names a transport. 'streamable', 'http', 'sse' and 'stdio' each appear ZERO times. So this is not a violation of a named-transport requirement; it is a violation of the persistence and resumability requirements the PRD does state, which stdio plus an in-process host cannot satisfy. The stronger argument is the property one, and it does not depend on which protocol revision is current.\n\nHOW THIS GOT MISSED: unitAI-rrdnt.33 (Phase 13) validated that the tools WORK over MCP — a real stdio client against the built dist server reaching state 'running' with a real pi_session_id. It never tested that an activation SURVIVES the client going away. Phase 13 was closed on tool reachability, not on lifetime. I closed it; this is my miss.\n\nSUCCESS\nA native activation survives the MCP client disconnecting and reconnecting, and remains resumable — or the coupling is documented as intended with its consequence stated wherever persistence is claimed.\n\nSCRUTINY\nHIGH\n\nSCOPE\nsrc/server.ts transport selection and host ownership. The decision about whether the host outlives the connection belongs in this bead.\n\nNON_GOALS\nDoes not change the Pi extension, which is unaffected — its host lives in the pi process and has no MCP connection to lose. Does not change tool semantics.\n\nCONSTRAINTS\nThe SDK in tree is @modelcontextprotocol/sdk 1.29.0, whose LATEST_PROTOCOL_VERSION is 2025-11-25 and which also speaks 2025-06-18, 2025-03-26, 2024-11-05 and 2024-10-07. Our server pins nothing and takes the SDK default. Streamable HTTP with a session id is the transport that permits reconnection and parallel clients; moving to it is necessary but NOT sufficient — if the host stays a field on the server object, a process restart still kills every activation. The lifetime question is separate from the transport question and must be answered explicitly.\nDo not treat 'the connection came back' as 'the activation survived'. That is the same inference-from-absence the uncertain-workspace design refuses everywhere else.\n\nVALIDATION\n1. Dispatch a native activation over MCP, drop the client, reconnect, and observe the activation still present and resumable.\n2. A dropped client that DOES kill activations produces forensic settle events and releases workspace leases, rather than vanishing silently.\n\nOUTPUT\nEither a transport plus host-lifetime change that satisfies (1), or a documented decision with the consequence stated wherever the PRD's persistence claim is repeated.\n\nREFERENCES\nRaised by the operator 2026-09-08. Related: unitAI-rrdnt.33 (Phase 13, closed on tool reachability), unitAI-rrdnt.10 (which already demoted MCP as the Claude push transport after finding Claude Code's MCP client lacks the needed surfaces).",
+        "id": "unitAI-rrdnt.62",
+        "issue_type": "bug",
+        "notes": "TRANSPORT AVAILABILITY CHECKED 2026-09-08, against the packages rather than from memory. The target is MCP spec 2026-07-28 (stateless connections), per the operator.\n\n  installed:  @modelcontextprotocol/sdk 1.29.0\n              LATEST_PROTOCOL_VERSION = '2025-11-25'\n              SUPPORTED = ['2025-11-25','2025-06-18','2025-03-26','2024-11-05','2024-10-07']\n  latest published: 1.30.0 — fetched and unpacked to check\n              LATEST_PROTOCOL_VERSION = '2025-11-25'  (unchanged)\n              '2026-07-28' appears ZERO times in its types.js\n\nSo the official TypeScript SDK does NOT yet speak 2026-07-28, even at head. Upgrading 1.29.0 -> 1.30.0 buys nothing for this bead. That reorders the work:\n\n  1. The HOST LIFETIME fix is available NOW and is the larger half of the defect. Decoupling NativeActivationHost from the server object means a dropped client stops killing activations regardless of which transport is underneath. This bead's SUCCESS can be met on the current transport.\n  2. The TRANSPORT move is blocked on the SDK, not on us. Options when it matters: wait for SDK support, implement 2026-07-28 outside the SDK, or move to Streamable HTTP on 2025-11-25 — which already permits reconnection and parallel clients and is a strict improvement on stdio even though it is not the target spec.\n\nDo NOT do (2) before (1). A stateless transport in front of a host that still dies with its process just relocates the failure.\n\nRe-check the SDK before starting: this reading is from 2026-09-08 and a version bump is exactly the kind of fact that goes stale.\nDEFERRED by operator decision 2026-09-08 — the transport migration is a large piece of work in its own right and MCP is not the Pi coordinator's path.\n\nCARRIED FORWARD, so the deferral is not read as 'no problem here': the HOST LIFETIME half is independent of the transport and is the larger half of the defect. NativeActivationHost is a field on the MCP server object, so process exit disposes every live Specialist with no forensic settle and no lease release. That is fixable on stdio today and does not wait for the SDK.\n\nIf MCP is picked up again for Claude and non-pi agents, do the lifetime decoupling FIRST. A stateless transport in front of a host that still dies with its process only relocates the failure.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "deferred",
+        "title": "MCP runs on stdio with an in-process host, so a dropped client kills every live Specialist",
+        "updated_at": "2026-09-08T15:18:20Z"
+      }
+    },
+    "unitAI-rrdnt.63": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T15:27:52Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T15:27:52Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt",
+            "issue_id": "unitAI-rrdnt.63",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nThere is no lightweight NATIVE path for a quick, untracked question. specialist_dispatch always creates a durable Bead — from bead_id or from an inline contract — so a coordinator that wants a two-minute answer either writes a contract it does not want tracked, or leaves the native runtime entirely.\n\nObserved live 2026-09-08: a coordinator with a 'small bounded question about this repo' ran `sp run --prompt` as a BACKGROUND TASK instead of dispatching. It did that because the contract parameter told it to — wording I added the same day, which said native dispatch 'is not the path for a throwaway question' and pointed at the CLI. That wording is now removed and guarded by a test, but the underlying gap it was trying to paper over is real and is this bead.\n\nWHY SHELLING OUT IS THE WRONG ANSWER, and why the removed wording was harmful rather than merely imprecise:\n  - PRD Phase 13 says 'No CLI shell-out'. The native runtime exists to end it.\n  - A shelled `sp run` has NO Fleet entry, no ask/answer channel, no workspace lease and no native forensics. The coordinator loses every surface this epic built, silently, and gets a PID and an output file instead.\n  - It is not even cheaper: a native activation is in-process, while sp run spawns.\n\nSUCCESS\nA coordinator can delegate a bounded question natively without creating a board record it does not want, and without leaving the Fleet, the ask channel or forensics.\n\nSCRUTINY\nMEDIUM\n\nSCOPE\nspecialist_dispatch and the Fleet/forensic projections. The decision about what an untracked native activation means belongs in this bead.\n\nNON_GOALS\nDoes not remove the bead requirement for tracked work — the hard gate is the epic's central invariant and stays. Does not reintroduce a free-form prompt parameter on the tracked path.\n\nCONSTRAINTS\nAn ephemeral activation must still be OBSERVABLE. The Fleet must show it and forensics must record it; 'untracked' means no Bead, never no evidence. An invisible activation is worse than a shelled one, because at least the shell leaves a PID.\nWhatever it is called must not read as the easy default. The gap this closes is real, but the failure mode just demonstrated is a coordinator preferring the lighter path for work that should be tracked.\nDo not solve it by weakening the contract gate for tracked dispatches.\n\nVALIDATION\n1. A coordinator answers a bounded question natively with no Bead created.\n2. That activation appears in the Fleet and writes forensic rows.\n3. The tracked path is unchanged and still refuses an incomplete contract.\n\nOUTPUT\nEither the ephemeral native path, or a recorded decision that every native activation is Bead-backed and the CLI is the sanctioned escape hatch — in which case the tool description must say so without implying the CLI is preferable for small work.\n\nREFERENCES\nOperator report 2026-09-08 (suggestion 4). The harmful wording landed in b3c98a1e and was removed with two guard tests.",
+        "id": "unitAI-rrdnt.63",
+        "issue_type": "task",
+        "notes": "OPERATOR RULING 2026-09-08, and it narrows this bead's OUTPUT to one option.\n\nThe `sp` CLI is DEFERRED — the extension is what runs Specialists now. So a one-off either lives INSIDE the extension or it does not exist at all. The 'CLI is the sanctioned escape hatch' branch of this bead's OUTPUT is struck; do not resolve it that way.\n\nREMOVED FROM THE SURFACE ENTIRELY, not just from specialist_dispatch: every mention of the CLI in model-facing text. specialist_list was the second offender and arguably the worse one — every one of its answers ended with 'Full CLI surface: sp help', which lands at exactly the moment a coordinator is deciding how to delegate. Listing notes now say 'Dispatch through specialist_dispatch. Do not shell out to the specialists CLI.'\n\nGuarded by two tests: one walks EVERY registered tool's description and parameter descriptions and fails on /\\bsp (run|help|ps|feed)\\b/, the other asserts the listing RESULT carries no CLI reference. An existing .49 assertion that pinned 'sp help' in the note was updated, not deleted — it encoded the design that has now been ruled out.\n\nThe gap this bead names is unchanged and still real: there is no lightweight native path, and until there is, a coordinator with a two-minute question has only the tracked path. That is now the intended constraint rather than something to route around.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "No lightweight NATIVE path for a quick question, so coordinators shell out to sp run",
+        "updated_at": "2026-09-08T15:29:27Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-07T10:41:54Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.24",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.24",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-07T13:16:18Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.30",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.30",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-07T17:52:37Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.38",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.38",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-07T17:58:47Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.39",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.39",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-07T23:11:58Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.50",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.50",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T11:09:19Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt.50",
+        "issue_id": "unitAI-rrdnt.50.1",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.50.1",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt.50",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T11:20:38Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.56",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.56",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T11:27:36Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.57",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.57",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T13:26:59Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.60",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.60",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T14:24:26Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.62",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.62",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T15:27:52Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt",
+        "issue_id": "unitAI-rrdnt.63",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-rrdnt.63",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-rrdnt",
+  "root_title": "Native interactive XTRM Specialists (Pi AgentSession + Claude Code)",
+  "roundtrip": {
+    "base_package_sha256": "014f37dce6ff343ffb26eda86c8effc8571ac4f9de6d5e183433d5d13b78368c",
+    "base_record_sha256": {
+      "unitAI-rrdnt": "15553be64f9fc59d7376ff89a8a70412e980cdbf032bfe7592bfc305b8d3f63b",
+      "unitAI-rrdnt.24": "5bada9db5e6e81e54090877bfb3c9f50d5c7114013b86e188a70b194ed00250d",
+      "unitAI-rrdnt.30": "7569b6d160c6882707b098453761e9a68d7601f192b0733673c467e9ed9a97ca",
+      "unitAI-rrdnt.38": "e6fe2c1896c292a6b5e207c598aff7f49531d1da088aa48028b1950a8391c5d2",
+      "unitAI-rrdnt.39": "88a6f34c111cfe3de19827dd1151a35cab8797ebbbbffda3c8868e2a0462590d",
+      "unitAI-rrdnt.50": "f55365211fd34376c65b233fcfaae6e084d7e3d9dbe6038742f6acce45190991",
+      "unitAI-rrdnt.50.1": "577e06a09ed605713889b752e30ee86d2ea291e86e95173904a091ba0089fa19",
+      "unitAI-rrdnt.56": "ac746fd0d4d55c5caef7044ddcf29d7e95d056480bc85a14a5f74748533372b8",
+      "unitAI-rrdnt.57": "5b2bd7138c97c45c5001622e7b9eb02fcaae0bc70e60413f8038dff8b3786aaa",
+      "unitAI-rrdnt.60": "bd484de3533ebeeaf2118a0dcca8910bd8e1bd5be311f7bb59a25670ed48acb5",
+      "unitAI-rrdnt.62": "b0c72127c2b8407898be8b0786ca8ba62652413adf262044fa62389d3f3d94b4",
+      "unitAI-rrdnt.63": "44218238a600d9a6c952ff99f5730b8d6ea63042416113d88797bf042f080353"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-09T01:44:21Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

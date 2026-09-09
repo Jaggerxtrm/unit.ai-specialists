@@ -1,0 +1,66 @@
+{
+  "content_sha256": "e0defe06fd1794d9b20520f003358ef3ab95aceaedebf1f3bc696a458b54af63",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-15T17:33:19Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-gp7nq",
+        "issue_id": "unitAI-yhb99",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-yhb99",
+      "source_field": "dependencies",
+      "target": "unitAI-gp7nq",
+      "target_present_in_snapshot": true,
+      "target_title": "Expand global user config: broaden allowlist + model chains + preset references",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-yhb99"
+  },
+  "issues": {
+    "unitAI-yhb99": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-15T15:33:15Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-15T17:33:19Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-gp7nq",
+            "issue_id": "unitAI-yhb99",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Observed during KAN-91 epic (Phase 3 unitAI-gp7nq.4 + chore unitAI-hyugm closing). The bd auto-close hook treats any seconder/reviewer completion event as a close signal regardless of the verdict (FAIL or PASS). Repro pattern: dispatch seconder → seconder FAILs → bd auto-closes parent bead anyway. Recovery: bd update <id> --status=in_progress to reopen. Observed twice in one session (Phase 3 bead auto-closed by hook after seconder 8d026b FAIL; pattern repeated on unitAI-hyugm after executor ced45d completion).\n\n## SCOPE\nHook source likely in .xtrm/hooks/ or .beads/hooks/ — investigate where seconder/reviewer 'completion' events trigger bd close. Probably keying off run_complete event regardless of output verdict.\n\n## SUCCESS\nAuto-close gates on extracted verdict=PASS (or equivalent overall_verdict from seconder); FAIL/PARTIAL/BLOCKED leave the bead in_progress.\n\n## CONSTRAINTS\n- Hook should fail-open on verdict extraction failure (don't trap close on bad output).\n- Reviewer auto-close should already be gated; this bug is about seconder/auxiliary specialists.\n- Don't break the PASS happy path.",
+        "id": "unitAI-yhb99",
+        "issue_type": "bug",
+        "priority": 3,
+        "status": "open",
+        "title": "bd auto-close hook fires on FAILED seconder/reviewer completion (no verdict gate)",
+        "updated_at": "2026-06-15T15:33:15Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-yhb99",
+  "root_title": "bd auto-close hook fires on FAILED seconder/reviewer completion (no verdict gate)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

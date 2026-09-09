@@ -1,0 +1,66 @@
+{
+  "content_sha256": "c7c1004c2dd59924e2e10ef0031921b57954c71b70eaa4786114cc6ca2ecd8d8",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-15T17:33:47Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-gp7nq",
+        "issue_id": "unitAI-k2czn",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-k2czn",
+      "source_field": "dependencies",
+      "target": "unitAI-gp7nq",
+      "target_present_in_snapshot": true,
+      "target_title": "Expand global user config: broaden allowlist + model chains + preset references",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-k2czn"
+  },
+  "issues": {
+    "unitAI-k2czn": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-15T15:33:41Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-15T17:33:47Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-gp7nq",
+            "issue_id": "unitAI-k2czn",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Observed twice during KAN-91 Phase 3: when the reviewer specialist runs 'bd show unitAI-gp7nq.4' from inside its sandbox (worktree + tmux + pi session), the dot in the bead id is being stripped before it reaches bd, producing 'bd show unitAI-gp7nq4' which fails with not-found. Workaround used: passed required evidence (smoke output, file paths) inline via 'sp resume' prompt instead of telling the reviewer to look up the bead. This is a procedural papercut — costs one fix-loop every time a dotted child bead reaches review.\n\n## SCOPE\nInvestigation areas:\n- pi session arg parsing / shell escaping for tools that invoke bd\n- prompt rendering / template substitution layer (runner.ts / supervisor.ts) for bead_id interpolation\n- whether the dot is stripped at prompt build, at tool invocation, or at bash exec layer\n- reproduce by dispatching a reviewer against a dotted bead and observing the actual 'bd show' invocation in observability.db specialist_events tool entries\n\n## SUCCESS\nReviewer (and all specialists) preserve dots in bead ids verbatim across the entire prompt → tool → exec pipeline. 'bd show unitAI-gp7nq.4' resolves correctly inside the reviewer sandbox.\n\n## CONSTRAINTS\nMemory key 'bead-id-verbatim-rule-added-to-prevent-bd' covers the orchestrator side. This bug is the sandbox/specialist side where the same rule needs to hold.\n\n## VALIDATION\nDispatch reviewer against any dotted bead, then grep specialist_events.text_content for the actual 'bd show' command — must contain the dot.",
+        "id": "unitAI-k2czn",
+        "issue_type": "bug",
+        "priority": 3,
+        "status": "open",
+        "title": "Reviewer sandbox strips dot from dotted bead ids (unitAI-gp7nq.4 → unitAI-gp7nq4)",
+        "updated_at": "2026-06-15T15:33:41Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-k2czn",
+  "root_title": "Reviewer sandbox strips dot from dotted bead ids (unitAI-gp7nq.4 → unitAI-gp7nq4)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

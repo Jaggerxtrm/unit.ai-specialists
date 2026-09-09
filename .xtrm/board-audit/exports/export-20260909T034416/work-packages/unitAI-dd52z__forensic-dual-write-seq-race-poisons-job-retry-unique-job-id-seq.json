@@ -1,0 +1,75 @@
+{
+  "content_sha256": "40bc02371bfb3e190b11f04474fbea106c0bb95c519983cc320345f3edadd75c",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-09T00:51:57Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-9tawb",
+        "issue_id": "unitAI-dd52z",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-dd52z",
+      "source_field": "dependencies",
+      "target": "unitAI-9tawb",
+      "target_present_in_snapshot": true,
+      "target_title": "Live test: current Exa MCP tool set via researcher v1.5.0",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-dd52z"
+  },
+  "issues": {
+    "unitAI-dd52z": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-09T00:51:57Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-09T00:51:57Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-9tawb",
+            "issue_id": "unitAI-dd52z",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Live runs die in ~2s with 0 turns: appendEvent fails after 5 attempts with UNIQUE constraint failed on specialist_forensic_events.job_id + seq. Observed duplicate seq rows (seq 2,2 for one job) -- two writers assign the same seq, the loser retries into the same collision. Every retry of the job re-hits the poisoned seq. Evidence: 8+ failed live researcher runs on unitAI-9tawb, 2026-09-08/09. This blocks the joint Exa researcher landing live test.\n\nSUCCESS: Concurrent forensic writers never emit duplicate (job_id, seq); a retry of a poisoned job either resumes cleanly or fails with a causal error, never an infinite UNIQUE loop; live researcher run passes turn 0.\n\nSCOPE: Specialists repo forensic write path (src/activation/forensic-sink.ts and its seq assignment + callers). Debugger-first: prove single vs dual writer and where the second seq comes from before changing code.\n\nNON_GOALS: Exa/researcher changes; core #636; kernel double-load (sibling bead).\n\nCONSTRAINTS: observability.db remains authoritative forensics; no event loss tolerated -- dedup must not drop events. Suite green, tsc clean.\n\nVALIDATION: Regression test with concurrent writers asserting unique seqs; live researcher turn-0 pass recorded on unitAI-9tawb.\n\nOUTPUT: Fix commit plus findings in bead notes.\n\nSCRUTINY: medium",
+        "heartbeat_at": "2026-09-09T00:52:11Z",
+        "id": "unitAI-dd52z",
+        "issue_type": "bug",
+        "labels": [
+          "contract:ready"
+        ],
+        "lease_expires_at": "2026-09-09T00:57:11Z",
+        "notes": "Joint sequencing 2026-09-09: core holds live-test rerun until dd52z lands; #300 update-from-base agreed (no pair-merge); core native-HTTP Pi-entry fix held in scratch until my word; #636 green untouched.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-09T00:52:11Z",
+        "status": "in_progress",
+        "title": "Forensic dual-write seq race poisons job retry (UNIQUE job_id+seq)",
+        "updated_at": "2026-09-09T00:52:39Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-dd52z",
+  "root_title": "Forensic dual-write seq race poisons job retry (UNIQUE job_id+seq)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

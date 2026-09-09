@@ -1,0 +1,1 @@
+{"issue_ids":["unitAI-ucpcy"],"open_issue_count":1,"root_id":"unitAI-ucpcy","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"76267b32dec3a6e29f753b9115affb856d7c22c41d6462c6f77be488a4e0a5f3","title":"sp init --global should not bake repo-local .specialists/user/ specs into the global file"}

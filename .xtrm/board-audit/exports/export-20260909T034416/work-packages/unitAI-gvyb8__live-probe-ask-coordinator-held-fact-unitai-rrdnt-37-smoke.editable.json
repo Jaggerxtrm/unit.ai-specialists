@@ -1,0 +1,68 @@
+{
+  "content_sha256": "71619f3db587cf22db0f84954c2de09cce135bfdd5e038871280573d171f3276",
+  "desired_issues": {
+    "unitAI-gvyb8": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-07T18:38:43Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nThe coordinator surface must prove the clarification loop: a Specialist asks, the coordinator answers, the same session continues.\n\nSUCCESS\nA READ_ONLY explorer activation reports the line count of the coordinator-chosen file.\n\nSCOPE\nRead-only. The file to count is known only to the coordinator.\n\nNON_GOALS\nNo writes. The file must not be guessed.\n\nCONSTRAINTS\nRead-only. The target file path must be obtained from the coordinator before counting; use the ask_coordinator tool to request it. Do not guess a path.\n\nVALIDATION\nThe activation output states the file path and its line count, matching the path the coordinator provided.\n\nOUTPUT\nA one-line report: TARGET_FILE: N lines.\n\nSCRUTINY LOW",
+      "id": "unitAI-gvyb8",
+      "issue_type": "task",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 4,
+      "status": "open",
+      "title": "live-probe-ask: coordinator-held fact (unitAI-rrdnt.37 smoke)",
+      "updated_at": "2026-09-07T18:38:43Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-gvyb8"
+  },
+  "issues": {
+    "unitAI-gvyb8": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-07T18:38:43Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nThe coordinator surface must prove the clarification loop: a Specialist asks, the coordinator answers, the same session continues.\n\nSUCCESS\nA READ_ONLY explorer activation reports the line count of the coordinator-chosen file.\n\nSCOPE\nRead-only. The file to count is known only to the coordinator.\n\nNON_GOALS\nNo writes. The file must not be guessed.\n\nCONSTRAINTS\nRead-only. The target file path must be obtained from the coordinator before counting; use the ask_coordinator tool to request it. Do not guess a path.\n\nVALIDATION\nThe activation output states the file path and its line count, matching the path the coordinator provided.\n\nOUTPUT\nA one-line report: TARGET_FILE: N lines.\n\nSCRUTINY LOW",
+        "id": "unitAI-gvyb8",
+        "issue_type": "task",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 4,
+        "status": "open",
+        "title": "live-probe-ask: coordinator-held fact (unitAI-rrdnt.37 smoke)",
+        "updated_at": "2026-09-07T18:38:43Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-gvyb8",
+  "root_title": "live-probe-ask: coordinator-held fact (unitAI-rrdnt.37 smoke)",
+  "roundtrip": {
+    "base_package_sha256": "71619f3db587cf22db0f84954c2de09cce135bfdd5e038871280573d171f3276",
+    "base_record_sha256": {
+      "unitAI-gvyb8": "16278cbc3d1f4da816bc5845ed70793211a0de8274a8b048a2cc31830b8e24f9"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-09T01:44:19Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

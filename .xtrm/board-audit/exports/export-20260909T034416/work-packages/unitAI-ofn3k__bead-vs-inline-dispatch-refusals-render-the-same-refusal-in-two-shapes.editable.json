@@ -1,0 +1,111 @@
+{
+  "content_sha256": "67dedc61cc49cf9b4e5d528a0c27bd84f18285b5d181aa2c0cd13de8615a6467",
+  "desired_issues": {
+    "unitAI-ofn3k": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T16:09:30Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T16:09:30Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-rrdnt.55",
+          "issue_id": "unitAI-ofn3k",
+          "metadata": "{}",
+          "type": "discovered-from"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: The bead path renders a refusal as the SPECIALIST_DISPATCH_REJECTED envelope (with AgentSession line); the inline-contract path renders the identical underlying refusal as a bare {status, reason, missing} object. A coordinator cannot pattern-match refusals across the two paths, and anything parsing refusals must know which path produced it. Refusals are rendered, not projected — the shared-success-projection property does not cover them. Split from unitAI-rrdnt.55 notes (second defect), which keeps the stale-build identity question separate and fixable without touching this.\\n\\nSCOPE: Rough — the two refusal renderers (extension rejectionResult/inlineRejectionResult + Claude activation.tool.ts rejectionResult) and what one shared refusal shape would be. Needs exploration before promotion; do not execute as written.",
+      "id": "unitAI-ofn3k",
+      "issue_type": "bug",
+      "labels": [
+        "contract:draft"
+      ],
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "Bead vs inline dispatch refusals render the same refusal in two shapes",
+      "updated_at": "2026-09-08T16:09:30Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-08T16:09:30Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-rrdnt.55",
+        "issue_id": "unitAI-ofn3k",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-ofn3k",
+      "source_field": "dependencies",
+      "target": "unitAI-rrdnt.55",
+      "target_present_in_snapshot": true,
+      "target_title": "A stale extension build refuses dispatch with a reason identical to a genuinely broken contract",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-ofn3k"
+  },
+  "issues": {
+    "unitAI-ofn3k": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T16:09:30Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T16:09:30Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-rrdnt.55",
+            "issue_id": "unitAI-ofn3k",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The bead path renders a refusal as the SPECIALIST_DISPATCH_REJECTED envelope (with AgentSession line); the inline-contract path renders the identical underlying refusal as a bare {status, reason, missing} object. A coordinator cannot pattern-match refusals across the two paths, and anything parsing refusals must know which path produced it. Refusals are rendered, not projected — the shared-success-projection property does not cover them. Split from unitAI-rrdnt.55 notes (second defect), which keeps the stale-build identity question separate and fixable without touching this.\\n\\nSCOPE: Rough — the two refusal renderers (extension rejectionResult/inlineRejectionResult + Claude activation.tool.ts rejectionResult) and what one shared refusal shape would be. Needs exploration before promotion; do not execute as written.",
+        "id": "unitAI-ofn3k",
+        "issue_type": "bug",
+        "labels": [
+          "contract:draft"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Bead vs inline dispatch refusals render the same refusal in two shapes",
+        "updated_at": "2026-09-08T16:09:30Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-ofn3k",
+  "root_title": "Bead vs inline dispatch refusals render the same refusal in two shapes",
+  "roundtrip": {
+    "base_package_sha256": "67dedc61cc49cf9b4e5d528a0c27bd84f18285b5d181aa2c0cd13de8615a6467",
+    "base_record_sha256": {
+      "unitAI-ofn3k": "414951395716d694d7036c161d6e13ec512eebe9d3236c582ebae668940f1c83"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-09T01:44:20Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

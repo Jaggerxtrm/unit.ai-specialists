@@ -1,0 +1,75 @@
+{
+  "content_sha256": "ef5d6b535739870aa36d8ccf39947ce78739b8b8e01b946863b0603c6cd424b9",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-09T00:52:06Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-9tawb",
+        "issue_id": "unitAI-il2io",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-il2io",
+      "source_field": "dependencies",
+      "target": "unitAI-9tawb",
+      "target_present_in_snapshot": true,
+      "target_title": "Live test: current Exa MCP tool set via researcher v1.5.0",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-il2io"
+  },
+  "issues": {
+    "unitAI-il2io": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-09T00:52:06Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-09T00:52:06Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-9tawb",
+            "issue_id": "unitAI-il2io",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Child spawn dies before turn 0: pi refuses to load extension because Tool python conflicts between the dev path (/home/dawid/dev/core/packages/pi-extensions/extensions/python-kernel) and the published copy (node_modules/@jaggerxtrm/pi-extensions/.../python-kernel). Both register tool python. Evidence: repeated exit-code-1 failures on unitAI-9tawb live runs. This blocks every live researcher run using that extension set.\n\nSUCCESS: The dev and published copies never both register; either the loader dedups (one wins, recorded which) or the conflict surfaces once with an actionable message instead of killing the spawn. Live researcher run passes extension load.\n\nSCOPE: Verify first whether the double-load comes from operator config (both paths enabled, e.g. user.json extensions incl. the dev path) or loader behavior; then fix at the right layer -- config guidance/dedup or loader dedup. Specialists and core repos as evidence dictates; coordinate, do not fork core-owned loader code without a core-side bead.\n\nNON_GOALS: Exa/researcher changes; forensic seq race (sibling bead).\n\nCONSTRAINTS: No silent tool shadowing -- if one copy wins, log which. Suite green, tsc clean on touched repos.\n\nVALIDATION: Live researcher extension-load pass recorded on unitAI-9tawb.\n\nOUTPUT: Fix or config change plus findings in bead notes.\n\nSCRUTINY: low",
+        "heartbeat_at": "2026-09-09T00:52:12Z",
+        "id": "unitAI-il2io",
+        "issue_type": "bug",
+        "labels": [
+          "contract:ready"
+        ],
+        "lease_expires_at": "2026-09-09T00:57:12Z",
+        "notes": "\n\n### executor · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-09 01:03 · git cc378b81_\n\n\n### executor · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-09 01:18 · git 2d08ff7e_\nFindings unitAI-il2io (executor): root cause is both layers. Specialists auto-injects managed copy via resolvePiExtensionsPythonKernelPath (src/pi/session.ts start()); dev dir path arrives via operator config (execution.extensions overlay / settings) — 9tawb comment confirms settings-independent repro, researcher v1.5.0 projectDir overlay suspect. Pi loader fail-fast (Tool python conflicts, exit 1) kills spawn before turn 0. Fix at specialists layer (no core fork): deduplicateExtensionSources() canonicalizes local -e paths (dir->index.ts, symlinks via realpath); managed copy wins, drop logged as [python-kernel] DEDUP (no silent shadowing). Files: src/pi/session.ts, tests/unit/pi/session.test.ts (+4 tests), docs/pi-session.md. tsc clean, 93 tests green (session+policy). Live researcher rerun on unitAI-9tawb still needed for VALIDATION — blocked on sibling forensic race + merge state per 9tawb notes; orchestrator to rerun.\n\n\n### executor · muse-spark-1.3-contributor · [turn 52 · WORKING]\n\n## Summary\nDouble-load fixed at specialists layer. `PiAgentSession.start()` now canonicalizes local `-e` sources (dir→`index.ts`, symlinks via realpath) and drops any `execution.extensions` entry duplicating auto-injected python-kernel/gitnexus copies. Managed copy wins, drop logged as `[python-kernel] DEDUP` — no silent shadowing, no core fork.\n\n## Status\nPartial — code complete, green, pushed. Live researcher rerun on unitAI-9tawb pending orchestrator (VALIDATION step).\n\n## Changes\n- `src/pi/session.ts`: `canonicalizeLocalExtensionIdentity()` + exported `deduplicateExtensionSources()`; `start()` filters `extensionSources` against auto-injected paths, logs each drop to stderr.\n- `tests/unit/pi/session.test.ts`: 4 regression tests (dir-form, exact-dupe, symlink, spawn-level log).\n- `docs/pi-session.md`: python-kernel row + do-not-add-dev-path guidance.\n\n## Verification\n- `npx tsc --noEmit` clean.\n- `vitest` session + policy suites: 93 passed.\n- `git diff --cached --name-only` matched allowlist (src/tests/docs only; pre-existing `dist/` dirt left unstaged).\n- GitNexus blast-radius unavailable (worktree unindexed); used ast-grep instead — sole caller `session.ts:952`, low risk.\n\n## Risks\n- Realpath dedup only covers filesystem-identical copies. Two genuinely different extensions both registering `python` still fail fast in pi (correct — surfaces once with actionable message).\n- Live validation not run from worktree; sibling forensic seq race may still kill 9tawb rerun first.\n\n## Follow-ups\n- Orchestrator: rerun live researcher on unitAI-9tawb; confirm extension-load pass and record there.\n- Possible core-side hardening (pi dedup-by-realpath with winner log) needs separate core bead — not forked here per SCOPE.\n\n## Beads\n- `unitAI-il2io`: findings appended, left IN_PROGRESS pending live validation.\n- No beads created.\n\n## Machine-readable block\n```json\n{\n  \"summary\": \"Dedup python-kernel -e by realpath in session.ts; managed copy wins with stderr log. tsc clean, 93 tests green, pushed. Live rerun on 9tawb pending.\",\n  \"status\": \"partial\",\n  \"issues_closed\": [],\n  \"issues_created\": [],\n  \"follow_ups\": [\"Orchestrator rerun live researcher on unitAI-9tawb for VALIDATION\"],\n  \"risks\": [\"Distinct-path duplicate python tools still fail fast in pi (by design)\", \"Sibling forensic seq race may block 9tawb rerun\"],\n  \"verification\": [\"npx tsc --noEmit clean\", \"vitest session+policy: 93 passed\", \"staged paths match SCOPE allowlist\"],\n  \"files_changed\": [\"src/pi/session.ts\", \"tests/unit/pi/session.test.ts\", \"docs/pi-session.md\"],\n  \"symbols_modified\": [\"deduplicateExtensionSources\", \"PiAgentSession.start\"],\n  \"lint_pass\": true,\n  \"tests_pass\": true,\n  \"impact_report\": {\n    \"files_touched\": [\"src/pi/session.ts\", \"tests/unit/pi/session.test.ts\", \"docs/pi-session.md\"],\n    \"symbols_analyzed\": [\"resolvePiExtensionsPythonKernelPath\", \"PiAgentSession.start\", \"resolveExecutionExtensionSelection\"],\n    \"highest_risk\": \"LOW\",\n    \"tool_invocations\": 20\n  }\n}\n```\n\n_turn 52 · 564 to 784 tok · 2026-09-09 01:26 · git 2d08ff7e_\n\n\n### executor · muse-spark-1.3-contributor · [turn 52 · WAITING]\n\n## Summary\nDouble-load fixed at specialists layer. `PiAgentSession.start()` now canonicalizes local `-e` sources (dir→`index.ts`, symlinks via realpath) and drops any `execution.extensions` entry duplicating auto-injected python-kernel/gitnexus copies. Managed copy wins, drop logged as `[python-kernel] DEDUP` — no silent shadowing, no core fork.\n\n## Status\nPartial — code complete, green, pushed. Live researcher rerun on unitAI-9tawb pending orchestrator (VALIDATION step).\n\n## Changes\n- `src/pi/session.ts`: `canonicalizeLocalExtensionIdentity()` + exported `deduplicateExtensionSources()`; `start()` filters `extensionSources` against auto-injected paths, logs each drop to stderr.\n- `tests/unit/pi/session.test.ts`: 4 regression tests (dir-form, exact-dupe, symlink, spawn-level log).\n- `docs/pi-session.md`: python-kernel row + do-not-add-dev-path guidance.\n\n## Verification\n- `npx tsc --noEmit` clean.\n- `vitest` session + policy suites: 93 passed.\n- `git diff --cached --name-only` matched allowlist (src/tests/docs only; pre-existing `dist/` dirt left unstaged).\n- GitNexus blast-radius unavailable (worktree unindexed); used ast-grep instead — sole caller `session.ts:952`, low risk.\n\n## Risks\n- Realpath dedup only covers filesystem-identical copies. Two genuinely different extensions both registering `python` still fail fast in pi (correct — surfaces once with actionable message).\n- Live validation not run from worktree; sibling forensic seq race may still kill 9tawb rerun first.\n\n## Follow-ups\n- Orchestrator: rerun live researcher on unitAI-9tawb; confirm extension-load pass and record there.\n- Possible core-side hardening (pi dedup-by-realpath with winner log) needs separate core bead — not forked here per SCOPE.\n\n## Beads\n- `unitAI-il2io`: findings appended, left IN_PROGRESS pending live validation.\n- No beads created.\n\n## Machine-readable block\n```json\n{\n  \"summary\": \"Dedup python-kernel -e by realpath in session.ts; managed copy wins with stderr log. tsc clean, 93 tests green, pushed. Live rerun on 9tawb pending.\",\n  \"status\": \"partial\",\n  \"issues_closed\": [],\n  \"issues_created\": [],\n  \"follow_ups\": [\"Orchestrator rerun live researcher on unitAI-9tawb for VALIDATION\"],\n  \"risks\": [\"Distinct-path duplicate python tools still fail fast in pi (by design)\", \"Sibling forensic seq race may block 9tawb rerun\"],\n  \"verification\": [\"npx tsc --noEmit clean\", \"vitest session+policy: 93 passed\", \"staged paths match SCOPE allowlist\"],\n  \"files_changed\": [\"src/pi/session.ts\", \"tests/unit/pi/session.test.ts\", \"docs/pi-session.md\"],\n  \"symbols_modified\": [\"deduplicateExtensionSources\", \"PiAgentSession.start\"],\n  \"lint_pass\": true,\n  \"tests_pass\": true,\n  \"impact_report\": {\n    \"files_touched\": [\"src/pi/session.ts\", \"tests/unit/pi/session.test.ts\", \"docs/pi-session.md\"],\n    \"symbols_analyzed\": [\"resolvePiExtensionsPythonKernelPath\", \"PiAgentSession.start\", \"resolveExecutionExtensionSelection\"],\n    \"highest_risk\": \"LOW\",\n    \"tool_invocations\": 20\n  }\n}\n```\n\n_turn 52 · 357174 ms · 564 to 784 tok · 2026-09-09 01:26 · git 2d08ff7e_\nSeconder PASS on re-eval with inline diff 2026-09-09 (0ed7b228): placement + inversion checks pass; expensive QA authorized. Bead stays open pending live 9tawb rerun (VALIDATION).",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-09T00:52:12Z",
+        "status": "in_progress",
+        "title": "Python-kernel extension double-load registers duplicate python tool",
+        "updated_at": "2026-09-09T01:34:20Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-il2io",
+  "root_title": "Python-kernel extension double-load registers duplicate python tool",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

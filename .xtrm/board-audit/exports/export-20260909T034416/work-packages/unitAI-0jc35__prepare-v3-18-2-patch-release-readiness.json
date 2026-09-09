@@ -1,0 +1,155 @@
+{
+  "content_sha256": "178f0d020349652871a1e218b2a415cb13478ad97643020a612bfd360c072ea7",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-12T15:15:25Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-61tqz",
+        "issue_id": "unitAI-0jc35",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-0jc35",
+      "source_field": "dependencies",
+      "target": "unitAI-61tqz",
+      "target_present_in_snapshot": true,
+      "target_title": "CHANGELOG: scrub Mercury-specific incident references from PR #150/#151 entries",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-07-12T15:18:29Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-0jc35.1",
+        "issue_id": "unitAI-0jc35.3",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-0jc35.3",
+      "source_field": "dependencies",
+      "target": "unitAI-0jc35.1",
+      "target_present_in_snapshot": true,
+      "target_title": "changelog-drafter: audit v3.18.1 patch-release coverage",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-0jc35.3"
+      }
+    ],
+    "id": "unitAI-0jc35"
+  },
+  "issues": {
+    "unitAI-0jc35": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "close_reason": "Release-readiness audit, changelog reconciliation, auth, build/typecheck, and package preflight complete.",
+        "closed_at": "2026-07-12T17:14:59Z",
+        "comment_count": 0,
+        "created_at": "2026-07-12T13:15:21Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-12T15:15:25Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-61tqz",
+            "issue_id": "unitAI-0jc35",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nThe next patch release must accurately describe all consumer-visible work since v3.18.1 without publishing a minor version. Current [Unreleased] omits merged work, and an older changelog scrub task remains open.\n\n## SUCCESS\nA release-ready, policy-conformant [Unreleased] block exists for v3.18.2; the historical scrub is resolved; and release preflight explicitly records publication blockers and verification evidence.\n\n## SCRUTINY\nnone\n\n## SCOPE\nCHANGELOG.md; commits and PRs in v3.18.1..HEAD; .xtrm/reports when present; existing bead unitAI-61tqz; package metadata, release tags, CI/npm preflight evidence.\n\n## NON_GOALS\nNo source/config edits, version bump, build, commit, tag, push, GitHub release, or npm publish in this task.\n\n## CONSTRAINTS\nUse changelog-conventions and changelog-keeper-scope. Keep the requested release as v3.18.2. Reconcile the same-file historical scrub before integrating the new Unreleased edit. Preserve consumer-visible history; do not invent entries.\n\n## VALIDATION\n- [ ] Audit maps every v3.18.1..HEAD PR/commit to include, omit, or existing changelog coverage with evidence.\n- [ ] Changelog update is limited to CHANGELOG.md and passes diff --check.\n- [ ] The Unreleased sections are in Added, Changed, Fixed, Removed, Deprecated, Security order with one-line entries.\n- [ ] Release preflight verifies clean permitted scope, npm auth/version, package version, and required PR checks.\n\n## OUTPUT\nAudit matrix, exact proposed changelog bullets, historical-scrub result, release blocker list, and a go/no-go for v3.18.2.",
+        "id": "unitAI-0jc35",
+        "issue_type": "task",
+        "labels": [
+          "changelog",
+          "release"
+        ],
+        "notes": "Verified release historical blocker is already resolved in current CHANGELOG: v3.18.0 tag has the Mercury detail, current entries are generic. Removed stale blocks edge from release-note fill; unitAI-61tqz remains owned by dawid for board cleanup.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-07-12T17:12:46Z",
+        "status": "closed",
+        "title": "Prepare v3.18.2 patch-release readiness",
+        "updated_at": "2026-07-12T17:14:59Z"
+      }
+    },
+    "unitAI-0jc35.3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-12T13:18:30Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-12T15:18:29Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-0jc35",
+            "issue_id": "unitAI-0jc35.3",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-07-12T15:18:29Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-0jc35.1",
+            "issue_id": "unitAI-0jc35.3",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nchangelog-drafter is declared READ_ONLY but also declares Bash as a required tool. Runtime pre-run validation rejects that combination, so the intended release-audit specialist cannot start.\n\n## SUCCESS\nchangelog-drafter can perform its documented read-only release-bundle audit without failing capability/permission validation.\n\n## SCRUTINY\nhigh\n\n## SCOPE\nconfig/specialists/changelog-drafter.specialist.json; applicable schema/validation tests; its documented read-only command surface.\n\n## NON_GOALS\nNo changelog edits, release operations, permission broadening beyond what a genuinely read-only audit needs, or unrelated specialist changes.\n\n## CONSTRAINTS\nPreserve least privilege. Prefer removing/replacing the incompatible declared tool over raising READ_ONLY permission. Confirm the final config validates through real sp run preflight.\n\n## VALIDATION\n- [ ] Specialist schema/validation test covers the READ_ONLY tool contract.\n- [ ] sp run changelog-drafter --bead <audit-bead> passes pre-run validation in a fixture.\n- [ ] No file outside the narrow config/test scope changes.\n\n## OUTPUT\nRoot cause, changed fields/files, preflight evidence, and residual compatibility notes.",
+        "id": "unitAI-0jc35.3",
+        "issue_type": "bug",
+        "labels": [
+          "changelog",
+          "config",
+          "release",
+          "specialists"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Fix changelog-drafter READ_ONLY capability validation",
+        "updated_at": "2026-07-12T13:18:30Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-12T15:18:29Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-0jc35",
+        "issue_id": "unitAI-0jc35.3",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-0jc35.3",
+      "source_field": "dependencies",
+      "target": "unitAI-0jc35",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-0jc35",
+  "root_title": "Prepare v3.18.2 patch-release readiness",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

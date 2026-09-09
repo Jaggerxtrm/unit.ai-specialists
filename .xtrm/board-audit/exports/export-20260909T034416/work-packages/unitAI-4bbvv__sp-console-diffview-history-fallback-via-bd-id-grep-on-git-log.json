@@ -1,0 +1,66 @@
+{
+  "content_sha256": "85a254f635ad83751a5ab48793ba0f17433aa98f702668f2ac4c63007e55dcc4",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-19T20:02:01Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-ctb4u.29",
+        "issue_id": "unitAI-4bbvv",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-4bbvv",
+      "source_field": "dependencies",
+      "target": "unitAI-ctb4u.29",
+      "target_present_in_snapshot": true,
+      "target_title": "sp console DiffView: fall back to git history for jobs without live worktree",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-4bbvv"
+  },
+  "issues": {
+    "unitAI-4bbvv": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-19T18:02:02Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-19T20:02:01Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-ctb4u.29",
+            "issue_id": "unitAI-4bbvv",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nunitAI-ctb4u.29 implemented the SHA fallback (case 2: recorded `last_auto_commit_sha`). Case 3 from the original bead remains: for jobs with no recorded SHA, search `git log --grep=<bead_id>` in the repo, present a pickable list of matching commits, and let the operator inspect each commits diff via `git show <sha>`.\n\n## SUCCESS\n\nPressing `d` on a job with no live worktree AND no recorded SHA shows a commit list (most recent N where commit message contains the bead id). Operator picks one to drop into the per-file diff view.\n\n## SCOPE\n\n- src/cli/console/runtime.ts: history fallback in diffSummary returns DiffSource=history + commitMatches[].\n- src/cli/console/git.ts: parseGitLogGrep helper.\n- src/cli/console/types.ts: extend DiffSummary with history source + commitMatches.\n- src/cli/console/view-model.ts: new DiffViewState stage for picking a commit, then transitioning into the existing summary stage for the picked SHA.\n- src/cli/console/components.ts: list-render + key handlers.\n- log.ts: add git_log_grep to ConsoleErrorOp.\n- Tests: per fallback branch.\n\n## NON_GOALS\n\n- Cross-repo grep.\n- Tag/refs/notes integration.\n\n## CONSTRAINTS\n\n- BEAD_ID_RE hygiene before shelling out (no shell-interp).\n- Existing single-sink NDJSON invariant holds.\n\n## VALIDATION\n\n- [ ] Dead-worktree job with no SHA but `git log --grep=<bead>` returns hits → DiffView lists matching commits.\n- [ ] Selecting a commit renders its summary + file diff via the existing source=commit path.\n- [ ] Empty grep → existing empty state.\n\n## OUTPUT\n\nPR + per-branch tests.\n\nDiscovered-from unitAI-ctb4u.29.",
+        "id": "unitAI-4bbvv",
+        "issue_type": "feature",
+        "priority": 3,
+        "status": "open",
+        "title": "sp console DiffView: history fallback via bd-id grep on git log",
+        "updated_at": "2026-06-19T18:02:02Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-4bbvv",
+  "root_title": "sp console DiffView: history fallback via bd-id grep on git log",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
