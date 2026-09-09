@@ -33,7 +33,11 @@
 // a projection rather than the authority.
 
 import * as z from 'zod';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { NativeActivationHost } from '../../activation/native-host.js';
+import { describeBuildIdentity, readBuildId } from '../../activation/build-identity.js';
+import { renderRejection } from '../../activation/rejection.js';
 import { THINKING_LEVELS } from '../../activation/types.js';
 import type { ActivationSnapshot, ActivationTokenUsage } from '../../activation/types.js';
 import { DispatchRejectedError } from '../../activation/types.js';
@@ -181,21 +185,19 @@ export function toActivationResultView(result: ActivationResult): ActivationResu
   };
 }
 
-/**
- * Render a refusal as a tool RESULT rather than a thrown error.
- *
- * A `DispatchRejectedError` is not a malfunction — it is the gate working, and it carries
- * a structured reason the coordinator is meant to act on. Throwing it would reach Claude
- * as an opaque MCP error string and lose the `missing` sections that tell an operator
- * exactly which part of the contract to write. Genuine faults still throw.
- */
-function rejectionResult(error: DispatchRejectedError) {
-  return {
-    status: 'rejected' as const,
-    reason: error.message,
-    detail: error.detail,
-  };
-}
+// Build identity (unitAI-t2kol.4): which artifact this process loaded vs what is on
+// disk now — the Pi LOADED_BUILD_ID pattern. This module runs in two layouts (src/
+// under tsx/vitest, bundled dist/index.js in production), so the on-disk artifact is
+// located by candidate, exactly like resolveCanonicalAssetDir. The loaded id is hashed
+// once at module load; the on-disk id is re-read per refusal via readBuildId.
+const DIST_LIB_PATH = (() => {
+  for (const candidate of ['./lib.js', '../../../dist/lib.js']) {
+    const path = fileURLToPath(new URL(candidate, import.meta.url));
+    if (existsSync(path)) return path;
+  }
+  return fileURLToPath(new URL('../../../dist/lib.js', import.meta.url));
+})();
+const LOADED_BUILD_ID = readBuildId(DIST_LIB_PATH);
 
 export const specialistDispatchSchema = z.object({
   specialist: z.string().describe('Specialist name, e.g. codebase-explorer'),
@@ -294,7 +296,15 @@ export function createSpecialistDispatchTool(
           },
         };
       } catch (error) {
-        if (error instanceof DispatchRejectedError) return rejectionResult(error);
+        // A refusal is the gate working, so it stays a returned tool result — throwing
+        // would reach Claude as an opaque MCP error string. Shape comes from the shared
+        // renderer: `missing` is promoted top-level but never removed from `detail`.
+        if (error instanceof DispatchRejectedError) {
+          return renderRejection(
+            { reason: error.message, detail: error.detail, missing: error.detail.missing },
+            describeBuildIdentity(LOADED_BUILD_ID, readBuildId(DIST_LIB_PATH)),
+          );
+        }
         throw error;
       }
     },
