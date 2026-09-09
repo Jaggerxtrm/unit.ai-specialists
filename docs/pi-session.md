@@ -54,6 +54,7 @@ After disabling all extensions, `src/pi/session.ts` re-enables a small allowlist
 | `quality-gates` | ✅ If installed | `permission_required` ≠ `READ_ONLY` | Lint/typecheck enforcement on specialist edits |
 | `caveman` | ✅ If installed | Always (if installed) | Terse output for agent-to-agent communication |
 | `pi-gitnexus` (npm) | ✅ If installed, unless opted out | Not in `excludeExtensions` | Code intelligence tools |
+| `python-kernel` (`@jaggerxtrm/pi-extensions`, npm) | ✅ If installed | `permission_required` ≠ `READ_ONLY` | Persistent `python` REPL |
 | Dynamic `execution.extensions` source | ✅ When `true` | Trusted source string enabled | Forwarded as `-e <source>` in insertion order; remote `npm:`/`git:`/`http(s):` sources omit `--offline` |
 | All other extensions | ❌ Never | — | UI/UX only; not relevant headlessly |
 
@@ -86,6 +87,8 @@ Specialists can tune extension injection via `execution.extensions` in their con
 ```
 
 `gitnexus: false` excludes default GitNexus from `-e` args. Any other trusted source-string key with value `true` is forwarded as `-e <source>` in insertion order. Remote `npm:`, `git:`, and `http(s):` sources omit `--offline` for the entire run; local-only runs retain it. Fail-closed duplicate detection rejects two distinct `npm:` keys for the same package before Pi spawns.
+
+Do not add a dev-checkout `python-kernel` path to `execution.extensions`: the managed npm copy is already injected, and a dev path resolving to the same `index.ts` (directory form or symlink) registers a duplicate `python` tool that kills the spawn before turn 0. If both are configured, the spawn keeps the managed copy, drops the duplicate, and logs which source won (`[python-kernel] DEDUP`).
 
 > **Deprecated:** `execution.extensions.serena` was retired with the K4 Serena
 > retirement (unitAI-e67up.8). Legacy configs that still carry the key keep
