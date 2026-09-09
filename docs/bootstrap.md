@@ -68,7 +68,6 @@ What it does (always safe, idempotent):
 6. installs canonical hooks into `.xtrm/hooks/specialists/`, then symlinks `.claude/hooks/*`
 7. wires hook commands in `.claude/settings.json`
 8. installs canonical skills into `.xtrm/skills/default/`, verifies `.xtrm/skills/active/` symlinks, and ensures `.claude/skills` + `.pi/skills` root symlinks
-9. runs full FTS memory cache sync from `bd memories` (non-fatal if unavailable)
 
 ## Global override layer
 

@@ -84,7 +84,7 @@ describe('system prompt assembly (golden, byte-identical)', () => {
 
       ## MANDATORY_RULES
       ### core-session-boundary
-      - [required] You are one worker in XTRM. The assigned Bead/task is authority: if PROBLEM/SUCCESS/SCOPE/NON_GOALS/CONSTRAINTS/VALIDATION/OUTPUT (and required SCRUTINY) is missing or materially ambiguous, ask the coordinator; never invent requirements. Use service-knowledge when relevant; use \`bd memories\` only when history matters; current evidence wins. Prefer ast-grep over grep for code/structural search when applicable, and use the persistent python-kernel for Python analysis/transforms when useful instead of repeated one-shot scripts. For each loaded umbrella skill that applies, route through its references and use the task-specific guidance (for example, debugger → engineering-quality debugging guidance) rather than treating only the root router as the procedure. Report blockers/material findings. Stay inside the assigned worktree."
+      - [required] You are one worker in XTRM. The assigned Bead/task is authority: if PROBLEM/SUCCESS/SCOPE/NON_GOALS/CONSTRAINTS/VALIDATION/OUTPUT (and required SCRUTINY) is missing or materially ambiguous, ask the coordinator; never invent requirements. Use service-knowledge when relevant; current evidence wins. Prefer ast-grep over grep for code/structural search when applicable, and use the persistent python-kernel for Python analysis/transforms when useful instead of repeated one-shot scripts. For each loaded umbrella skill that applies, route through its references and use the task-specific guidance (for example, debugger → engineering-quality debugging guidance) rather than treating only the root router as the procedure. Report blockers/material findings. Stay inside the assigned worktree."
     `);
   });
 
@@ -158,20 +158,6 @@ describe('system prompt assembly (golden, byte-identical)', () => {
         4. \`gitnexus_detect_changes()\` — verify your changes only affect expected scope
 
         **These are not optional.** Use GitNexus as your PRIMARY code navigation tool. Only fall back to grep/find if a GitNexus call returns an error or empty results.
-        ---
-
-
-        ---
-        ## Beads Workflow Quick Rules
-        - Claim work: \`bd update <id> --claim\`
-        - Append progress notes: \`bd update <id> --append-notes "..."\`
-        - Store reusable insight: \`bd remember "insight"\`
-        - Close completed issue: \`bd close <id> --reason "done"\`
-
-        ## Session close checklist
-        1. \`git add <files>\`
-        2. \`git commit -m "..."\`
-        3. \`git push\`
         ---
 
 
@@ -250,20 +236,6 @@ describe('system prompt assembly (golden, byte-identical)', () => {
         - No hedging. Fragments fine. Short synonyms.
         - Technical terms stay exact. Code blocks unchanged.
         - Pattern: [thing] [action] [reason]. [next step].
-        ---
-
-
-        ---
-        ## Beads Workflow Quick Rules
-        - Claim work: \`bd update <id> --claim\`
-        - Append progress notes: \`bd update <id> --append-notes "..."\`
-        - Store reusable insight: \`bd remember "insight"\`
-        - Close completed issue: \`bd close <id> --reason "done"\`
-
-        ## Session close checklist
-        1. \`git add <files>\`
-        2. \`git commit -m "..."\`
-        3. \`git push\`
         ---
 
 

@@ -345,25 +345,6 @@ async function run() {
     return handler({ syncDefaults, syncSkills, noXtrmCheck, global: globalFlag });
   }
 
-  if (sub === 'memory') {
-    if (wantsHelp()) {
-      console.log([
-        '',
-        'Usage: specialists memory <sync|refresh> [--force] [--json]',
-        '',
-        'Sync bd memories into local SQLite FTS cache used for specialist context injection.',
-        '',
-        'Commands:',
-        '  sync       Sync cache when stale or mismatched (use --force to always rebuild)',
-        '  refresh    Invalidate cache then full rebuild from bd memories',
-        '',
-      ].join('\n'));
-      return;
-    }
-    const { run: handler } = await import('./cli/memory.js');
-    return handler(process.argv.slice(3));
-  }
-
   if (sub === 'db') {
     if (wantsHelp()) {
       console.log([

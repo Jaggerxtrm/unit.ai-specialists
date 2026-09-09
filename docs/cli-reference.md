@@ -57,7 +57,6 @@ source_of_truth_for:
 | [`specialists init`](#specialists-init) | | Flag | Description | |
 | [`specialists doctor`](#specialists-doctor) | No flags |
 | [`specialists validate`](#specialists-validate) | `--json`: JSON validation output |
-| [`specialists memory`](#specialists-memory) | `sync\|refresh`, `--force`, `--json`: FTS memory cache management |
 | [`specialists ps`](#specialists-ps) | `--json`: Machine-readable output; `--all`: include terminal jobs; `--follow`/`-f`: live refresh; epic grouping |
 | [`specialists merge`](#specialists-merge) | Standalone chain merge (blocked for epic-owned chains) |
 <!-- END INDEX -->
@@ -1344,48 +1343,6 @@ specialists validate code-review --json
 ### Notes
 
 - `validate` resolves specialist by runtime precedence (`user` -> `default-mirror` -> `package-fallback`) and reports file path + source in output.
-
----
-
-## `specialists memory`
-
-### Synopsis
-
-```bash
-specialists memory <sync|refresh> [--force] [--json]
-```
-
-### Subcommands
-
-| Command | Purpose |
-|---------|--------|
-| `sync` | Sync `bd memories` into local SQLite FTS cache when stale or mismatched |
-| `refresh` | Invalidate cache then full rebuild from `bd memories` |
-
-### Flags
-
-- `--force`: Force full rebuild even if cache appears fresh.
-- `--json`: JSON output.
-
-### Examples
-
-```bash
-specialists memory sync
-specialists memory sync --force
-specialists memory refresh
-specialists memory sync --json
-```
-
-### Exit codes
-
-- `0`: Success.
-- `1`: Invalid args or sync failure.
-
-### Notes
-
-- The FTS cache (`specialist_memories_cache` SQLite table) is used by `buildFilteredMemoryInjection()` for keyword-filtered memory retrieval at specialist spawn.
-- Cache auto-syncs on `specialists init` and via PostToolUse hook (`specialists-memory-cache-sync.mjs`).
-- Cache max age: 1 hour (`CACHE_MAX_AGE_MS = 3600000`).
 
 ---
 

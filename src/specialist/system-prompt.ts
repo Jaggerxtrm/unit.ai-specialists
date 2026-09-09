@@ -14,8 +14,6 @@ import { renderTemplate } from './templateEngine.js';
 import { buildRequiredPlatformRulesBlock } from './required-platform-rules.js';
 import { BeadsClient, type BeadRecord } from './beads.js';
 import {
-  STATIC_WORKFLOW_RULES_BLOCK,
-  buildFilteredMemoryInjection,
   estimateInjectedTokens,
 } from './memory-retrieval.js';
 import {
@@ -151,7 +149,7 @@ export interface SystemPromptContext {
   responseFormat: ResponseFormat;
   outputType: OutputType;
   outputContractSchema: JsonSchema | undefined;
-  /** `rendered.beadContextText` — used only to size the 'memory'/'dynamic' payload component. */
+  /** `rendered.beadContextText` — retained for caller compat; memory sizing retired (unitAI-cnca3 S1). */
   beadContextText: string;
   /** Overridable for testing; defaults to a fresh BeadsClient(). */
   readBeadForMemory?: (beadId: string) => Pick<BeadRecord, 'title' | 'description'> | null;
@@ -179,7 +177,6 @@ export function buildSystemPrompt(ctx: SystemPromptContext): SystemPromptResult 
     responseFormat,
     outputType,
     outputContractSchema,
-    beadContextText,
     readBeadForMemory = defaultReadBeadForMemory,
     hasGitnexusIndex = defaultHasGitnexusIndex,
     queryGitnexusSymbol = defaultQueryGitnexusSymbol,
@@ -201,8 +198,6 @@ export function buildSystemPrompt(ctx: SystemPromptContext): SystemPromptResult 
   // instructions that are meant for human developers, not specialist agents. Key overrides:
   // - CLAUDE.md often says "run specialists init" — specialists must NEVER do this
   // - CLAUDE.md edit-gate rules say "bd create before editing" — not applicable inside a specialist
-  let staticTokens = 0;
-  let memoryTokens = 0;
   let gitnexusTokens = 0;
 
   if (!bare) {
@@ -254,31 +249,14 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
     }
   }
 
-  // 2. .xtrm/memory.md is injected by xtrm-loader Pi extension (before_agent_start).
-  // Do NOT duplicate here — saves ~800 tokens per specialist spawn.
-
-  // 3. Inject compact beads rules + keyword-filtered memories (replaces full bd prime dump)
-  const staticRulesBlock = `\n\n---\n${STATIC_WORKFLOW_RULES_BLOCK}\n---\n`;
-  if (!bare) {
-    agentsMd += staticRulesBlock;
-    staticTokens = estimateInjectedTokens(staticRulesBlock);
-  }
-
+  // 2. Memory injection retired (unitAI-cnca3 S1): no bd-memory text in spawn prompts.
+  // Doctrine comes from xtrm-loader ONLY (memory-doctrine.md); memory.md is never
+  // injected (user-owned, maintained by `xt memory update`; Claude mirrors doctrine
+  // via project-memory.mjs). GitNexus pre-query below still needs the bead title,
+  // so keep the read.
   if (inputBeadId) {
     const beadForMemory = readBeadForMemory(inputBeadId);
     if (beadForMemory?.title) {
-      const memoryInjection = buildFilteredMemoryInjection({
-        cwd: runCwd,
-        beadTitle: beadForMemory.title,
-        beadDescription: beadForMemory.description,
-      });
-
-      if (!bare && memoryInjection.block) {
-        const memoryBlock = `\n\n---\n${memoryInjection.block}\n---\n`;
-        agentsMd += memoryBlock;
-        memoryTokens = memoryInjection.estimatedTokens;
-      }
-
       // Optional: pre-query GitNexus context for symbol-like tokens from bead title.
       // Non-fatal and intentionally best-effort only.
       try {
@@ -315,13 +293,12 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
   const components: PayloadComponentMeasurement[] = [
     measurePayloadComponent('system_prompt', 'system_prompt', agentsMd),
   ];
-  if (staticTokens > 0) components.push(measurePayloadComponent('memory', 'static', STATIC_WORKFLOW_RULES_BLOCK));
-  if (memoryTokens > 0) components.push(measurePayloadComponent('memory', 'dynamic', beadContextText || ''));
   if (gitnexusTokens > 0) components.push(measurePayloadComponent('memory', 'gitnexus', agentsMd.includes('GitNexus') ? 'GitNexus' : ''));
 
   return {
     text: agentsMd,
     components,
-    tokens: { static: staticTokens, memory: memoryTokens, gitnexus: gitnexusTokens },
+    // static/memory retired (unitAI-cnca3 S1) — zeros keep the tokens shape stable for callers.
+    tokens: { static: 0, memory: 0, gitnexus: gitnexusTokens },
   };
 }

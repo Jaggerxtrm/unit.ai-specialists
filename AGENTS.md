@@ -33,10 +33,8 @@ Example native task list mirroring beads:
 ## Session Start
 
 1. `bd prime` — load workflow context and active claims
-2. `bd memories <keyword>` — retrieve memories relevant to today's task
-3. `bd recall <key>` — retrieve a specific memory by key if needed
-4. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
-5. `bd update <id> --claim` — claim before any file edit
+2. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
+3. `bd update <id> --claim` — claim before any file edit
 
 ## Execution Interaction Policy
 
@@ -52,7 +50,6 @@ Example native task list mirroring beads:
 | **Edit** | Write/Edit without active claim | `bd update <id> --claim` |
 | **Commit** | `git commit` while claim is open | `bd close <id>` first, then commit |
 | **Stop** | Session end with unclosed claim | `bd close <id>` |
-| **Memory** | `bd close <id>` without issue ack | First run `bd remember "<insight>"` (or decide nothing novel), then `bd kv set "memory-acked:<id>" "saved:<key>"` or `"nothing novel:<reason>"`, then retry `bd close <id> --reason="..."` |
 | **Dispatch** *(bridge — discipline only, not yet extension-enforced)* | Specialist run against a `contract:draft` bead | Promote first: explore + rewrite full 7-section contract + `bd set-state <id> contract=ready --reason "..."`. Check with `bd state <id> contract` before dispatch. |
 
 ## bd Command Reference
@@ -83,11 +80,9 @@ bd create --title="..." --description="..." --type=task --priority=2
 # types: task | bug | feature | epic | chore | decision
 
 # Closing
-# Memory gate: ack per issue before close
-#   bd kv set "memory-acked:<id>" "saved:<key>"  OR  "nothing novel:<reason>"
-bd close <id>                          # Close issue (blocked until memory-acked:<id> exists)
+bd close <id>                          # Close issue
 bd close <id> --reason="Done: ..."     # Close with context
-bd close <id1> <id2> <id3>            # Batch close (each id needs its own memory ack)
+bd close <id1> <id2> <id3>            # Batch close
 
 # Dependencies
 bd dep add <issue> <depends-on>        # issue depends on depends-on (depends-on blocks issue)
@@ -95,12 +90,6 @@ bd dep <blocker> --blocks <blocked>    # shorthand: blocker blocks blocked
 bd dep relate <a> <b>                  # non-blocking "relates to" link
 bd dep tree <id>                       # visualise dependency tree
 bd blocked                             # show all currently blocked issues
-
-# Persistent memory
-bd remember "<insight>"                # Store across sessions (project-scoped)
-bd memories <keyword>                  # Search stored memories
-bd recall <key>                        # Retrieve full memory by key
-bd forget <key>                        # Remove a memory
 
 # Health & pre-flight
 bd stats                               # Open/closed/blocked counts

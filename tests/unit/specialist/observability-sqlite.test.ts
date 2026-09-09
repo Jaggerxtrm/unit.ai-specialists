@@ -812,50 +812,6 @@ describe('observability-sqlite', () => {
     });
   });
 
-  describe('memories cache ranking', () => {
-    it('ranks memory with high access frequency over stale low-access memory', () => {
-      const client = createClient();
-      const now = Date.now();
-      client.syncMemoriesCache([
-        { key: 'fts ranking one', value: 'alpha retrieval' },
-        { key: 'fts ranking two', value: 'alpha retrieval' },
-      ], now - (10 * 24 * 60 * 60 * 1000));
-
-      for (let i = 0; i < 25; i += 1) {
-        client.queryRelevantMemories(['alpha'], 1, now - 1_000 + i);
-      }
-
-      // Refresh with same keys to keep access stats, then age one row heavily.
-      client.syncMemoriesCache([
-        { key: 'fts ranking one', value: 'alpha retrieval' },
-        { key: 'fts ranking two', value: 'alpha retrieval' },
-      ], now);
-
-      const location = resolveObservabilityDbLocation(tempRoot);
-      const directDb = new Database(location.dbPath);
-      directDb.run('UPDATE memories_cache SET updated_at_ms = ? WHERE memory_key = ?', [now - (45 * 24 * 60 * 60 * 1000), 'fts ranking two']);
-      directDb.run('UPDATE memories_cache SET access_count = 0 WHERE memory_key = ?', ['fts ranking two']);
-      directDb.close();
-
-      const ranked = client.queryRelevantMemories(['alpha'], 2, now);
-      expect(ranked).toHaveLength(2);
-      expect(ranked[0]?.key).toBe('fts ranking one');
-      expect(ranked[0]?.score).toBeGreaterThan(ranked[1]?.score ?? 0);
-    });
-
-    it('returns at most requested limit (top-10 behavior)', () => {
-      const client = createClient();
-      const records = Array.from({ length: 30 }, (_, index) => ({
-        key: `memory-key-${index}`,
-        value: 'rank alpha beta',
-      }));
-      client.syncMemoriesCache(records, Date.now());
-
-      const ranked = client.queryRelevantMemories(['rank'], 10, Date.now());
-      expect(ranked.length).toBeLessThanOrEqual(10);
-    });
-  });
-
   describe('readEventsAfterSeq', () => {
     it('returns only events after the requested sequence in ascending order', () => {
       const client = createClient();
