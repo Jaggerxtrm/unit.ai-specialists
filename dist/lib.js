@@ -16162,7 +16162,123 @@ function renderTemplate(template, variables) {
 }
 
 // src/specialist/beads.ts
+import { spawnSync as spawnSync4 } from "node:child_process";
+
+// src/activation/bead-gate.ts
 import { spawnSync as spawnSync3 } from "node:child_process";
+var REQUIRED_SECTIONS = [
+  "PROBLEM",
+  "SUCCESS",
+  "SCOPE",
+  "NON_GOALS",
+  "CONSTRAINTS",
+  "VALIDATION",
+  "OUTPUT"
+];
+var SCRUTINY_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+var NON_DISPATCHABLE_STATUSES = new Set(["closed", "deferred"]);
+function readContractState(beadId) {
+  const result = spawnSync3("bd", ["state", beadId, "contract"], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 5000
+  });
+  if (result.error || result.status !== 0)
+    return;
+  const value = result.stdout?.trim().toLowerCase();
+  return value ? value : undefined;
+}
+var ALL_HEADINGS = new Set([...REQUIRED_SECTIONS, "SCRUTINY"]);
+function headingOf(line) {
+  const bare = line.trim().replace(/^#+\s*/, "").replace(/\*/g, "").trim();
+  const canonical = (text) => text.toUpperCase().replace(/[\s-]+/g, "_");
+  const whole = canonical(bare.replace(/:$/, "").trim());
+  if (ALL_HEADINGS.has(whole))
+    return { name: whole };
+  const split = bare.match(/^([A-Za-z][A-Za-z _-]*?)\s*:\s*(.*)$/);
+  if (!split)
+    return;
+  const name = canonical(split[1].trim());
+  if (!ALL_HEADINGS.has(name))
+    return;
+  const inlineBody = split[2].trim();
+  return inlineBody ? { name, inlineBody } : { name };
+}
+function extractSections(description) {
+  const sections = new Map;
+  let current;
+  let body = [];
+  const flush = () => {
+    if (current)
+      sections.set(current, body.join(`
+`).trim());
+  };
+  for (const line of description.split(`
+`)) {
+    const heading = headingOf(line);
+    if (heading) {
+      flush();
+      current = heading.name;
+      body = heading.inlineBody ? [heading.inlineBody] : [];
+      continue;
+    }
+    if (current)
+      body.push(line);
+  }
+  flush();
+  return sections;
+}
+var PURPOSE_EXCERPT_MAX = 60;
+function extractPurposeExcerpt(description) {
+  const sections = extractSections(description ?? "");
+  for (const name of ["SCOPE", "SUCCESS"]) {
+    const line = (sections.get(name) ?? "").split(`
+`).map((s) => s.trim()).find(Boolean);
+    if (!line)
+      continue;
+    const flat = line.replace(/\s+/g, " ");
+    return flat.length <= PURPOSE_EXCERPT_MAX ? flat : `${flat.slice(0, PURPOSE_EXCERPT_MAX - 1)}…`;
+  }
+  return;
+}
+function scrutinyLevel(description) {
+  const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-—]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
+  return match?.[1]?.toUpperCase();
+}
+function evaluateBeadReadiness(bead, options = {}) {
+  const status = bead.status?.trim().toLowerCase();
+  if (status && NON_DISPATCHABLE_STATUSES.has(status)) {
+    return { ok: false, reason: `bead is ${status} and is not dispatchable`, missing: [] };
+  }
+  const contractState = (options.readContractState ?? readContractState)(bead.id);
+  if (contractState === "draft") {
+    return {
+      ok: false,
+      reason: "bead contract is marked draft — promote it with `bd set-state <id> contract=ready` first",
+      missing: []
+    };
+  }
+  const description = bead.description ?? "";
+  const sections = extractSections(description);
+  const missing = REQUIRED_SECTIONS.filter((section) => !sections.get(section));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: "bead is not a usable task contract: required sections are missing or empty",
+      missing: [...missing]
+    };
+  }
+  if (!scrutinyLevel(description)) {
+    return {
+      ok: false,
+      reason: `bead declares no SCRUTINY level (expected one of ${SCRUTINY_LEVELS.join(", ")})`,
+      missing: ["SCRUTINY"]
+    };
+  }
+  return { ok: true };
+}
+
+// src/specialist/beads.ts
 function buildBeadContext(bead, completedBlockers = [], epicAncestors = []) {
   const lines = [`# Task: ${bead.title}`, `## Bead id: ${bead.id}`];
   if (bead.description?.trim()) {
@@ -16230,7 +16346,7 @@ class BeadsClient {
     }
   }
   static checkAvailable() {
-    const result = spawnSync3("bd", ["--version"], { stdio: "ignore" });
+    const result = spawnSync4("bd", ["--version"], { stdio: "ignore" });
     return result.status === 0;
   }
   isAvailable() {
@@ -16239,7 +16355,7 @@ class BeadsClient {
   createBead(specialistName) {
     if (!this.available)
       return null;
-    const result = spawnSync3("bd", ["q", `specialist:${specialistName}`, "--type", "task", "--labels", "specialist"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    const result = spawnSync4("bd", ["q", `specialist:${specialistName}`, "--type", "task", "--labels", "specialist"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
     if (result.status !== 0)
       return null;
     const id = result.stdout?.trim();
@@ -16248,7 +16364,7 @@ class BeadsClient {
   readBead(id) {
     if (!this.available || !id)
       return null;
-    const result = spawnSync3("bd", ["show", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+    const result = spawnSync4("bd", ["show", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
     if (result.error || result.status !== 0 || !result.stdout?.trim())
       return null;
     try {
@@ -16265,7 +16381,7 @@ class BeadsClient {
   getCompletedBlockers(id, depth = 1) {
     if (!this.available || !id || depth < 1)
       return [];
-    const result = spawnSync3("bd", ["dep", "list", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+    const result = spawnSync4("bd", ["dep", "list", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
     if (result.error || result.status !== 0 || !result.stdout?.trim())
       return [];
     let deps;
@@ -16292,13 +16408,13 @@ class BeadsClient {
   addDependency(trackingBeadId, inputBeadId) {
     if (!this.available || !trackingBeadId || !inputBeadId)
       return;
-    spawnSync3("bd", ["dep", "add", trackingBeadId, inputBeadId], { stdio: "ignore" });
+    spawnSync4("bd", ["dep", "add", trackingBeadId, inputBeadId], { stdio: "ignore" });
   }
   closeBead(id, status, durationMs, model) {
     if (!this.available || !id)
       return;
     const reason = `${status}, ${Math.round(durationMs)}ms, ${model}`;
-    spawnSync3("bd", ["close", id, "-r", reason], { stdio: "ignore" });
+    spawnSync4("bd", ["close", id, "-r", reason], { stdio: "ignore" });
   }
   closeBeadIfInProgress(id, reason) {
     if (!this.available || !id)
@@ -16308,13 +16424,13 @@ class BeadsClient {
       return false;
     if (bead.status !== "open" && bead.status !== "in_progress")
       return false;
-    const result = spawnSync3("bd", ["close", id, "-r", reason], { stdio: "ignore" });
+    const result = spawnSync4("bd", ["close", id, "-r", reason], { stdio: "ignore" });
     return result.status === 0;
   }
   updateBeadNotes(id, notes) {
     if (!this.available || !id || !notes)
       return { ok: false, error: "beads unavailable or empty payload" };
-    const result = spawnSync3("bd", ["update", id, "--append-notes", notes], {
+    const result = spawnSync4("bd", ["update", id, "--append-notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16330,7 +16446,7 @@ class BeadsClient {
   auditBead(id, toolName, model, exitCode) {
     if (!this.available || !id)
       return;
-    spawnSync3("bd", [
+    spawnSync4("bd", [
       "audit",
       "record",
       "--kind",
@@ -16344,6 +16460,21 @@ class BeadsClient {
       "--exit-code",
       String(exitCode)
     ], { stdio: "ignore" });
+  }
+}
+function createBeadFromContract(contract, title) {
+  const problem = extractSections(contract).get("PROBLEM");
+  const firstLine = (problem ?? "").split(`
+`).map((s) => s.trim()).find(Boolean);
+  const resolvedTitle = title ?? (firstLine ?? "Specialist dispatch contract").slice(0, 72);
+  const result = spawnSync4("bd", ["create", resolvedTitle, "--description", contract, "--type", "task", "--priority", "2", "--json"], { encoding: "utf-8", timeout: 20000 });
+  if (result.error || result.status !== 0)
+    return null;
+  try {
+    const parsed = JSON.parse(result.stdout);
+    return typeof parsed.id === "string" ? parsed.id : null;
+  } catch {
+    return null;
   }
 }
 
@@ -16823,7 +16954,7 @@ ${summaries.join(`
 }
 
 // src/specialist/runner.ts
-import { execSync as execSync2, spawnSync as spawnSync4 } from "node:child_process";
+import { execSync as execSync2, spawnSync as spawnSync5 } from "node:child_process";
 import { existsSync as existsSync10, readFileSync as readFileSync5 } from "node:fs";
 import { basename as basename2, resolve as resolve9 } from "node:path";
 import { homedir as homedir3 } from "node:os";
@@ -16844,7 +16975,7 @@ function runScript(command, cwd) {
     return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", stderr: "", exitCode: 1 };
   }
   const scriptName = sanitizeScriptName(basename2(run.split(" ")[0]));
-  const result = spawnSync4(run, {
+  const result = spawnSync5(run, {
     encoding: "utf8",
     timeout: 30000,
     cwd,
@@ -16931,7 +17062,7 @@ function resolvePath2(p) {
   return p.startsWith("~/") ? resolve9(homedir3(), p.slice(2)) : resolve9(p);
 }
 function commandExists(cmd) {
-  const result = spawnSync4("which", [cmd], { stdio: "ignore" });
+  const result = spawnSync5("which", [cmd], { stdio: "ignore" });
   return result.status === 0;
 }
 var SHELL_BUILTINS = new Set([
@@ -19614,120 +19745,6 @@ function resolveSkillsPaths(spec, fileDir, consumerRoot) {
 // src/activation/native-host.ts
 import { randomUUID as randomUUID3 } from "node:crypto";
 
-// src/activation/bead-gate.ts
-import { spawnSync as spawnSync5 } from "node:child_process";
-var REQUIRED_SECTIONS = [
-  "PROBLEM",
-  "SUCCESS",
-  "SCOPE",
-  "NON_GOALS",
-  "CONSTRAINTS",
-  "VALIDATION",
-  "OUTPUT"
-];
-var SCRUTINY_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
-var NON_DISPATCHABLE_STATUSES = new Set(["closed", "deferred"]);
-function readContractState(beadId) {
-  const result = spawnSync5("bd", ["state", beadId, "contract"], {
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"],
-    timeout: 5000
-  });
-  if (result.error || result.status !== 0)
-    return;
-  const value = result.stdout?.trim().toLowerCase();
-  return value ? value : undefined;
-}
-var ALL_HEADINGS = new Set([...REQUIRED_SECTIONS, "SCRUTINY"]);
-function headingOf(line) {
-  const bare = line.trim().replace(/^#+\s*/, "").replace(/\*/g, "").trim();
-  const canonical = (text) => text.toUpperCase().replace(/[\s-]+/g, "_");
-  const whole = canonical(bare.replace(/:$/, "").trim());
-  if (ALL_HEADINGS.has(whole))
-    return { name: whole };
-  const split = bare.match(/^([A-Za-z][A-Za-z _-]*?)\s*:\s*(.*)$/);
-  if (!split)
-    return;
-  const name = canonical(split[1].trim());
-  if (!ALL_HEADINGS.has(name))
-    return;
-  const inlineBody = split[2].trim();
-  return inlineBody ? { name, inlineBody } : { name };
-}
-function extractSections(description) {
-  const sections = new Map;
-  let current;
-  let body = [];
-  const flush = () => {
-    if (current)
-      sections.set(current, body.join(`
-`).trim());
-  };
-  for (const line of description.split(`
-`)) {
-    const heading = headingOf(line);
-    if (heading) {
-      flush();
-      current = heading.name;
-      body = heading.inlineBody ? [heading.inlineBody] : [];
-      continue;
-    }
-    if (current)
-      body.push(line);
-  }
-  flush();
-  return sections;
-}
-var PURPOSE_EXCERPT_MAX = 60;
-function extractPurposeExcerpt(description) {
-  const sections = extractSections(description ?? "");
-  for (const name of ["SCOPE", "SUCCESS"]) {
-    const line = (sections.get(name) ?? "").split(`
-`).map((s) => s.trim()).find(Boolean);
-    if (!line)
-      continue;
-    const flat = line.replace(/\s+/g, " ");
-    return flat.length <= PURPOSE_EXCERPT_MAX ? flat : `${flat.slice(0, PURPOSE_EXCERPT_MAX - 1)}…`;
-  }
-  return;
-}
-function scrutinyLevel(description) {
-  const match = description.match(/SCRUTINY\b[^\n]*\n?\s*\**\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i) ?? description.match(/SCRUTINY\b\s*[:\-—]?\s*(LOW|MEDIUM|HIGH|CRITICAL)\b/i);
-  return match?.[1]?.toUpperCase();
-}
-function evaluateBeadReadiness(bead, options = {}) {
-  const status = bead.status?.trim().toLowerCase();
-  if (status && NON_DISPATCHABLE_STATUSES.has(status)) {
-    return { ok: false, reason: `bead is ${status} and is not dispatchable`, missing: [] };
-  }
-  const contractState = (options.readContractState ?? readContractState)(bead.id);
-  if (contractState === "draft") {
-    return {
-      ok: false,
-      reason: "bead contract is marked draft — promote it with `bd set-state <id> contract=ready` first",
-      missing: []
-    };
-  }
-  const description = bead.description ?? "";
-  const sections = extractSections(description);
-  const missing = REQUIRED_SECTIONS.filter((section) => !sections.get(section));
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      reason: "bead is not a usable task contract: required sections are missing or empty",
-      missing: [...missing]
-    };
-  }
-  if (!scrutinyLevel(description)) {
-    return {
-      ok: false,
-      reason: `bead declares no SCRUTINY level (expected one of ${SCRUTINY_LEVELS.join(", ")})`,
-      missing: ["SCRUTINY"]
-    };
-  }
-  return { ok: true };
-}
-
 // src/activation/step-contract.ts
 function toList(body) {
   if (!body)
@@ -22033,6 +22050,50 @@ function textOf(message) {
   return content.filter((part) => typeof part === "object" && part !== null && part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
 }
 // src/tools/specialist/activation.tool.ts
+import { existsSync as existsSync19 } from "node:fs";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
+
+// src/activation/build-identity.ts
+import { createHash as createHash6 } from "node:crypto";
+import { readFileSync as readFileSync12 } from "node:fs";
+var BUILD_ID_BYTES = 12;
+var UNKNOWN_BUILD_ID = "unknown";
+function hashFileBytes(path) {
+  return createHash6("sha256").update(readFileSync12(path)).digest("hex");
+}
+function shortBuildId(hash) {
+  return hash.slice(0, BUILD_ID_BYTES);
+}
+function readBuildId(path) {
+  try {
+    return shortBuildId(hashFileBytes(path));
+  } catch {
+    return UNKNOWN_BUILD_ID;
+  }
+}
+function describeBuildIdentity(loadedId, onDiskId) {
+  if (loadedId === UNKNOWN_BUILD_ID || onDiskId === UNKNOWN_BUILD_ID) {
+    const known = loadedId !== UNKNOWN_BUILD_ID ? loadedId : onDiskId;
+    return known !== UNKNOWN_BUILD_ID ? `build: ${known} (the other side of the comparison could not be read, so staleness cannot be ruled out)` : "build: unknown (build identity unavailable)";
+  }
+  if (loadedId === onDiskId) {
+    return `build: ${loadedId} (loaded module matches the file on disk)`;
+  }
+  return `build: module loaded ${loadedId}, file on disk ${onDiskId} — ` + "the runtime was rebuilt after this session loaded it. Restart the session to pick up " + "the new build; until then, treat a refusal below as possibly stale rather than broken.";
+}
+
+// src/activation/rejection.ts
+function renderRejection(input, build) {
+  return {
+    status: "rejected",
+    reason: input.reason,
+    ...input.detail ? { detail: input.detail } : {},
+    ...input.missing?.length ? { missing: input.missing } : {},
+    ...build ? { build } : {}
+  };
+}
+
+// src/tools/specialist/activation.tool.ts
 function toActivationView(snapshot, nowMs = Date.now()) {
   return {
     activation_id: snapshot.activationId,
@@ -22089,9 +22150,21 @@ function toActivationResultView(result) {
     completed_at: result.completedAt
   };
 }
+var DIST_LIB_PATH = (() => {
+  for (const candidate of ["./lib.js", "../../../dist/lib.js"]) {
+    const path = fileURLToPath5(new URL(candidate, import.meta.url));
+    if (existsSync19(path))
+      return path;
+  }
+  return fileURLToPath5(new URL("../../../dist/lib.js", import.meta.url));
+})();
+var LOADED_BUILD_ID = readBuildId(DIST_LIB_PATH);
 var specialistDispatchSchema = objectType({
   specialist: stringType().describe("Specialist name, e.g. codebase-explorer"),
-  bead_id: stringType().describe("The Bead that is this activation's task contract — a COMPLETE 7-section contract " + "(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY " + "level, which must be exactly one of LOW, MEDIUM, HIGH or CRITICAL. That is EIGHT " + "required parts, not seven; SCRUTINY is the one most often left out. Write each section " + "as a heading: either the section name on its own line with its body beneath, or " + "`PROBLEM: the body` on one line. Both forms are accepted. " + "A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill)."),
+  bead_id: stringType().optional().describe("The id of an EXISTING READY Bead — this activation's task contract, a COMPLETE " + "7-section contract (PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, " + "OUTPUT) plus a SCRUTINY level, which must be exactly one of LOW, MEDIUM, HIGH or " + "CRITICAL. That is EIGHT required parts, not seven; SCRUTINY is the one most often " + "left out. Write each section as a heading: either the section name on its own line " + "with its body beneath, or `PROBLEM: the body` on one line. Both forms are accepted. " + "A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill). Mutually exclusive with contract: provide exactly one of bead_id " + "or contract, never both."),
+  contract: stringType().optional().describe("An INLINE task contract, used instead of bead_id: the SAME readiness gate " + "runs first, then a Bead is created from it and dispatched. The contract " + "must contain all seven sections — PROBLEM, SUCCESS, SCOPE, NON_GOALS, " + "CONSTRAINTS, VALIDATION, OUTPUT — plus a SCRUTINY level, which must be exactly " + "one of LOW, MEDIUM, HIGH or CRITICAL. Note that this is EIGHT required parts, " + "not seven; SCRUTINY is the one most often left out. Write each section as a " + "heading: either the section name on its own line with its body beneath, or " + "`PROBLEM: the body` on one line. Both forms are accepted. " + "A contract missing any section is refused and nothing is created."),
+  title: stringType().optional().describe("Optional title for the Bead created from `contract` (default: derived from PROBLEM). " + "Ignored when bead_id is given."),
+  epic_context_depth: numberType().optional().describe("Walk bead.parent UP this many hops (1 = immediate parent epic, 2 = epic + " + "grand-epic) and render each ancestor contract into the turn-1 prompt as an '" + "'## Epic lineage' section. Must be 1 or 2; anything else is refused. Omit for " + "single-bead dispatch with no lineage. Dropped for beads auto-created from an " + "inline contract (a fresh bead has no parent)."),
   model_override: stringType().optional().describe("Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced."),
   thinking_override: enumType(THINKING_LEVELS).optional().describe("Override the definition thinking_level for THIS activation only. Absent means the definition level. An unknown value is refused before the session is created."),
   requested_by: stringType().optional().describe("ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant."),
@@ -22367,34 +22440,6 @@ function createActivationForensicSink(observability) {
       } catch {}
     }
   };
-}
-// src/activation/build-identity.ts
-import { createHash as createHash6 } from "node:crypto";
-import { readFileSync as readFileSync12 } from "node:fs";
-var BUILD_ID_BYTES = 12;
-var UNKNOWN_BUILD_ID = "unknown";
-function hashFileBytes(path) {
-  return createHash6("sha256").update(readFileSync12(path)).digest("hex");
-}
-function shortBuildId(hash) {
-  return hash.slice(0, BUILD_ID_BYTES);
-}
-function readBuildId(path) {
-  try {
-    return shortBuildId(hashFileBytes(path));
-  } catch {
-    return UNKNOWN_BUILD_ID;
-  }
-}
-function describeBuildIdentity(loadedId, onDiskId) {
-  if (loadedId === UNKNOWN_BUILD_ID || onDiskId === UNKNOWN_BUILD_ID) {
-    const known = loadedId !== UNKNOWN_BUILD_ID ? loadedId : onDiskId;
-    return known !== UNKNOWN_BUILD_ID ? `build: ${known} (the other side of the comparison could not be read, so staleness cannot be ruled out)` : "build: unknown (build identity unavailable)";
-  }
-  if (loadedId === onDiskId) {
-    return `build: ${loadedId} (loaded module matches the file on disk)`;
-  }
-  return `build: module loaded ${loadedId}, file on disk ${onDiskId} — ` + "the runtime was rebuilt after this session loaded it. Restart the session to pick up " + "the new build; until then, treat a refusal below as possibly stale rather than broken.";
 }
 // src/specialist/launch-outcome.ts
 var LAUNCH_OUTCOME_SCHEMA_VERSION = "xtrm.command-outcome.v1";
@@ -22767,6 +22812,7 @@ export {
   resolveRuntimeToolContract,
   resolveObservabilityDbLocation,
   resolveModelChain,
+  renderRejection,
   readVerifiedCitationWindow,
   readBuildId,
   projectLaunchOutcome,
@@ -22778,6 +22824,7 @@ export {
   evaluateBeadReadiness,
   describeBuildIdentity,
   createObservabilitySqliteClientAtPath,
+  createBeadFromContract,
   createActivationForensicSink,
   completionBody,
   admitCoordinatorToolCall,

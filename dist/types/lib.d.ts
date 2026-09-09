@@ -20,10 +20,13 @@ export { resolveObservabilityDbLocation } from './specialist/observability-db.js
 export { evaluateBeadReadiness, extractSections } from './activation/bead-gate.js';
 export { describeBuildIdentity, hashFileBytes, readBuildId, shortBuildId, BUILD_ID_BYTES, UNKNOWN_BUILD_ID, } from './activation/build-identity.js';
 export type { BeadRecord } from './specialist/beads.js';
+export { createBeadFromContract } from './specialist/beads.js';
 export { LAUNCH_OUTCOME_SCHEMA_VERSION, LaunchOutcomeError, parseLaunchOutcome, validateLaunchOutcome, projectLaunchOutcome, } from './specialist/launch-outcome.js';
 export { readVerifiedCitationWindow, verifyExactLineCitation, } from './specialist/citation-evidence.js';
 export type { CitationLine, VerifiedCitationWindow, VerifiedCitationWindowOptions, RawPiReadEvidence, ExactLineClaim, ExactLineCitationResult, } from './specialist/citation-evidence.js';
 export type { LaunchOutcome, LaunchOutcomeProjection, LaunchOutcomeErrorCode, LaunchOutcomeAction, LaunchOutcomeIdentity, LaunchOutcomeReadiness, LaunchOutcomeWorktree, LaunchOutcomeRuntime, LaunchOutcomeSafetyProfile, LaunchOutcomeSideEffect, LaunchOutcomeMutationRecord, } from './specialist/launch-outcome.js';
 export { admitCoordinatorToolCall } from './activation/workspace-lease.js';
 export { leaseScopeFor } from './activation/workspace-reconcile.js';
+export { renderRejection } from './activation/rejection.js';
+export type { RejectionInput } from './activation/rejection.js';
 //# sourceMappingURL=lib.d.ts.map

@@ -97,6 +97,10 @@ export {
   UNKNOWN_BUILD_ID,
 } from './activation/build-identity.js';
 export type { BeadRecord } from './specialist/beads.js';
+// Shared bead-creation path for inline dispatch (unitAI-t2kol.5): the single
+// `bd create` both coordinator surfaces use. The Pi extension imports it rather
+// than restating it — a second creation path is a fork of admission authority.
+export { createBeadFromContract } from './specialist/beads.js';
 
 // K4 (unitAI-e67up.4): Core K2 launcher-outcome consumer contract surface.
 export {
@@ -139,3 +143,8 @@ export type {
 // workspace identity both rules key on.
 export { admitCoordinatorToolCall } from './activation/workspace-lease.js';
 export { leaseScopeFor } from './activation/workspace-reconcile.js';
+
+// Shared refusal renderer (unitAI-t2kol.4): the single gate-outcome shape both
+// coordinator surfaces use. MCP imports it; the Pi extension follows (recorded follow-up).
+export { renderRejection } from './activation/rejection.js';
+export type { RejectionInput } from './activation/rejection.js';

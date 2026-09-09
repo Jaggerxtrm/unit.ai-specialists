@@ -4,11 +4,11 @@ export declare const steerSpecialistSchema: z.ZodObject<{
     job_id: z.ZodString;
     message: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    job_id: string;
     message: string;
+    job_id: string;
 }, {
-    job_id: string;
     message: string;
+    job_id: string;
 }>;
 export declare function createSteerSpecialistTool(registry: JobRegistry): {
     name: "steer_specialist";
@@ -17,11 +17,11 @@ export declare function createSteerSpecialistTool(registry: JobRegistry): {
         job_id: z.ZodString;
         message: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        job_id: string;
         message: string;
+        job_id: string;
     }, {
-        job_id: string;
         message: string;
+        job_id: string;
     }>;
     execute(input: z.infer<typeof steerSpecialistSchema>): Promise<{
         status: string;

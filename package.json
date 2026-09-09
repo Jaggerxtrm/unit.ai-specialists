@@ -94,6 +94,7 @@
   "dependencies": {
     "@earendil-works/pi-tui": "0.75.5",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "hono": "4.12.32",
     "qs": "6.15.2",
     "yaml": "2.9.0",
