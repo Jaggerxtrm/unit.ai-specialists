@@ -62,7 +62,7 @@ describe('validateBeforeRun: missing skills are a hard pre-run failure', () => {
 
   it('passes when the declared skill exists', () => {
     expect(() =>
-      validateBeforeRun({ specialist: { skills: { paths: [join(REPO, 'config/skills/memory-audit-transaction/SKILL.md')] } } }, 'READ_ONLY'),
+      validateBeforeRun({ specialist: { skills: { paths: [join(REPO, 'config/skills/using-specialists/SKILL.md')] } } }, 'READ_ONLY'),
     ).not.toThrow();
   });
 });
