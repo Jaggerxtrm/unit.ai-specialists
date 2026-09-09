@@ -454,6 +454,52 @@ Requirements retained from the interactive programme:
 
 Coordinator agents must not own fanout/poll/wait/retry/child-failure loops that belong to deterministic runtime supervision.
 
+### 13.1 Native Pi extension surface — authoritative inventory
+
+The native Pi extension (`config/pi-extensions/specialist-subagents/index.mjs` over
+`dist/lib.js`, rebuilt from `src/` on every change) is the reference implementation the MCP
+Claude Code plugin must mirror field-for-field. The following inventory is normative: anything
+here absent from the MCP surface is a parity gap, not a Pi-only feature.
+
+**Dispatch (`specialist_dispatch`).** Exactly one of `bead_id` (an existing READY Bead) or
+`contract` (inline 7-section contract plus SCRUTINY level — eight required parts). The readiness
+gate runs before anything is created; an inline contract creates its bead first. Optional:
+`title`, `model_override` (refused before session creation when unavailable, never silently
+replaced), `thinking_override` (one of `off|minimal|low|medium|high|xhigh`, same fail-closed
+rule), `requested_by`, `coordinator_session_id`, `epic_context_depth` (1 walks to the parent
+epic, 2 also the grand-epic). Returns identity and admission only — never a result; a result
+is read later from `specialist_status`, never substituted for an interaction message.
+
+**Projections.** `specialist_status` maps live snapshots through `toActivationView`:
+`activation_id`, `specialist`, `bead_id`, `state`, `access`, `model_override`,
+`thinking_override`, `thinking_level` (omitted when unset, never fabricated), `purpose`
+(one-line SCOPE-then-SUCCESS excerpt captured once at dispatch, omitted when absent),
+`elapsed_s` (in-memory snapshot read, never a query), `token_usage` (monotonic
+non-decreasing per key on both delta-shaped and cumulative-shaped provider usage; row-budget
+short rendering, never a window-context percent), `last_activity_at`, plus the validated
+`result` object on settled activations. Forensic IDs never appear in rows.
+
+**Fleet UI.** A footer-section seam (`registerFooterSection`) renders below the XTRM
+statusline: collapsed line plus at most 8 expanded rows, needs-reply first. Running rows lead
+with a millisecond-resolution spinner; settled rows keep final spend; zero/absent tokens render
+as nothing. No `setWidget` fallback, no poll timer, no `ui.custom` mount — the seam is the
+only surface; without it the fleet stays hidden and slash commands report text.
+
+**Wake notifications.** Ask and settle events emit follow-up messages
+(`specialist_ask`/`specialist_settled`) carrying a far-left rail in `#8d7fe8`; fleet rows and
+tool-result cards carry no rail.
+
+**Control.** `specialist_reply` answers by message ID (unknown IDs reported, never silently
+passed); `specialist_resume` continues the same session; `specialist_stop_activation` disposes
+explicitly — settled activations stay resumable until stopped (stop duty). No per-call
+re-import, no hot reload; every outcome carries a build-identity line naming staleness when
+the runtime was rebuilt after load.
+
+**Workspace and evidence.** Dispatch admits through a workspace lease (writers fenced out of
+held paths; coordinator fenced out of held workspaces); every activation writes forensically
+to the shared observability store. Spend and timing come from the in-memory snapshot and the
+event stream — per-tool "doing X now" inference is out of scope.
+
 ## 14. Policy hooks and runtime adapters
 
 Cross-harness policy must have one semantic kernel with thin runtime adapters.
