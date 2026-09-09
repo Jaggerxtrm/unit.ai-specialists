@@ -24758,7 +24758,10 @@ function isRateLimitError(error2) {
   return RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 function errorMessage(error2) {
-  return error2 instanceof Error ? error2.message : typeof error2 === "string" ? error2 : JSON.stringify(error2);
+  if (error2 instanceof Error) {
+    return error2.name ? `${error2.name}: ${error2.message}` : error2.message;
+  }
+  return typeof error2 === "string" ? error2 : JSON.stringify(error2);
 }
 function isAuthError(error2) {
   if (!error2)
@@ -24825,7 +24828,9 @@ var init_circuitBreaker = __esm(() => {
     /resourceexhausted/i,
     /request limit reached/i,
     /quota exceeded/i,
-    /quota exhausted/i
+    /quota exhausted/i,
+    /usage.?limit/i,
+    /free.?usage/i
   ];
   AUTH_ERROR_PATTERNS = [
     /\b401\b/,
@@ -25116,6 +25121,7 @@ __export(exports_runner, {
   formatScriptOutput: () => formatScriptOutput,
   formatRequiredPreScriptFailure: () => formatRequiredPreScriptFailure,
   findRequiredPreScriptFailure: () => findRequiredPreScriptFailure,
+  classifyFallbackError: () => classifyFallbackError,
   SpecialistRunner: () => SpecialistRunner,
   RequiredPreScriptError: () => RequiredPreScriptError
 });
@@ -63913,12 +63919,98 @@ var init_resume = __esm(() => {
   init_job_root();
 });
 
+// src/cli/retry.ts
+var exports_retry = {};
+__export(exports_retry, {
+  run: () => run29,
+  parseRetryArgs: () => parseRetryArgs,
+  buildRetryArgv: () => buildRetryArgv,
+  RETRYABLE_JOB_STATUSES: () => RETRYABLE_JOB_STATUSES
+});
+import { spawnSync as spawnSync24 } from "child_process";
+function parseRetryArgs(argv) {
+  let jobId;
+  let model;
+  let background = false;
+  for (let i = 0;i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--model" && argv[i + 1]) {
+      model = argv[++i];
+      continue;
+    }
+    if (token === "--background") {
+      background = true;
+      continue;
+    }
+    if (!token.startsWith("-") && !jobId) {
+      jobId = token;
+      continue;
+    }
+    return { jobId, model, background, error: `Unknown option: ${token}` };
+  }
+  if (!jobId)
+    return { jobId, model, background, error: "Missing <job-id>." };
+  return { jobId, model: model?.trim() || undefined, background };
+}
+function buildRetryArgv(status, opts) {
+  if (!RETRYABLE_JOB_STATUSES.has(status.status)) {
+    const hint = status.status === "waiting" ? `Job ${status.id} is waiting \u2014 use: specialists resume ${status.id} "..."` : `Job ${status.id} is ${status.status} \u2014 use: specialists steer ${status.id} "..." (running) or specialists stop ${status.id} first.`;
+    return { error: `Job ${status.id} is not terminal (status: ${status.status}). retry only re-dispatches error/cancelled jobs.
+${hint}` };
+  }
+  const argv = ["run", status.specialist];
+  if (status.bead_id)
+    argv.push("--bead", status.bead_id);
+  if (status.worktree_path)
+    argv.push("--job", status.id);
+  if (!status.bead_id && !status.worktree_path) {
+    return { error: `Cannot retry job ${status.id}: it has no bead binding and no workspace to reuse (ad-hoc prompt runs are not persisted).` };
+  }
+  if (opts.model)
+    argv.push("--model", opts.model);
+  if (opts.background)
+    argv.push("--background");
+  return { argv };
+}
+async function run29() {
+  const parsed = parseRetryArgs(process.argv.slice(3));
+  if (parsed.error || !parsed.jobId) {
+    console.error(parsed.error ?? "Missing <job-id>.");
+    console.error("Usage: specialists|sp retry <job-id> [--model <model>] [--background]");
+    process.exit(1);
+  }
+  const jobsDir = resolveJobsDir();
+  const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
+  try {
+    const status = supervisor.readStatus(parsed.jobId);
+    if (!status) {
+      console.error(`No job found: ${parsed.jobId}`);
+      process.exit(1);
+    }
+    const resolved = buildRetryArgv(status, { model: parsed.model, background: parsed.background });
+    if ("error" in resolved) {
+      console.error(resolved.error);
+      process.exit(1);
+    }
+    const child = spawnSync24(process.execPath, [process.argv[1], ...resolved.argv], { stdio: "inherit" });
+    process.exit(child.status ?? 1);
+  } finally {
+    await supervisor.dispose();
+  }
+}
+var RETRYABLE_JOB_STATUSES;
+var init_retry = __esm(() => {
+  init_supervisor();
+  init_job_root();
+  RETRYABLE_JOB_STATUSES = new Set(["error", "cancelled"]);
+});
+
 // src/cli/follow-up.ts
 var exports_follow_up = {};
 __export(exports_follow_up, {
-  run: () => run29
+  run: () => run30
 });
-async function run29() {
+async function run30() {
   process.stderr.write("\x1B[33m\u26A0 DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
   const { run: resumeRun } = await Promise.resolve().then(() => (init_resume(), exports_resume));
   return resumeRun();
@@ -63927,7 +64019,7 @@ async function run29() {
 // src/specialist/worktree-gc.ts
 import { existsSync as existsSync46, readdirSync as readdirSync21, readFileSync as readFileSync38 } from "fs";
 import { join as join50 } from "path";
-import { spawnSync as spawnSync24 } from "child_process";
+import { spawnSync as spawnSync25 } from "child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join50(jobDir, "status.json");
   if (!existsSync46(statusPath))
@@ -63995,7 +64087,7 @@ function collectWorktreeGcCandidates(jobsDir) {
   return candidates;
 }
 function removeWorktreeDirectory(worktreePath) {
-  const result = spawnSync24("git", ["worktree", "remove", "--force", worktreePath], {
+  const result = spawnSync25("git", ["worktree", "remove", "--force", worktreePath], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -64027,7 +64119,7 @@ var init_worktree_gc = __esm(() => {
 // src/cli/clean.ts
 var exports_clean = {};
 __export(exports_clean, {
-  run: () => run30
+  run: () => run31
 });
 import { existsSync as existsSync47, readFileSync as readFileSync39, readdirSync as readdirSync22, rmSync as rmSync7, statSync as statSync14 } from "fs";
 import { join as join51 } from "path";
@@ -64539,7 +64631,7 @@ function removeStaleProcesses(statuses, dryRun) {
   }
   return updatedCount;
 }
-async function run30() {
+async function run31() {
   let options2;
   try {
     options2 = parseOptions2(process.argv.slice(3));
@@ -64644,9 +64736,9 @@ var init_clean = __esm(() => {
 // src/cli/end.ts
 var exports_end = {};
 __export(exports_end, {
-  run: () => run31
+  run: () => run32
 });
-import { spawnSync as spawnSync25 } from "child_process";
+import { spawnSync as spawnSync26 } from "child_process";
 function parseOptions3(argv) {
   let beadId;
   let epicId;
@@ -64681,7 +64773,7 @@ function parseOptions3(argv) {
   return { beadId, epicId, rebuild, pr };
 }
 function runCommand3(command, args) {
-  const result = spawnSync25(command, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync26(command, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   return {
     status: result.status,
     stdout: result.stdout ?? "",
@@ -64728,7 +64820,7 @@ async function publishChain(beadId, options2) {
     console.log("Publication mode: direct merge");
   }
 }
-async function run31() {
+async function run32() {
   let options2;
   try {
     options2 = parseOptions3(process.argv.slice(3));
@@ -64769,7 +64861,7 @@ var init_end = __esm(() => {
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run32
+  run: () => run33
 });
 function parseStopArgs(argv) {
   let jobId;
@@ -64792,7 +64884,7 @@ function parseStopArgs(argv) {
   }
   return { jobId, force, closeBeadAnyway };
 }
-async function run32() {
+async function run33() {
   let parsed;
   try {
     parsed = parseStopArgs(process.argv.slice(3));
@@ -64820,13 +64912,13 @@ var init_stop = __esm(() => {
 // src/cli/finalize.ts
 var exports_finalize = {};
 __export(exports_finalize, {
-  run: () => run33
+  run: () => run34
 });
 function parseFinalizeArgs(argv) {
   const jobId = argv.find((token) => !token.startsWith("-"));
   return { jobId };
 }
-async function run33() {
+async function run34() {
   const parsed = parseFinalizeArgs(process.argv.slice(3));
   const jobId = parsed.jobId;
   if (!jobId) {
@@ -64848,9 +64940,9 @@ var init_finalize = __esm(() => {
 // src/cli/attach-tui.ts
 var exports_attach_tui = {};
 __export(exports_attach_tui, {
-  run: () => run34
+  run: () => run35
 });
-async function run34(target, deps = {}) {
+async function run35(target, deps = {}) {
   const piTui = await Promise.resolve().then(() => (init_dist2(), exports_dist));
   const { TUI: TUI2, ProcessTerminal: ProcessTerminal2, Container: Container2, Input: Input2, matchesKey: matchesKey2, Key: Key2 } = piTui;
   const terminal = new ProcessTerminal2;
@@ -64970,7 +65062,7 @@ var init_attach_tui = __esm(() => {
 // src/cli/attach.ts
 var exports_attach = {};
 __export(exports_attach, {
-  run: () => run35
+  run: () => run36
 });
 import readline3 from "readline";
 function exitWithError(message) {
@@ -65087,7 +65179,7 @@ function pickTarget(targets) {
     render2();
   });
 }
-async function run35(deps = {}) {
+async function run36(deps = {}) {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
     if (!process.stdout.isTTY || !process.stdin.isTTY)
@@ -65103,8 +65195,8 @@ async function run35(deps = {}) {
 }
 async function attachTarget(target, deps) {
   const runTui = deps.runTui ?? (async (resolvedTarget) => {
-    const { run: run36 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
-    return run36(resolvedTarget, deps);
+    const { run: run37 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
+    return run37(resolvedTarget, deps);
   });
   return runTui(target);
 }
@@ -65227,7 +65319,7 @@ var init_drift_detector = __esm(() => {
 // src/cli/prune-stale-defaults.ts
 var exports_prune_stale_defaults = {};
 __export(exports_prune_stale_defaults, {
-  run: () => run36
+  run: () => run37
 });
 import { resolve as resolve19 } from "path";
 function parseArgs16(argv) {
@@ -65267,7 +65359,7 @@ function printHelp() {
   console.log("  --keep-diverged   Preserve diverged .specialists/default entries");
   console.log("  --root            Repo root to scan");
 }
-async function run36(argv = process.argv.slice(3)) {
+async function run37(argv = process.argv.slice(3)) {
   const { dryRun, root, help, keepDiverged } = parseArgs16(argv);
   if (help) {
     printHelp();
@@ -65299,7 +65391,7 @@ var init_prune_stale_defaults = __esm(() => {
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run37
+  run: () => run38
 });
 function section2(title) {
   const bar = "\u2500".repeat(60);
@@ -65313,7 +65405,7 @@ function cmd2(s) {
 function flag(s) {
   return green13(s);
 }
-async function run37() {
+async function run38() {
   const lines = [
     "",
     bold11("specialists  \xB7  Quick Start Guide"),
@@ -65692,7 +65784,7 @@ var init_dead_job_audit = __esm(() => {
 var exports_doctor = {};
 __export(exports_doctor, {
   setStatusError: () => setStatusError,
-  run: () => run38,
+  run: () => run39,
   resolvePackageAssetDir: () => resolvePackageAssetDir,
   renderProcessSummary: () => renderProcessSummary,
   parseVersionTuple: () => parseVersionTuple,
@@ -65700,7 +65792,7 @@ __export(exports_doctor, {
   cleanupProcesses: () => cleanupProcesses
 });
 import { createHash as createHash10 } from "crypto";
-import { spawnSync as spawnSync26 } from "child_process";
+import { spawnSync as spawnSync27 } from "child_process";
 import { existsSync as existsSync49, mkdirSync as mkdirSync19, readdirSync as readdirSync24, readFileSync as readFileSync41, writeFileSync as writeFileSync22 } from "fs";
 import { homedir as homedir13 } from "os";
 import { join as join53, relative as relative5, resolve as resolve20 } from "path";
@@ -65725,11 +65817,11 @@ function section3(label) {
 ${bold12(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync26(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync27(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled3(bin) {
-  return spawnSync26("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync27("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path3) {
   if (!existsSync49(path3))
@@ -65981,7 +66073,7 @@ function checkClaudeMdFragments() {
     hint("install xtrm-tools to enable: xt claude-sync --check");
     return true;
   }
-  const result = spawnSync26("xt", ["claude-sync", "--check", "--json", "--cwd", projectRoot], {
+  const result = spawnSync27("xt", ["claude-sync", "--check", "--json", "--cwd", projectRoot], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -66508,7 +66600,7 @@ ${bold12("specialists doctor --reap-dead-jobs")}
     client.close();
   }
 }
-async function run38(argv = process.argv.slice(3)) {
+async function run39(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (subcommand === "orphans") {
     runDoctorOrphans();
@@ -66750,8 +66842,8 @@ async function runAgenticFollowthroughProbe(model, specName, opts = {}) {
   mkdirSync21(probeDir, { recursive: true, mode: 448 });
   writeFileSync24(join55(probeDir, "probe-notes.md"), `# Probe notes
 `, { mode: 384 });
-  const run39 = opts.runSpecialist ?? runScriptSpecialist;
-  const result = await withTimeout(run39({
+  const run40 = opts.runSpecialist ?? runScriptSpecialist;
+  const result = await withTimeout(run40({
     specialist: specName,
     model_override: model,
     template: PROBE_TEMPLATE,
@@ -66882,9 +66974,9 @@ __export(exports_setup, {
   runFetchBenchmarks: () => runFetchBenchmarks,
   runDiscovery: () => runDiscovery,
   runApply: () => runApply,
-  run: () => run39
+  run: () => run40
 });
-import { spawnSync as spawnSync27 } from "child_process";
+import { spawnSync as spawnSync28 } from "child_process";
 import { readFileSync as readFileSync44 } from "fs";
 function usage4() {
   return [
@@ -66969,7 +67061,7 @@ function pickMode(current, next) {
     throw new Error("Choose exactly one setup mode");
   return next;
 }
-async function run39(argv = process.argv.slice(3)) {
+async function run40(argv = process.argv.slice(3)) {
   const args = parseArgs17(argv);
   switch (args.mode) {
     case "discovery":
@@ -67052,7 +67144,7 @@ async function collectDiscoveryState() {
   };
 }
 function parsePiModels2() {
-  const result = spawnSync27("pi", ["--list-models"], { encoding: "utf8", stdio: "pipe", timeout: 8000 });
+  const result = spawnSync28("pi", ["--list-models"], { encoding: "utf8", stdio: "pipe", timeout: 8000 });
   if (result.status !== 0 || result.error)
     return [];
   return result.stdout.split(`
@@ -67203,7 +67295,7 @@ function collectPlannedChanges(writes) {
   return changes;
 }
 function readGlobalField(key) {
-  const getResult = spawnSync27("sp", ["edit", "--global", "--get", key], {
+  const getResult = spawnSync28("sp", ["edit", "--global", "--get", key], {
     encoding: "utf8",
     stdio: "pipe"
   });
@@ -67237,7 +67329,7 @@ function rollbackChanges(applied) {
   return failed;
 }
 function setGlobalField(key, value) {
-  return spawnSync27("sp", ["edit", "--global", "--set", key, value], {
+  return spawnSync28("sp", ["edit", "--global", "--set", key, value], {
     encoding: "utf8",
     stdio: "pipe"
   });
@@ -67486,7 +67578,7 @@ var init_serve_hot_reload = () => {};
 var exports_serve = {};
 __export(exports_serve, {
   startServe: () => startServe,
-  run: () => run40,
+  run: () => run41,
   recordAuditFailure: () => recordAuditFailure,
   evaluateReadiness: () => evaluateReadiness2,
   createReadinessState: () => createReadinessState,
@@ -67495,7 +67587,7 @@ __export(exports_serve, {
 import { createServer as createServer2 } from "http";
 import { randomUUID as randomUUID10 } from "crypto";
 import { once } from "events";
-import { spawnSync as spawnSync28 } from "child_process";
+import { spawnSync as spawnSync29 } from "child_process";
 import { access, readdir as readdir2, readFile as readFile4, constants as constants3 } from "fs/promises";
 import { existsSync as existsSync52 } from "fs";
 import { homedir as homedir16 } from "os";
@@ -67635,7 +67727,7 @@ function parseArgs18(argv) {
   return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, dbPath, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, reloadPollMs, readinessCanaryMode, readinessRequiredPiFlags, readinessCanarySpecialist, readinessCanaryTimeoutMs, logLevel };
 }
 function checkPiHelpForFlags(flags = DEFAULT_REQUIRED_PI_FLAGS) {
-  const result = spawnSync28("pi", ["--help"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync29("pi", ["--help"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (result.error || result.status === 127)
     return "pi_binary_missing";
   const help = `${result.stdout ?? ""}
@@ -67892,7 +67984,7 @@ async function startServe(argv = process.argv.slice(3)) {
   console.log(`sp serve listening on ${args.port}`);
   return { server, args, db, readinessState };
 }
-async function run40(argv = process.argv.slice(3)) {
+async function run41(argv = process.argv.slice(3)) {
   await startServe(argv);
 }
 var AUDIT_WINDOW_MS = 60000, DEFAULT_REQUIRED_PI_FLAGS;
@@ -67911,11 +68003,11 @@ var init_serve = __esm(() => {
 var exports_script = {};
 __export(exports_script, {
   scriptCli: () => scriptCli,
-  run: () => run41,
+  run: () => run42,
   parseArgs: () => parseArgs19,
   mapExitCode: () => mapExitCode
 });
-import { spawnSync as spawnSync29 } from "child_process";
+import { spawnSync as spawnSync30 } from "child_process";
 function parseVar(entry) {
   const index = entry.indexOf("=");
   if (index <= 0)
@@ -68045,7 +68137,7 @@ function printResult(result, json) {
   console.error(result.error);
 }
 function runUnderLock(lockPath, argv) {
-  const flock = spawnSync29("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
+  const flock = spawnSync30("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
     encoding: "utf-8",
     stdio: "inherit"
   });
@@ -68055,7 +68147,7 @@ function runUnderLock(lockPath, argv) {
     return 75;
   return flock.status ?? 1;
 }
-async function run41(argv = process.argv.slice(3)) {
+async function run42(argv = process.argv.slice(3)) {
   const args = parseArgs19(argv);
   if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
     process.exit(runUnderLock(args.singleInstance, argv));
@@ -68087,13 +68179,13 @@ var init_script = __esm(() => {
 // src/cli/help.ts
 var exports_help2 = {};
 __export(exports_help2, {
-  run: () => run42
+  run: () => run43
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run42() {
+async function run43() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -68235,6 +68327,7 @@ var init_help = __esm(() => {
     ["epic merge [broken]", "Do not use; publish epic-owned chains with the documented manual git workflow"],
     ["steer", "Send a mid-run message to a running job"],
     ["resume", "Resume a waiting keep-alive session with a next-turn prompt (retains full context)"],
+    ["retry", "Re-dispatch an error/cancelled job, optionally on a named model (--model)"],
     ["stop", "Stop a running job"],
     ["attach", "Legacy tmux attach for jobs with tmux_session; chat-style attach is planned separately"],
     ["status", "Show health, MCP state, and active jobs"],
@@ -68264,7 +68357,7 @@ var init_help = __esm(() => {
 });
 
 // src/index.ts
-import { spawnSync as spawnSync30 } from "child_process";
+import { spawnSync as spawnSync31 } from "child_process";
 
 // node_modules/zod/v4/core/core.js
 var NEVER2 = Object.freeze({
@@ -76452,6 +76545,42 @@ function createSpecialistStopActivationTool(getHost) {
     }
   };
 }
+var specialistRetrySchema = objectType({
+  activation_id: stringType().describe("The failed activation to re-run in place."),
+  model_override: stringType().optional().describe("Re-run on a named model instead of the one that failed (manual switch after a quota " + "window kills a run). A new session is built for the new model; without this the SAME " + "session is re-prompted and its context survives."),
+  prompt: stringType().optional().describe("Replacement turn prompt. Defaults to the dispatch-time render of the same bead.")
+});
+function createSpecialistRetryTool(getHost, getPusher) {
+  return {
+    name: "specialist_retry",
+    description: "Re-run a FAILED native activation in place, optionally on a named model. " + "Keeps the activation id, the bead and the workspace lease; without model_override " + "the same session is re-prompted with its context intact. Failed only \u2014 answer an " + "outstanding question with specialist_reply and resume a settled activation with " + "specialist_resume instead.",
+    inputSchema: specialistRetrySchema,
+    async execute(input) {
+      try {
+        const handle = await getHost().retry(input.activation_id, {
+          ...input.model_override ? { modelOverride: input.model_override } : {},
+          ...input.prompt ? { prompt: input.prompt } : {}
+        });
+        const pusher = getPusher?.();
+        handle.result.then(async (result) => {
+          if (!pusher)
+            return;
+          pusher.settle(result);
+          await pusher.pushCompletion(handle.activationId).catch(() => {});
+        }, () => {});
+        const snapshot = getHost().inspect(handle.activationId);
+        return {
+          status: "retried",
+          ...snapshot ? toActivationView(snapshot) : { activation_id: handle.activationId }
+        };
+      } catch (error2) {
+        if (error2 instanceof DispatchRejectedError)
+          return rejectionResult(error2);
+        throw error2;
+      }
+    }
+  };
+}
 
 // src/tools/specialist/specialist_status.tool.ts
 var BACKENDS2 = ["gemini", "qwen", "anthropic", "openai"];
@@ -77618,6 +77747,7 @@ function nextAttemptId(current) {
   return `${prefix}:${Number(count) + 1}`;
 }
 var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
+var RETRYABLE_STATES = new Set(["failed"]);
 
 // src/activation/native-host.ts
 var TOKEN_USAGE_KEYS = [
@@ -77653,6 +77783,7 @@ function extractTokenUsage(event) {
   return;
 }
 var WRITE_TIERS = new Set(["MEDIUM", "HIGH"]);
+var FALLBACK_RETRYABLE_CLASSES = new Set(["rate_limit", "timeout", "transient"]);
 var NULL_FORENSIC_SINK = { emit: () => {} };
 
 class NativeActivationHost {
@@ -77739,7 +77870,9 @@ class NativeActivationHost {
       });
     }
     const sdk = await this.loadSdk();
-    const configuredModel = resolveModelChain(execution)[0];
+    const fullChain = resolveModelChain(execution);
+    const configuredModel = fullChain[0];
+    const modelChain = request.modelOverride ? [request.modelOverride] : fullChain;
     const requestedModel = request.modelOverride ?? configuredModel;
     if (request.thinkingOverride !== undefined && !THINKING_LEVELS.includes(request.thinkingOverride)) {
       return reject("invalid_thinking_override", {
@@ -77751,16 +77884,27 @@ class NativeActivationHost {
     if (!requestedModel)
       return reject("no_model_configured");
     const modelRuntime = await createGateModelRuntime(sdk);
-    const modelCheck = await validateModelAvailable(sdk, modelRuntime, requestedModel);
-    if (!modelCheck.ok) {
+    let modelIndex = 0;
+    let modelCheck = await validateModelAvailable(sdk, modelRuntime, modelChain[0] ?? "");
+    while ((!modelCheck.ok || !modelCheck.model) && modelIndex < modelChain.length - 1) {
+      const skipped = modelChain[modelIndex];
+      emit("model_fallback", {
+        from_model: skipped ?? null,
+        to_model: modelChain[modelIndex + 1],
+        error_class: "unavailable",
+        terminal: false,
+        note: modelCheck.reason ?? null
+      });
+      modelIndex += 1;
+      modelCheck = await validateModelAvailable(sdk, modelRuntime, modelChain[modelIndex] ?? "");
+    }
+    if (!modelCheck.ok || !modelCheck.model) {
       return reject("model_unavailable", {
-        requestedModel,
+        requestedModel: modelChain[modelIndex] ?? requestedModel,
         note: modelCheck.reason
       });
     }
-    const resolvedModel = modelCheck.resolvedModel ?? requestedModel;
-    if (!modelCheck.model)
-      return reject("model_unresolved", { requestedModel });
+    const resolvedModel = modelCheck.resolvedModel ?? modelChain[modelIndex] ?? requestedModel;
     const workspace = request.workspaceHint ?? {
       repositoryRoot: this.cwd,
       worktreePath: this.cwd
@@ -77838,15 +77982,15 @@ class NativeActivationHost {
       self: participantId,
       parent: request.requestedByParticipantId,
       onAsk: (kind, body) => {
-        const record4 = this.registry.get(activationId);
-        if (record4)
-          record4.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
+        const record5 = this.registry.get(activationId);
+        if (record5)
+          record5.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
         emit(kind === "escalation" ? "escalation_raised" : "clarification_requested", { body });
       },
       onAnswered: (kind) => {
-        const record4 = this.registry.get(activationId);
-        if (record4)
-          record4.snapshot.state = "running";
+        const record5 = this.registry.get(activationId);
+        if (record5)
+          record5.snapshot.state = "running";
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
@@ -77864,7 +78008,7 @@ class NativeActivationHost {
         note: `these tools mutate and cannot be fenced by the workspace lease on this runtime: ${guardedTools.unguardable.join(", ")}`
       });
     }
-    const { session } = await sdk.createAgentSession({
+    const baseSessionOptions = {
       customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       model: modelCheck.model,
@@ -77872,7 +78016,12 @@ class NativeActivationHost {
       noTools: "builtin",
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
-    });
+    };
+    const { session } = await sdk.createAgentSession({ ...baseSessionOptions, model: modelCheck.model });
+    const createSessionForModel = async (model) => {
+      const created = await sdk.createAgentSession({ ...baseSessionOptions, model });
+      return created.session;
+    };
     const purpose = extractPurposeExcerpt(bead.description ?? "");
     const startedAt = this.now();
     const snapshot = {
@@ -77897,8 +78046,25 @@ class NativeActivationHost {
     };
     emit("activation_started", { pi_session_id: session.sessionId });
     const unsubscribe = session.subscribe((event) => this.onSessionEvent(snapshot, event, emit));
-    const result = this.runToSettled(snapshot, session, rendered.initial_prompt, emit);
-    this.registry.register({ snapshot, session, unsubscribe, result, stepContract });
+    const record4 = {
+      snapshot,
+      session,
+      unsubscribe,
+      result: undefined,
+      stepContract,
+      initialPrompt: rendered.initial_prompt,
+      createSession: createSessionForModel
+    };
+    const result = this.runWithFallback(record4, {
+      modelChain,
+      modelIndex,
+      sdk,
+      modelRuntime,
+      initialPrompt: rendered.initial_prompt,
+      emit
+    });
+    record4.result = result;
+    this.registry.register(record4);
     return {
       activationId,
       participantId,
@@ -78037,6 +78203,174 @@ class NativeActivationHost {
         completedAt: this.now()
       };
     }
+  }
+  async runWithFallback(record4, ctx) {
+    let index = ctx.modelIndex;
+    let fallbackUsed = index > 0;
+    let result = await this.runToSettled(record4.snapshot, record4.session, ctx.initialPrompt, ctx.emit);
+    while (result.status === "failed" && index < ctx.modelChain.length - 1) {
+      if (this.registry.get(record4.snapshot.activationId) !== record4)
+        break;
+      const detail = result.validation.errors?.[0] ?? "unknown failure";
+      const errorClass = classifyFallbackError(detail);
+      if (!FALLBACK_RETRYABLE_CLASSES.has(errorClass))
+        break;
+      const nextModel = ctx.modelChain[index + 1];
+      const fromModel = record4.snapshot.resolvedModel;
+      const check2 = await validateModelAvailable(ctx.sdk, ctx.modelRuntime, nextModel);
+      if (!check2.ok || !check2.model) {
+        ctx.emit("model_fallback", {
+          from_model: fromModel,
+          to_model: nextModel,
+          error_class: errorClass,
+          terminal: true,
+          note: `fallback unavailable: ${check2.reason ?? "unresolvable"}`,
+          resolved_model: fromModel
+        });
+        break;
+      }
+      ctx.emit("model_fallback", {
+        from_model: fromModel,
+        to_model: nextModel,
+        error_class: errorClass,
+        terminal: false,
+        attempt_n: index + 2,
+        resolved_model: check2.resolvedModel ?? nextModel
+      });
+      let nextSession;
+      try {
+        nextSession = await record4.createSession(check2.model);
+      } catch (error2) {
+        ctx.emit("model_fallback", {
+          from_model: fromModel,
+          to_model: nextModel,
+          error_class: errorClass,
+          terminal: true,
+          note: error2 instanceof Error ? error2.message : String(error2),
+          resolved_model: fromModel
+        });
+        break;
+      }
+      try {
+        record4.session.dispose();
+      } catch {}
+      record4.unsubscribe();
+      record4.session = nextSession;
+      record4.snapshot.resolvedModel = check2.resolvedModel ?? nextModel;
+      record4.snapshot.piSessionId = nextSession.sessionId;
+      record4.snapshot.state = "starting";
+      record4.snapshot.lastActivityAt = this.now();
+      record4.unsubscribe = nextSession.subscribe((event) => this.onSessionEvent(record4.snapshot, event, ctx.emit));
+      ctx.emit("activation_started", { pi_session_id: nextSession.sessionId });
+      index += 1;
+      fallbackUsed = true;
+      result = await this.runToSettled(record4.snapshot, record4.session, ctx.initialPrompt, ctx.emit);
+    }
+    result.fallbackUsed = fallbackUsed;
+    return result;
+  }
+  async retry(activationId, opts) {
+    const record4 = this.registry.get(activationId);
+    if (!record4) {
+      throw new DispatchRejectedError("unknown_activation", { activationId });
+    }
+    if (!RETRYABLE_STATES.has(record4.snapshot.state)) {
+      const state = record4.snapshot.state;
+      const hint = state === "waiting" || state === "settled" || state === "needs_reply" || state === "escalated" ? `Activation ${activationId} is ${state} \u2014 use resume, which keeps the live session.` : `Activation ${activationId} is ${state} \u2014 steer it or stop it first.`;
+      throw new DispatchRejectedError("not_resumable", {
+        activationId,
+        note: `state is "${state}". retry only re-runs failed activations. ${hint}`
+      });
+    }
+    const overrideName = opts?.modelOverride;
+    let overrideModel;
+    let overrideResolved;
+    if (overrideName) {
+      const sdk = await this.loadSdk();
+      const check2 = await validateModelAvailable(sdk, await createGateModelRuntime(sdk), overrideName);
+      if (!check2.ok || !check2.model) {
+        throw new DispatchRejectedError("model_unavailable", {
+          activationId,
+          requestedModel: overrideName,
+          note: check2.reason
+        });
+      }
+      overrideModel = check2.model;
+      overrideResolved = check2.resolvedModel ?? overrideName;
+    }
+    const attemptId = nextAttemptId(record4.snapshot.attemptId);
+    if (record4.snapshot.access === "write") {
+      try {
+        acquire({
+          workspace: record4.snapshot.workspace,
+          activationId,
+          attemptId,
+          specialist: record4.snapshot.specialist
+        });
+      } catch (error2) {
+        if (error2 instanceof DispatchRejectedError) {
+          this.forensics.emit({
+            activationId,
+            attemptId,
+            participantId: record4.snapshot.participantId,
+            specialist: record4.snapshot.specialist,
+            beadId: record4.snapshot.beadId,
+            name: "lease_denied",
+            payload: { reason: error2.reason, note: error2.detail.holder, on: "retry" }
+          });
+        }
+        throw error2;
+      }
+    }
+    record4.snapshot.attemptId = attemptId;
+    record4.snapshot.state = "starting";
+    record4.snapshot.lastActivityAt = this.now();
+    const emit = (name, payload) => this.forensics.emit({
+      activationId,
+      attemptId,
+      participantId: record4.snapshot.participantId,
+      specialist: record4.snapshot.specialist,
+      beadId: record4.snapshot.beadId,
+      name,
+      payload
+    });
+    let reusedSession = true;
+    if (overrideModel && overrideResolved && overrideName) {
+      const nextSession = await record4.createSession(overrideModel);
+      try {
+        record4.session.dispose();
+      } catch {}
+      record4.unsubscribe();
+      record4.session = nextSession;
+      record4.snapshot.requestedModel = overrideName;
+      record4.snapshot.resolvedModel = overrideResolved;
+      record4.snapshot.modelOverride = true;
+      record4.snapshot.piSessionId = nextSession.sessionId;
+      reusedSession = false;
+    } else {
+      record4.unsubscribe();
+    }
+    record4.unsubscribe = record4.session.subscribe((event) => this.onSessionEvent(record4.snapshot, event, emit));
+    emit("activation_retried", {
+      requested_model: record4.snapshot.requestedModel ?? null,
+      resolved_model: record4.snapshot.resolvedModel,
+      model_override: record4.snapshot.modelOverride,
+      reused_session: reusedSession
+    });
+    const result = this.runToSettled(record4.snapshot, record4.session, opts?.prompt ?? record4.initialPrompt, emit);
+    record4.result = result;
+    return {
+      activationId,
+      participantId: record4.snapshot.participantId,
+      attemptId,
+      specialist: record4.snapshot.specialist,
+      beadId: record4.snapshot.beadId,
+      access: record4.snapshot.access,
+      workspace: record4.snapshot.workspace,
+      resolvedModel: record4.snapshot.resolvedModel,
+      stepContract: record4.stepContract,
+      result
+    };
   }
   async answer(messageId, body) {
     const ask = this.interactions.pendingAsks().find((a) => a.message.messageId === messageId);
@@ -78609,6 +78943,7 @@ class SpecialistsServer {
       createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher),
       createSpecialistDispatchTool(getHost, getPusher),
       createSpecialistReplyTool(getHost),
+      createSpecialistRetryTool(getHost, getPusher),
       createSpecialistStopActivationTool(getHost)
     ];
     this.mcpSessionId = randomUUID5();
@@ -78621,6 +78956,7 @@ class SpecialistsServer {
       use_specialist: useSpecialistSchema,
       specialist_dispatch: specialistDispatchSchema,
       specialist_reply: specialistReplySchema,
+      specialist_retry: specialistRetrySchema,
       specialist_stop_activation: specialistStopSchema
     };
     this.toolSchemas = schemaMap;
@@ -78710,7 +79046,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run43() {
+async function run44() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -79755,6 +80091,34 @@ async function run43() {
     const { run: handler } = await Promise.resolve().then(() => (init_resume(), exports_resume));
     return handler();
   }
+  if (sub === "retry") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists retry <job-id> [--model <model>] [--background]",
+        "",
+        "Re-dispatch a terminal (error/cancelled) job, optionally on a named model.",
+        "Manual model switch for activations that died on provider errors (e.g. a",
+        "429 quota window with no fallback configured). The retry reuses the failed",
+        "job's bead and workspace lease via `sp run --job`, so no new lease is taken",
+        "and partial workspace state is preserved.",
+        "",
+        "Examples:",
+        "  specialists retry a1b2c3",
+        "  specialists retry a1b2c3 --model anthropic/claude-sonnet-4-5",
+        "",
+        "Notes:",
+        "  - Only works for error/cancelled jobs. Waiting jobs use resume; running jobs use steer.",
+        "  - Without --model the configured model chain (including fallbacks) is reused.",
+        "  - All normal dispatch guards (concurrency, stale-base, worktree) still apply.",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_retry(), exports_retry));
+    return handler();
+  }
   if (sub === "follow-up") {
     if (wantsHelp()) {
       console.log([
@@ -80070,7 +80434,7 @@ async function run43() {
   }
   if (sub === "release") {
     console.error("Deprecated. Use `xt release prepare/publish`. This alias will be removed in v4.0.");
-    const result = spawnSync30("xt", ["release", ...process.argv.slice(3)], { stdio: "inherit" });
+    const result = spawnSync31("xt", ["release", ...process.argv.slice(3)], { stdio: "inherit" });
     if (result.error) {
       console.error(`Failed to run xt release: ${result.error.message}`);
       process.exit(1);
@@ -80090,7 +80454,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run43().then(() => {
+run44().then(() => {
   if (sub && sub !== "serve")
     process.exit(process.exitCode ?? 0);
 }).catch((error2) => {

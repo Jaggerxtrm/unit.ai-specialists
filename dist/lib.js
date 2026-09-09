@@ -16517,6 +16517,77 @@ ${mandatoryRulesBlock}`;
 }
 
 // src/utils/circuitBreaker.ts
+var TRANSIENT_ERROR_PATTERNS = [
+  /\b5\d{2}\b/,
+  /timeout/i,
+  /timed out/i,
+  /econnreset/i,
+  /econnrefused/i,
+  /eai_again/i,
+  /etimedout/i,
+  /network error/i,
+  /service unavailable/i,
+  /bad gateway/i,
+  /gateway timeout/i
+];
+var RATE_LIMIT_ERROR_PATTERNS = [
+  /\b429\b/,
+  /rate.?limit/i,
+  /too many requests/i,
+  /resourceexhausted/i,
+  /request limit reached/i,
+  /quota exceeded/i,
+  /quota exhausted/i,
+  /usage.?limit/i,
+  /free.?usage/i
+];
+var AUTH_ERROR_PATTERNS = [
+  /\b401\b/,
+  /\b403\b/,
+  /unauthorized/i,
+  /forbidden/i,
+  /authentication/i,
+  /\bauth\b/i,
+  /invalid api key/i,
+  /api key/i
+];
+function isTransientError(error) {
+  if (!error)
+    return false;
+  const status = error.status ?? error.statusCode;
+  if (typeof status === "number" && status >= 500 && status < 600) {
+    return true;
+  }
+  if (status === 429)
+    return true;
+  const message = errorMessage(error);
+  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message)) || RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+function isRateLimitError(error) {
+  if (!error)
+    return false;
+  const status = error.status ?? error.statusCode;
+  if (status === 429)
+    return true;
+  const message = errorMessage(error);
+  return RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+function errorMessage(error) {
+  if (error instanceof Error) {
+    return error.name ? `${error.name}: ${error.message}` : error.message;
+  }
+  return typeof error === "string" ? error : JSON.stringify(error);
+}
+function isAuthError(error) {
+  if (!error)
+    return false;
+  const status = error.status ?? error.statusCode;
+  if (status === 401 || status === 403) {
+    return true;
+  }
+  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage(error)));
+}
+
 class CircuitBreaker {
   states = new Map;
   threshold;
@@ -16983,6 +17054,18 @@ ${warnings.join(`
 ${errors.join(`
 `)}`);
   }
+}
+function classifyFallbackError(error) {
+  if (isAuthError(error))
+    return "auth";
+  if (isRateLimitError(error))
+    return "rate_limit";
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (/timeout|timed out|etimedout|deadline/.test(message))
+    return "timeout";
+  if (isTransientError(error))
+    return "transient";
+  return "unknown";
 }
 
 // src/specialist/timeline-events.ts
@@ -21104,6 +21187,7 @@ function nextAttemptId(current) {
   return `${prefix}:${Number(count) + 1}`;
 }
 var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
+var RETRYABLE_STATES = new Set(["failed"]);
 
 // src/activation/native-host.ts
 var TOKEN_USAGE_KEYS = [
@@ -21139,6 +21223,7 @@ function extractTokenUsage(event) {
   return;
 }
 var WRITE_TIERS = new Set(["MEDIUM", "HIGH"]);
+var FALLBACK_RETRYABLE_CLASSES = new Set(["rate_limit", "timeout", "transient"]);
 var NULL_FORENSIC_SINK = { emit: () => {} };
 
 class NativeActivationHost {
@@ -21225,7 +21310,9 @@ class NativeActivationHost {
       });
     }
     const sdk = await this.loadSdk();
-    const configuredModel = resolveModelChain(execution)[0];
+    const fullChain = resolveModelChain(execution);
+    const configuredModel = fullChain[0];
+    const modelChain = request.modelOverride ? [request.modelOverride] : fullChain;
     const requestedModel = request.modelOverride ?? configuredModel;
     if (request.thinkingOverride !== undefined && !THINKING_LEVELS.includes(request.thinkingOverride)) {
       return reject("invalid_thinking_override", {
@@ -21237,16 +21324,27 @@ class NativeActivationHost {
     if (!requestedModel)
       return reject("no_model_configured");
     const modelRuntime = await createGateModelRuntime(sdk);
-    const modelCheck = await validateModelAvailable(sdk, modelRuntime, requestedModel);
-    if (!modelCheck.ok) {
+    let modelIndex = 0;
+    let modelCheck = await validateModelAvailable(sdk, modelRuntime, modelChain[0] ?? "");
+    while ((!modelCheck.ok || !modelCheck.model) && modelIndex < modelChain.length - 1) {
+      const skipped = modelChain[modelIndex];
+      emit("model_fallback", {
+        from_model: skipped ?? null,
+        to_model: modelChain[modelIndex + 1],
+        error_class: "unavailable",
+        terminal: false,
+        note: modelCheck.reason ?? null
+      });
+      modelIndex += 1;
+      modelCheck = await validateModelAvailable(sdk, modelRuntime, modelChain[modelIndex] ?? "");
+    }
+    if (!modelCheck.ok || !modelCheck.model) {
       return reject("model_unavailable", {
-        requestedModel,
+        requestedModel: modelChain[modelIndex] ?? requestedModel,
         note: modelCheck.reason
       });
     }
-    const resolvedModel = modelCheck.resolvedModel ?? requestedModel;
-    if (!modelCheck.model)
-      return reject("model_unresolved", { requestedModel });
+    const resolvedModel = modelCheck.resolvedModel ?? modelChain[modelIndex] ?? requestedModel;
     const workspace = request.workspaceHint ?? {
       repositoryRoot: this.cwd,
       worktreePath: this.cwd
@@ -21324,15 +21422,15 @@ class NativeActivationHost {
       self: participantId,
       parent: request.requestedByParticipantId,
       onAsk: (kind, body) => {
-        const record2 = this.registry.get(activationId);
-        if (record2)
-          record2.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
+        const record3 = this.registry.get(activationId);
+        if (record3)
+          record3.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
         emit(kind === "escalation" ? "escalation_raised" : "clarification_requested", { body });
       },
       onAnswered: (kind) => {
-        const record2 = this.registry.get(activationId);
-        if (record2)
-          record2.snapshot.state = "running";
+        const record3 = this.registry.get(activationId);
+        if (record3)
+          record3.snapshot.state = "running";
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
@@ -21350,7 +21448,7 @@ class NativeActivationHost {
         note: `these tools mutate and cannot be fenced by the workspace lease on this runtime: ${guardedTools.unguardable.join(", ")}`
       });
     }
-    const { session } = await sdk.createAgentSession({
+    const baseSessionOptions = {
       customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       model: modelCheck.model,
@@ -21358,7 +21456,12 @@ class NativeActivationHost {
       noTools: "builtin",
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
-    });
+    };
+    const { session } = await sdk.createAgentSession({ ...baseSessionOptions, model: modelCheck.model });
+    const createSessionForModel = async (model) => {
+      const created = await sdk.createAgentSession({ ...baseSessionOptions, model });
+      return created.session;
+    };
     const purpose = extractPurposeExcerpt(bead.description ?? "");
     const startedAt = this.now();
     const snapshot = {
@@ -21383,8 +21486,25 @@ class NativeActivationHost {
     };
     emit("activation_started", { pi_session_id: session.sessionId });
     const unsubscribe = session.subscribe((event) => this.onSessionEvent(snapshot, event, emit));
-    const result = this.runToSettled(snapshot, session, rendered.initial_prompt, emit);
-    this.registry.register({ snapshot, session, unsubscribe, result, stepContract });
+    const record2 = {
+      snapshot,
+      session,
+      unsubscribe,
+      result: undefined,
+      stepContract,
+      initialPrompt: rendered.initial_prompt,
+      createSession: createSessionForModel
+    };
+    const result = this.runWithFallback(record2, {
+      modelChain,
+      modelIndex,
+      sdk,
+      modelRuntime,
+      initialPrompt: rendered.initial_prompt,
+      emit
+    });
+    record2.result = result;
+    this.registry.register(record2);
     return {
       activationId,
       participantId,
@@ -21523,6 +21643,174 @@ class NativeActivationHost {
         completedAt: this.now()
       };
     }
+  }
+  async runWithFallback(record2, ctx) {
+    let index = ctx.modelIndex;
+    let fallbackUsed = index > 0;
+    let result = await this.runToSettled(record2.snapshot, record2.session, ctx.initialPrompt, ctx.emit);
+    while (result.status === "failed" && index < ctx.modelChain.length - 1) {
+      if (this.registry.get(record2.snapshot.activationId) !== record2)
+        break;
+      const detail = result.validation.errors?.[0] ?? "unknown failure";
+      const errorClass = classifyFallbackError(detail);
+      if (!FALLBACK_RETRYABLE_CLASSES.has(errorClass))
+        break;
+      const nextModel = ctx.modelChain[index + 1];
+      const fromModel = record2.snapshot.resolvedModel;
+      const check = await validateModelAvailable(ctx.sdk, ctx.modelRuntime, nextModel);
+      if (!check.ok || !check.model) {
+        ctx.emit("model_fallback", {
+          from_model: fromModel,
+          to_model: nextModel,
+          error_class: errorClass,
+          terminal: true,
+          note: `fallback unavailable: ${check.reason ?? "unresolvable"}`,
+          resolved_model: fromModel
+        });
+        break;
+      }
+      ctx.emit("model_fallback", {
+        from_model: fromModel,
+        to_model: nextModel,
+        error_class: errorClass,
+        terminal: false,
+        attempt_n: index + 2,
+        resolved_model: check.resolvedModel ?? nextModel
+      });
+      let nextSession;
+      try {
+        nextSession = await record2.createSession(check.model);
+      } catch (error) {
+        ctx.emit("model_fallback", {
+          from_model: fromModel,
+          to_model: nextModel,
+          error_class: errorClass,
+          terminal: true,
+          note: error instanceof Error ? error.message : String(error),
+          resolved_model: fromModel
+        });
+        break;
+      }
+      try {
+        record2.session.dispose();
+      } catch {}
+      record2.unsubscribe();
+      record2.session = nextSession;
+      record2.snapshot.resolvedModel = check.resolvedModel ?? nextModel;
+      record2.snapshot.piSessionId = nextSession.sessionId;
+      record2.snapshot.state = "starting";
+      record2.snapshot.lastActivityAt = this.now();
+      record2.unsubscribe = nextSession.subscribe((event) => this.onSessionEvent(record2.snapshot, event, ctx.emit));
+      ctx.emit("activation_started", { pi_session_id: nextSession.sessionId });
+      index += 1;
+      fallbackUsed = true;
+      result = await this.runToSettled(record2.snapshot, record2.session, ctx.initialPrompt, ctx.emit);
+    }
+    result.fallbackUsed = fallbackUsed;
+    return result;
+  }
+  async retry(activationId, opts) {
+    const record2 = this.registry.get(activationId);
+    if (!record2) {
+      throw new DispatchRejectedError("unknown_activation", { activationId });
+    }
+    if (!RETRYABLE_STATES.has(record2.snapshot.state)) {
+      const state = record2.snapshot.state;
+      const hint = state === "waiting" || state === "settled" || state === "needs_reply" || state === "escalated" ? `Activation ${activationId} is ${state} — use resume, which keeps the live session.` : `Activation ${activationId} is ${state} — steer it or stop it first.`;
+      throw new DispatchRejectedError("not_resumable", {
+        activationId,
+        note: `state is "${state}". retry only re-runs failed activations. ${hint}`
+      });
+    }
+    const overrideName = opts?.modelOverride;
+    let overrideModel;
+    let overrideResolved;
+    if (overrideName) {
+      const sdk = await this.loadSdk();
+      const check = await validateModelAvailable(sdk, await createGateModelRuntime(sdk), overrideName);
+      if (!check.ok || !check.model) {
+        throw new DispatchRejectedError("model_unavailable", {
+          activationId,
+          requestedModel: overrideName,
+          note: check.reason
+        });
+      }
+      overrideModel = check.model;
+      overrideResolved = check.resolvedModel ?? overrideName;
+    }
+    const attemptId = nextAttemptId(record2.snapshot.attemptId);
+    if (record2.snapshot.access === "write") {
+      try {
+        acquire({
+          workspace: record2.snapshot.workspace,
+          activationId,
+          attemptId,
+          specialist: record2.snapshot.specialist
+        });
+      } catch (error) {
+        if (error instanceof DispatchRejectedError) {
+          this.forensics.emit({
+            activationId,
+            attemptId,
+            participantId: record2.snapshot.participantId,
+            specialist: record2.snapshot.specialist,
+            beadId: record2.snapshot.beadId,
+            name: "lease_denied",
+            payload: { reason: error.reason, note: error.detail.holder, on: "retry" }
+          });
+        }
+        throw error;
+      }
+    }
+    record2.snapshot.attemptId = attemptId;
+    record2.snapshot.state = "starting";
+    record2.snapshot.lastActivityAt = this.now();
+    const emit = (name, payload) => this.forensics.emit({
+      activationId,
+      attemptId,
+      participantId: record2.snapshot.participantId,
+      specialist: record2.snapshot.specialist,
+      beadId: record2.snapshot.beadId,
+      name,
+      payload
+    });
+    let reusedSession = true;
+    if (overrideModel && overrideResolved && overrideName) {
+      const nextSession = await record2.createSession(overrideModel);
+      try {
+        record2.session.dispose();
+      } catch {}
+      record2.unsubscribe();
+      record2.session = nextSession;
+      record2.snapshot.requestedModel = overrideName;
+      record2.snapshot.resolvedModel = overrideResolved;
+      record2.snapshot.modelOverride = true;
+      record2.snapshot.piSessionId = nextSession.sessionId;
+      reusedSession = false;
+    } else {
+      record2.unsubscribe();
+    }
+    record2.unsubscribe = record2.session.subscribe((event) => this.onSessionEvent(record2.snapshot, event, emit));
+    emit("activation_retried", {
+      requested_model: record2.snapshot.requestedModel ?? null,
+      resolved_model: record2.snapshot.resolvedModel,
+      model_override: record2.snapshot.modelOverride,
+      reused_session: reusedSession
+    });
+    const result = this.runToSettled(record2.snapshot, record2.session, opts?.prompt ?? record2.initialPrompt, emit);
+    record2.result = result;
+    return {
+      activationId,
+      participantId: record2.snapshot.participantId,
+      attemptId,
+      specialist: record2.snapshot.specialist,
+      beadId: record2.snapshot.beadId,
+      access: record2.snapshot.access,
+      workspace: record2.snapshot.workspace,
+      resolvedModel: record2.snapshot.resolvedModel,
+      stepContract: record2.stepContract,
+      result
+    };
   }
   async answer(messageId, body) {
     const ask = this.interactions.pendingAsks().find((a) => a.message.messageId === messageId);
@@ -21816,6 +22104,11 @@ var specialistReplySchema = objectType({
 var specialistStopSchema = objectType({
   activation_id: stringType().describe("Activation to stop and dispose."),
   reason: stringType().optional().describe("Recorded forensically with the disposal.")
+});
+var specialistRetrySchema = objectType({
+  activation_id: stringType().describe("The failed activation to re-run in place."),
+  model_override: stringType().optional().describe("Re-run on a named model instead of the one that failed (manual switch after a quota " + "window kills a run). A new session is built for the new model; without this the SAME " + "session is re-prompted and its context survives."),
+  prompt: stringType().optional().describe("Replacement turn prompt. Defaults to the dispatch-time render of the same bead.")
 });
 // src/activation/async-events.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
