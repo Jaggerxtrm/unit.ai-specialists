@@ -11797,26 +11797,6 @@ function initSchema(db) {
       output        TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
     );
-
-    CREATE TABLE IF NOT EXISTS memories_cache (
-      memory_key           TEXT PRIMARY KEY,
-      memory_value         TEXT NOT NULL,
-      updated_at_ms        INTEGER NOT NULL,
-      last_accessed_at_ms  INTEGER,
-      access_count         INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS memories_cache_meta (
-      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
-      last_sync_at_ms  INTEGER NOT NULL,
-      memory_count     INTEGER NOT NULL
-    );
-
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      key,
-      content,
-      tokenize='porter ascii'
-    );
   `);
   const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
   const missingSpecialistJobsColumns = [
@@ -12194,29 +12174,6 @@ function migrateToV9(db) {
 }
 function migrateToV10(db) {
   const hasV10 = db.query("SELECT 1 FROM schema_version WHERE version = 10 LIMIT 1").get();
-  db.run(`
-    CREATE TABLE IF NOT EXISTS memories_cache (
-      memory_key           TEXT PRIMARY KEY,
-      memory_value         TEXT NOT NULL,
-      updated_at_ms        INTEGER NOT NULL,
-      last_accessed_at_ms  INTEGER,
-      access_count         INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS memories_cache_meta (
-      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
-      last_sync_at_ms  INTEGER NOT NULL,
-      memory_count     INTEGER NOT NULL
-    );
-  `);
-  db.run(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      key,
-      content,
-      tokenize='porter ascii'
-    );
-  `);
   if (hasV10) {
     return;
   }
@@ -13677,117 +13634,6 @@ class SqliteClient {
       const row = this.db.query("SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1").get(jobId);
       return row?.output ?? null;
     }, "readResult");
-  }
-  syncMemoriesCache(memories, syncedAtMs = Date.now()) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.db.run("DELETE FROM memories_fts");
-        const upsertMemory = this.db.query(`
-          INSERT INTO memories_cache (memory_key, memory_value, updated_at_ms)
-          VALUES (?, ?, ?)
-          ON CONFLICT(memory_key) DO UPDATE SET
-            memory_value = excluded.memory_value,
-            updated_at_ms = excluded.updated_at_ms
-        `);
-        const insertFts = this.db.query("INSERT INTO memories_fts (key, content) VALUES (?, ?)");
-        const seen = new Set;
-        for (const memory of memories) {
-          if (!memory.key || seen.has(memory.key))
-            continue;
-          seen.add(memory.key);
-          upsertMemory.run(memory.key, memory.value, syncedAtMs);
-          insertFts.run(memory.key, `${memory.key} ${memory.value}`);
-        }
-        if (seen.size > 0) {
-          const placeholders = [...seen].map(() => "?").join(", ");
-          this.db.query(`DELETE FROM memories_cache WHERE memory_key NOT IN (${placeholders})`).run(...seen);
-        } else {
-          this.db.run("DELETE FROM memories_cache");
-        }
-        this.db.query(`
-          INSERT INTO memories_cache_meta (singleton_key, last_sync_at_ms, memory_count)
-          VALUES (1, ?, ?)
-          ON CONFLICT(singleton_key) DO UPDATE SET
-            last_sync_at_ms = excluded.last_sync_at_ms,
-            memory_count = excluded.memory_count
-        `).run(syncedAtMs, seen.size);
-      });
-      transaction();
-    }, "syncMemoriesCache");
-  }
-  getMemoriesCacheState() {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT last_sync_at_ms, memory_count
-        FROM memories_cache_meta
-        WHERE singleton_key = 1
-        LIMIT 1
-      `).get();
-      if (!row || typeof row.last_sync_at_ms !== "number" || typeof row.memory_count !== "number") {
-        return null;
-      }
-      return { lastSyncAtMs: row.last_sync_at_ms, memoryCount: row.memory_count };
-    }, "getMemoriesCacheState");
-  }
-  queryRelevantMemories(keywords, limit = 10, nowMs = Date.now()) {
-    return withRetry(() => {
-      const cleanedKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter((keyword) => keyword.length > 0))];
-      if (cleanedKeywords.length === 0)
-        return [];
-      const matchQuery = cleanedKeywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
-      const rows = this.db.query(`
-        SELECT
-          cache.memory_key,
-          cache.memory_value,
-          bm25(memories_fts) AS bm25_score,
-          COALESCE((? - cache.updated_at_ms) / 3600000.0, 999999.0) AS age_hours,
-          cache.access_count
-        FROM memories_fts
-        JOIN memories_cache cache ON cache.memory_key = memories_fts.key
-        WHERE memories_fts MATCH ?
-        ORDER BY bm25_score ASC
-        LIMIT ?
-      `).all(nowMs, matchQuery, Math.max(1, limit * 3));
-      const ranked = rows.map((row) => {
-        const bm25 = Number.isFinite(row.bm25_score) ? row.bm25_score : 100;
-        const bm25Norm = 1 / (1 + Math.max(0, bm25));
-        const recency = Math.exp(-Math.max(0, row.age_hours) / 72);
-        const accessFrequency = Math.min(1, Math.log1p(Math.max(0, row.access_count)) / Math.log(10));
-        const score = 0.5 * bm25Norm + 0.3 * recency + 0.2 * accessFrequency;
-        return {
-          key: row.memory_key,
-          value: row.memory_value,
-          bm25,
-          recency,
-          accessFrequency,
-          score
-        };
-      });
-      ranked.sort((left, right) => right.score - left.score);
-      const selected = ranked.slice(0, Math.max(1, limit));
-      if (selected.length === 0)
-        return [];
-      const accessStmt = this.db.query(`
-        UPDATE memories_cache
-        SET access_count = access_count + 1,
-            last_accessed_at_ms = ?
-        WHERE memory_key = ?
-      `);
-      for (const memory of selected) {
-        accessStmt.run(nowMs, memory.key);
-      }
-      return selected;
-    }, "queryRelevantMemories");
-  }
-  invalidateMemoriesCache() {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.db.run("DELETE FROM memories_fts");
-        this.db.run("DELETE FROM memories_cache");
-        this.db.run("DELETE FROM memories_cache_meta");
-      });
-      transaction();
-    }, "invalidateMemoriesCache");
   }
   hasActiveJobs(statuses = ["running", "starting"]) {
     return this.listActiveJobs(statuses).length > 0;
@@ -22472,172 +22318,14 @@ var init_templateEngine = __esm(() => {
 });
 
 // src/specialist/memory-retrieval.ts
-import { execSync } from "child_process";
 function estimateTokens(text) {
   return Math.ceil(text.length / 4);
-}
-function normalizeToken(raw) {
-  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").trim();
-}
-function extractTokens(input) {
-  return input.split(/\s+/g).map(normalizeToken).filter((token) => token.length >= 3 && !DEFAULT_STOP_WORDS.has(token));
-}
-function extractMemoryKeywords(title, description) {
-  const tokens = [
-    ...extractTokens(title),
-    ...extractTokens(description ?? "")
-  ];
-  const unique = [];
-  const seen = new Set;
-  for (const token of tokens) {
-    if (seen.has(token))
-      continue;
-    seen.add(token);
-    unique.push(token);
-    if (unique.length >= MAX_KEYWORDS)
-      break;
-  }
-  return unique;
-}
-function parseMemoriesPayload(jsonText) {
-  if (!jsonText.trim())
-    return [];
-  const parsed = JSON.parse(jsonText);
-  if (Array.isArray(parsed)) {
-    return parsed.map((entry) => {
-      if (!entry || typeof entry !== "object")
-        return null;
-      const maybeRecord = entry;
-      const key = typeof maybeRecord.key === "string" ? maybeRecord.key : null;
-      const value = typeof maybeRecord.value === "string" ? maybeRecord.value : null;
-      if (!key || value === null)
-        return null;
-      return { key, value };
-    }).filter((entry) => Boolean(entry));
-  }
-  if (parsed && typeof parsed === "object") {
-    return Object.entries(parsed).filter((entry) => typeof entry[0] === "string" && typeof entry[1] === "string").map(([key, value]) => ({ key, value }));
-  }
-  return [];
-}
-function readBdMemories(cwd) {
-  try {
-    const stdout = execSync("bd memories --json", {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 5000
-    });
-    return parseMemoriesPayload(stdout);
-  } catch (error2) {
-    const commandError = error2;
-    const stderr = typeof commandError.stderr === "string" ? commandError.stderr : commandError.stderr?.toString("utf8") ?? "";
-    if (/no beads database found/i.test(stderr)) {
-      return [];
-    }
-    throw error2;
-  }
-}
-function shouldRefreshCache(args) {
-  if (args.cacheCount === null || args.cacheLastSyncAtMs === null)
-    return true;
-  if (args.cacheCount !== args.sourceCount)
-    return true;
-  return args.nowMs - args.cacheLastSyncAtMs > CACHE_MAX_AGE_MS;
-}
-function toMemoryRecord(memory) {
-  return { key: memory.key, value: memory.value };
-}
-function syncMemoriesCacheFromBd(cwd, nowMs = Date.now(), forceFullSync = false) {
-  const sqliteClient = createObservabilitySqliteClient(cwd);
-  if (!sqliteClient) {
-    return { synced: false, memoryCount: 0 };
-  }
-  try {
-    const sourceMemories = readBdMemories(cwd);
-    const cacheState = sqliteClient.getMemoriesCacheState();
-    const needsRefresh = forceFullSync || shouldRefreshCache({
-      nowMs,
-      cacheCount: cacheState?.memoryCount ?? null,
-      cacheLastSyncAtMs: cacheState?.lastSyncAtMs ?? null,
-      sourceCount: sourceMemories.length
-    });
-    if (!needsRefresh) {
-      return { synced: false, memoryCount: sourceMemories.length };
-    }
-    sqliteClient.syncMemoriesCache(sourceMemories, nowMs);
-    return { synced: true, memoryCount: sourceMemories.length };
-  } finally {
-    sqliteClient.close();
-  }
-}
-function invalidateAndRefreshMemoriesCache(cwd, nowMs = Date.now()) {
-  const sqliteClient = createObservabilitySqliteClient(cwd);
-  if (!sqliteClient) {
-    return { synced: false, memoryCount: 0 };
-  }
-  try {
-    sqliteClient.invalidateMemoriesCache();
-  } finally {
-    sqliteClient.close();
-  }
-  return syncMemoriesCacheFromBd(cwd, nowMs, true);
-}
-function buildFilteredMemoryInjection(args) {
-  const keywords = extractMemoryKeywords(args.beadTitle, args.beadDescription);
-  if (keywords.length === 0) {
-    return { block: "", memories: [], estimatedTokens: 0 };
-  }
-  const nowMs = Date.now();
-  try {
-    syncMemoriesCacheFromBd(args.cwd, nowMs, false);
-  } catch {}
-  const sqliteClient = createObservabilitySqliteClient(args.cwd);
-  if (!sqliteClient) {
-    return { block: "", memories: [], estimatedTokens: 0 };
-  }
-  try {
-    const ranked = sqliteClient.queryRelevantMemories(keywords, MAX_MEMORIES, nowMs);
-    if (ranked.length === 0) {
-      return { block: "", memories: [], estimatedTokens: 0 };
-    }
-    const selected = [];
-    let tokenBudget = 0;
-    for (const memory of ranked) {
-      const line = `- ${memory.key}: ${memory.value}`;
-      const lineTokens = estimateTokens(line);
-      if (selected.length > 0 && tokenBudget + lineTokens > MAX_MEMORY_TOKENS)
-        break;
-      selected.push(toMemoryRecord(memory));
-      tokenBudget += lineTokens;
-    }
-    if (selected.length === 0) {
-      return { block: "", memories: [], estimatedTokens: 0 };
-    }
-    const lines = selected.map((memory) => `- ${memory.key}: ${memory.value}`);
-    const block = [
-      "## Filtered Beads Memories",
-      `_Keyword matched from bead context: ${keywords.join(", ")}_`,
-      ...lines
-    ].join(`
-`);
-    return {
-      block,
-      memories: selected,
-      estimatedTokens: estimateTokens(block)
-    };
-  } catch {
-    return { block: "", memories: [], estimatedTokens: 0 };
-  } finally {
-    sqliteClient.close();
-  }
 }
 function estimateInjectedTokens(text) {
   return estimateTokens(text);
 }
-var DEFAULT_STOP_WORDS, MAX_KEYWORDS = 6, MAX_MEMORIES = 10, MAX_MEMORY_TOKENS = 600, CACHE_MAX_AGE_MS, STATIC_WORKFLOW_RULES_BLOCK;
+var DEFAULT_STOP_WORDS, CACHE_MAX_AGE_MS, STATIC_WORKFLOW_RULES_BLOCK;
 var init_memory_retrieval = __esm(() => {
-  init_observability_sqlite();
   DEFAULT_STOP_WORDS = new Set([
     "a",
     "an",
@@ -22946,7 +22634,11 @@ function buildMandatoryRulesInjection(specialistConfig, budgetLimit = Number.POS
   const globalsDisabled = mandatoryRules?.disable_default_globals ?? false;
   const globals = globalsDisabled ? [] : [{
     id: "workflow-quick-rules",
-    rules: [{ id: "workflow-quick-rules-1", level: "required", text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, "") }],
+    rules: [{
+      id: "workflow-quick-rules-1",
+      level: "required",
+      text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, "").replace(/^- Store reusable insight:.*\n/m, "")
+    }],
     priority: "must_keep"
   }];
   const requiredIds = new Set(index?.required_template_sets ?? []);
@@ -25209,7 +24901,7 @@ var init_required_platform_rules = __esm(() => {
 });
 
 // src/specialist/system-prompt.ts
-import { execSync as execSync2 } from "child_process";
+import { execSync } from "child_process";
 import { existsSync as existsSync12 } from "fs";
 import { resolve as resolve8 } from "path";
 function buildOutputContractInstruction(responseFormat, outputType, outputSchema) {
@@ -25246,7 +24938,7 @@ function defaultHasGitnexusIndex(cwd) {
 }
 function defaultQueryGitnexusSymbol(cwd, symbol) {
   try {
-    const raw = execSync2(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
+    const raw = execSync(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
       cwd,
       encoding: "utf8",
       timeout: 5000,
@@ -25281,7 +24973,6 @@ function buildSystemPrompt(ctx) {
     responseFormat,
     outputType,
     outputContractSchema,
-    beadContextText,
     readBeadForMemory = defaultReadBeadForMemory,
     hasGitnexusIndex = defaultHasGitnexusIndex,
     queryGitnexusSymbol = defaultQueryGitnexusSymbol
@@ -25294,8 +24985,6 @@ function buildSystemPrompt(ctx) {
 
 ${requiredPlatformRulesBlock}`;
   }
-  let staticTokens = 0;
-  let memoryTokens = 0;
   let gitnexusTokens = 0;
   if (!bare) {
     const sanitizedBeadId = inputBeadId ? sanitizeBeadIdForPrompt(inputBeadId) : "";
@@ -25356,34 +25045,9 @@ _This project is indexed by GitNexus. You MUST use these tools \u2014 do NOT fal
       }
     } catch {}
   }
-  const staticRulesBlock = `
-
----
-${STATIC_WORKFLOW_RULES_BLOCK}
----
-`;
-  if (!bare) {
-    agentsMd += staticRulesBlock;
-    staticTokens = estimateInjectedTokens(staticRulesBlock);
-  }
   if (inputBeadId) {
     const beadForMemory = readBeadForMemory(inputBeadId);
     if (beadForMemory?.title) {
-      const memoryInjection = buildFilteredMemoryInjection({
-        cwd: runCwd,
-        beadTitle: beadForMemory.title,
-        beadDescription: beadForMemory.description
-      });
-      if (!bare && memoryInjection.block) {
-        const memoryBlock = `
-
----
-${memoryInjection.block}
----
-`;
-        agentsMd += memoryBlock;
-        memoryTokens = memoryInjection.estimatedTokens;
-      }
       try {
         if (hasGitnexusIndex(runCwd)) {
           const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? []).slice(0, 2);
@@ -25418,16 +25082,12 @@ ${summaries.join(`
   const components = [
     measurePayloadComponent("system_prompt", "system_prompt", agentsMd)
   ];
-  if (staticTokens > 0)
-    components.push(measurePayloadComponent("memory", "static", STATIC_WORKFLOW_RULES_BLOCK));
-  if (memoryTokens > 0)
-    components.push(measurePayloadComponent("memory", "dynamic", beadContextText || ""));
   if (gitnexusTokens > 0)
     components.push(measurePayloadComponent("memory", "gitnexus", agentsMd.includes("GitNexus") ? "GitNexus" : ""));
   return {
     text: agentsMd,
     components,
-    tokens: { static: staticTokens, memory: memoryTokens, gitnexus: gitnexusTokens }
+    tokens: { static: 0, memory: 0, gitnexus: gitnexusTokens }
   };
 }
 var OUTPUT_TYPE_GUIDANCE;
@@ -25460,7 +25120,7 @@ __export(exports_runner, {
   RequiredPreScriptError: () => RequiredPreScriptError
 });
 import { createHash as createHash4 } from "crypto";
-import { execSync as execSync3, spawnSync as spawnSync4 } from "child_process";
+import { execSync as execSync2, spawnSync as spawnSync4 } from "child_process";
 import { existsSync as existsSync13, readFileSync as readFileSync7 } from "fs";
 import { basename as basename3, resolve as resolve9 } from "path";
 import { homedir as homedir5 } from "os";
@@ -25730,7 +25390,7 @@ function shellQuote(value) {
 }
 function readCommandOutput(cwd, command) {
   try {
-    return execSync3(command, {
+    return execSync2(command, {
       cwd,
       encoding: "utf8",
       timeout: 1e4,
@@ -33270,7 +32930,6 @@ function ensureProjectHookWiring(cwd) {
       changed = true;
     }
   }
-  addHook("PostToolUse", "node .claude/hooks/specialists-memory-cache-sync.mjs");
   addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
   if (changed) {
     saveJson(settingsPath, settings);
@@ -33584,7 +33243,6 @@ function validateInitPostconditions(cwd) {
   }
   const settings = readJsonObject(join26(cwd, ".claude", "settings.json"));
   const requiredHookWiring = [
-    { event: "PostToolUse", command: "node .claude/hooks/specialists-memory-cache-sync.mjs" },
     { event: "SessionStart", command: "node .claude/hooks/specialists-session-start.mjs" }
   ];
   for (const hook of requiredHookWiring) {
@@ -33728,17 +33386,6 @@ ${bold6("specialists init")}
   ensureProjectHookWiring(cwd);
   installProjectSkills(cwd, syncSkills);
   ensureObservabilityDb(cwd);
-  try {
-    const syncResult = syncMemoriesCacheFromBd(cwd, Date.now(), true);
-    if (syncResult.synced) {
-      ok2(`synced memories FTS cache (${syncResult.memoryCount} records)`);
-    } else {
-      skip("memories FTS cache sync skipped (not available)");
-    }
-  } catch (error2) {
-    const message = error2 instanceof Error ? error2.message : String(error2);
-    warn2(`memories FTS cache sync failed during init (non-fatal): ${message}`);
-  }
   const postconditionWarnings = validateInitPostconditions(cwd);
   if (postconditionWarnings.length > 0) {
     warn2("Init completed with postcondition warnings:");
@@ -33776,7 +33423,6 @@ var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, 
 var init_init = __esm(() => {
   init_observability_db();
   init_observability_sqlite();
-  init_memory_retrieval();
   init_canonical_asset_resolver();
   init_loader();
   init_global_config();
@@ -33819,54 +33465,10 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
 });
 
-// src/cli/memory.ts
-var exports_memory = {};
-__export(exports_memory, {
-  run: () => run13
-});
-function printUsage2() {
-  console.log([
-    "",
-    "Usage: specialists memory <sync|refresh> [--force] [--json]",
-    "",
-    "Commands:",
-    "  sync     Sync bd memories into local FTS cache",
-    "  refresh  Invalidate cache and rebuild from bd memories",
-    ""
-  ].join(`
-`));
-}
-async function run13(args = []) {
-  const command = args[0] ?? "sync";
-  const force = args.includes("--force");
-  const asJson = args.includes("--json");
-  const cwd = process.cwd();
-  if (command !== "sync" && command !== "refresh") {
-    printUsage2();
-    process.exitCode = 1;
-    return;
-  }
-  const result = command === "refresh" ? invalidateAndRefreshMemoriesCache(cwd) : syncMemoriesCacheFromBd(cwd, Date.now(), force);
-  if (asJson) {
-    process.stdout.write(`${JSON.stringify({ command, ...result })}
-`);
-    return;
-  }
-  console.log(`
-${bold7("specialists memory")}`);
-  console.log(`  command: ${command}`);
-  console.log(`  synced: ${result.synced ? "yes" : "no"}`);
-  console.log(`  memory_count: ${result.memoryCount}`);
-}
-var bold7 = (s) => `\x1B[1m${s}\x1B[0m`;
-var init_memory = __esm(() => {
-  init_memory_retrieval();
-});
-
 // src/cli/db.ts
 var exports_db = {};
 __export(exports_db, {
-  run: () => run14
+  run: () => run13
 });
 import { existsSync as existsSync27, mkdirSync as mkdirSync13, readdirSync as readdirSync10, readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "fs";
 import { dirname as dirname13, join as join27, resolve as resolve12 } from "path";
@@ -33956,7 +33558,7 @@ function assertHumanInteractiveTerminal(commandName) {
 }
 function printSetupResult(created, gitignoreUpdated, location) {
   console.log(`
-${bold8("specialists db setup")}
+${bold7("specialists db setup")}
 `);
   console.log(`  ${green6("\u2713")} database path: ${location.dbPath}`);
   console.log(`  ${green6("\u2713")} mode: chmod 644`);
@@ -34237,7 +33839,7 @@ function runBackfill(options) {
     sqliteClient.close();
   }
   console.log(`
-${bold8("specialists db backfill")}
+${bold7("specialists db backfill")}
 `);
   console.log(`  ${green6("\u2713")} jobs backfilled: ${summary.jobsBackfilled}`);
   console.log(`  ${yellow7("\u25CB")} jobs skipped (already in DB): ${summary.jobsSkipped}`);
@@ -34261,7 +33863,7 @@ function runVacuum() {
     const { beforeBytes, afterBytes } = sqliteClient.vacuumDatabase();
     const savedBytes = Math.max(0, beforeBytes - afterBytes);
     console.log(`
-${bold8("specialists db vacuum")}
+${bold7("specialists db vacuum")}
 `);
     console.log(`  ${green6("\u2713")} before: ${formatBytes(beforeBytes)} (${beforeBytes} bytes)`);
     console.log(`  ${green6("\u2713")} after:  ${formatBytes(afterBytes)} (${afterBytes} bytes)`);
@@ -34284,7 +33886,7 @@ function runPrune(options) {
       skipExtract: options.skipExtract
     });
     console.log(`
-${bold8("specialists db prune")}
+${bold7("specialists db prune")}
 `);
     console.log(`  ${report.dryRun ? yellow7("\u25CB dry-run") : green6("\u2713 applied")}`);
     console.log(`  ${green6("\u2713")} before: ${new Date(report.beforeMs).toISOString()}`);
@@ -34316,7 +33918,7 @@ function runExtract(options) {
       extracted += 1;
     }
     console.log(`
-${bold8("specialists db extract")}
+${bold7("specialists db extract")}
 `);
     console.log(`  ${green6("\u2713")} extracted jobs: ${extracted}`);
     console.log("");
@@ -34366,7 +33968,7 @@ function runStats(options) {
       return;
     }
     console.log(`
-${bold8("specialists db stats")}
+${bold7("specialists db stats")}
 `);
     console.log(formatStatsTable(displayRows, options.withPayload));
     console.log("");
@@ -34533,7 +34135,7 @@ function runBenchmarkExport(options) {
     writeFileSync11(options.outputPath, rows.length > 0 ? `${jsonl}
 ` : "", "utf-8");
     console.log(`
-${bold8("specialists db benchmark-export")}
+${bold7("specialists db benchmark-export")}
 `);
     console.log(`  ${green6("\u2713")} rows exported: ${rows.length}`);
     console.log(`  ${green6("\u2713")} output: ${options.outputPath}`);
@@ -34559,7 +34161,7 @@ function runSetup() {
   const gitignoreResult = ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
   printSetupResult(setupResult.created, gitignoreResult.changed, location);
 }
-async function run14(argv = process.argv.slice(3)) {
+async function run13(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (!subcommand || subcommand === "--help" || subcommand === "-h" || argv.slice(1).some((arg) => arg === "--help" || arg === "-h")) {
     printDbHelp();
@@ -34604,7 +34206,7 @@ async function run14(argv = process.argv.slice(3)) {
   printDbHelp();
   process.exit(1);
 }
-var DAY_MS, bold8 = (s) => `\x1B[1m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`;
+var DAY_MS, bold7 = (s) => `\x1B[1m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`;
 var init_db = __esm(() => {
   init_observability_db();
   init_job_root();
@@ -35934,7 +35536,7 @@ var init_script_runner = __esm(() => {
 // src/cli/validate.ts
 var exports_validate = {};
 __export(exports_validate, {
-  run: () => run15,
+  run: () => run14,
   parseArgs: () => parseArgs6,
   ArgParseError: () => ArgParseError3
 });
@@ -35976,7 +35578,7 @@ function formatCompatGuardError(message) {
     return "compatGuard: scripts";
   return `compatGuard: ${message}`;
 }
-async function run15() {
+async function run14() {
   let args;
   try {
     args = parseArgs6(process.argv.slice(3));
@@ -36036,7 +35638,7 @@ async function run15() {
     process.exit(result.valid ? 0 : 1);
   }
   console.log(`
-${bold9("Validating")} ${cyan5(args.value)} ${dim7(`(${summary.filePath})`)} ${dim7(`[${getSourceLabel(summary)}]`)}
+${bold8("Validating")} ${cyan5(args.value)} ${dim7(`(${summary.filePath})`)} ${dim7(`[${getSourceLabel(summary)}]`)}
 `);
   if (result.valid) {
     console.log(`${green7("\u2713")} Schema validation passed
@@ -36062,7 +35664,7 @@ ${bold9("Validating")} ${cyan5(args.value)} ${dim7(`(${summary.filePath})`)} ${d
   }
   process.exit(result.valid ? 0 : 1);
 }
-var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim7 = (s) => `\x1B[2m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError3;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim7 = (s) => `\x1B[2m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError3;
 var init_validate = __esm(() => {
   init_dist();
   init_loader();
@@ -36079,7 +35681,7 @@ var init_validate = __esm(() => {
 // src/cli/edit.ts
 var exports_edit = {};
 __export(exports_edit, {
-  run: () => run16
+  run: () => run15
 });
 import { existsSync as existsSync30, mkdirSync as mkdirSync14, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "fs";
 import { spawnSync as spawnSync15 } from "child_process";
@@ -36513,7 +36115,7 @@ function applyMutation(jsonDoc, args, resolvedPath) {
 }
 function printDryRun(filePath, before, after) {
   console.log(`
-${bold10(`[dry-run] ${filePath}`)}
+${bold9(`[dry-run] ${filePath}`)}
 `);
   console.log(dim8("--- current"));
   console.log(dim8("+++ updated"));
@@ -36699,9 +36301,9 @@ ${errorList}`);
     return;
   }
   writeFileSync12(location.path, updatedJson, "utf-8");
-  console.log(`${green8("\u2713")} ${bold10(resolvedPath.specialistName)}.${yellow9(resolvedPath.fieldSegments.join("."))} = ${formatOutputValue(nextValue)}` + dim8(` (${location.path})`));
+  console.log(`${green8("\u2713")} ${bold9(resolvedPath.specialistName)}.${yellow9(resolvedPath.fieldSegments.join("."))} = ${formatOutputValue(nextValue)}` + dim8(` (${location.path})`));
 }
-async function run16() {
+async function run15() {
   const args = parseArgs7(process.argv.slice(3));
   if (args.global) {
     return runGlobalEdit(args);
@@ -36714,7 +36316,7 @@ async function run16() {
       return;
     }
     for (const [name, preset] of entries) {
-      console.log(`${bold10(name)}  ${dim8(preset.description ?? "")}`);
+      console.log(`${bold9(name)}  ${dim8(preset.description ?? "")}`);
       for (const [field, val] of Object.entries(preset.fields)) {
         console.log(`  ${yellow9(field)} = ${formatOutputValue(val)}`);
       }
@@ -36746,7 +36348,7 @@ async function run16() {
       }
       writeFileSync12(target.filePath, updated, "utf-8");
       const fieldList = Object.keys(preset.fields).map((f) => yellow9(f)).join(", ");
-      console.log(`${green8("\u2713")} ${bold10(target.name)}: applied preset ${bold10(args.preset)} (${fieldList})`);
+      console.log(`${green8("\u2713")} ${bold9(target.name)}: applied preset ${bold9(args.preset)} (${fieldList})`);
     }
     return;
   }
@@ -36790,10 +36392,10 @@ async function run16() {
       continue;
     }
     writeFileSync12(target.filePath, updated, "utf-8");
-    console.log(`${green8("\u2713")} ${bold10(target.name)}: ${yellow9(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim8(` (${target.filePath})`));
+    console.log(`${green8("\u2713")} ${bold9(target.name)}: ${yellow9(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim8(` (${target.filePath})`));
   }
 }
-var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, yellow9 = (s) => `\x1B[33m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`, LEGACY_FIELD_ALIASES, ENUM_PATHS, MULTILINE_FILE_PATHS;
+var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, yellow9 = (s) => `\x1B[33m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`, LEGACY_FIELD_ALIASES, ENUM_PATHS, MULTILINE_FILE_PATHS;
 var init_edit = __esm(() => {
   init_zod();
   init_loader();
@@ -36825,13 +36427,13 @@ var init_edit = __esm(() => {
 // src/specialist/resolution-diagnostics.ts
 import { readFile as readFile3 } from "fs/promises";
 import { createRequire as createRequire3 } from "module";
-import { execSync as execSync4 } from "child_process";
+import { execSync as execSync3 } from "child_process";
 import { join as join30 } from "path";
 function globalNodeModules() {
   if (cachedGlobalNodeModules !== undefined)
     return cachedGlobalNodeModules;
   try {
-    cachedGlobalNodeModules = execSync4("npm root -g", { encoding: "utf-8" }).trim();
+    cachedGlobalNodeModules = execSync3("npm root -g", { encoding: "utf-8" }).trim();
   } catch {
     cachedGlobalNodeModules = "";
   }
@@ -36999,7 +36601,7 @@ var init_resolution_diagnostics = __esm(() => {
 // src/cli/config.ts
 var exports_config = {};
 __export(exports_config, {
-  run: () => run17
+  run: () => run16
 });
 import { existsSync as existsSync31, readFileSync as readFileSync24 } from "fs";
 import { spawnSync as spawnSync16 } from "child_process";
@@ -37176,7 +36778,7 @@ ${usage2()}`);
   const report = await loadResolvedConfigReport({ specialistName, projectDir, catalogsPath });
   console.log(formatResolvedConfigReport(report));
 }
-async function run17() {
+async function run16() {
   const originalArgs = process.argv.slice(3);
   const command = originalArgs[0];
   if (command === "show") {
@@ -37186,7 +36788,7 @@ async function run17() {
   const editArgs = buildEditArgv(originalArgs);
   console.error(`${yellow10("\u26A0 DEPRECATED")} specialists config is deprecated. Use ${yellow10("specialists edit")} instead.`);
   process.argv = [process.argv[0] ?? "node", process.argv[1] ?? "specialists", "edit", ...editArgs];
-  await run16();
+  await run15();
 }
 var yellow10 = (s) => `\x1B[33m${s}\x1B[0m`;
 var init_config = __esm(() => {
@@ -37196,7 +36798,7 @@ var init_config = __esm(() => {
 });
 
 // src/specialist/launch.ts
-import { execSync as execSync5 } from "child_process";
+import { execSync as execSync4 } from "child_process";
 import { writeFileSync as writeFileSync13 } from "fs";
 async function launchSpecialist(opts) {
   let stopTailer;
@@ -37268,7 +36870,7 @@ async function launchSpecialist(opts) {
   });
   if (opts.effectiveBeadId && opts.workingDirectory) {
     try {
-      execSync5(`bd kv set "bead-claim:${opts.effectiveBeadId}" "active"`, {
+      execSync4(`bd kv set "bead-claim:${opts.effectiveBeadId}" "active"`, {
         cwd: opts.workingDirectory,
         stdio: "pipe",
         timeout: 5000
@@ -37276,7 +36878,7 @@ async function launchSpecialist(opts) {
     } catch {}
   }
   process.stderr.write(`
-${bold11(`Running ${cyan6(opts.args.name)}`)}
+${bold10(`Running ${cyan6(opts.args.name)}`)}
 
 `);
   let jobId = "";
@@ -37290,7 +36892,7 @@ ${bold11(`Running ${cyan6(opts.args.name)}`)}
   stopTailer?.();
   if (opts.effectiveBeadId && opts.workingDirectory) {
     try {
-      execSync5(`bd kv clear "bead-claim:${opts.effectiveBeadId}"`, {
+      execSync4(`bd kv clear "bead-claim:${opts.effectiveBeadId}"`, {
         cwd: opts.workingDirectory,
         stdio: "pipe",
         timeout: 5000
@@ -37322,7 +36924,7 @@ ${green9("\u2713")} ${footer}
 
 `);
 }
-var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`;
+var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`;
 var init_launch = __esm(() => {
   init_supervisor();
   init_runner();
@@ -47659,7 +47261,7 @@ var exports_chat = {};
 __export(exports_chat, {
   startChatEventTailer: () => startChatEventTailer,
   silenceStderrDuringTui: () => silenceStderrDuringTui,
-  run: () => run18,
+  run: () => run17,
   handleSubmittedInput: () => handleSubmittedInput,
   formatChatShow: () => formatChatShow,
   createCleanup: () => createCleanup
@@ -47675,7 +47277,7 @@ function dbg(msg, extra) {
     appendFileSync6(DEBUG_LOG_PATH, line);
   } catch {}
 }
-async function run18() {
+async function run17() {
   dbg("run() start", { argv: process.argv.slice(3), stdoutTTY: process.stdout.isTTY === true, stdinTTY: process.stdin.isTTY === true });
   const args = parseArgs8(process.argv.slice(3));
   dbg("parsed args", { name: args.name, beadId: args.beadId, hasPrompt: !!args.prompt });
@@ -51857,28 +51459,28 @@ class SourceQueue {
   constructor(onError) {
     this.onError = onError;
   }
-  enqueue(sourceKey, run19) {
+  enqueue(sourceKey, run18) {
     this.queued = true;
     if (this.running || this.timer)
       return;
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.drain(sourceKey, run19);
+      this.drain(sourceKey, run18);
     }, COALESCE_MS);
   }
-  async drain(sourceKey, run19) {
+  async drain(sourceKey, run18) {
     if (!this.queued || this.running)
       return;
     this.running = true;
     this.queued = false;
     try {
-      await run19();
+      await run18();
     } catch (error2) {
       this.onError?.(sourceKey, error2);
     } finally {
       this.running = false;
       if (this.queued)
-        this.enqueue(sourceKey, run19);
+        this.enqueue(sourceKey, run18);
     }
   }
   cancel() {
@@ -53057,9 +52659,9 @@ var init_components = __esm(() => {
 // src/cli/console.ts
 var exports_console = {};
 __export(exports_console, {
-  run: () => run19
+  run: () => run18
 });
-async function run19() {
+async function run18() {
   const terminal = new ProcessTerminal;
   const tui = new TUI(terminal);
   const root = new Container;
@@ -53488,7 +53090,7 @@ __export(exports_merge, {
   runTypecheckGate: () => runTypecheckGate,
   runRebuild: () => runRebuild,
   runMergePlan: () => runMergePlan,
-  run: () => run20,
+  run: () => run19,
   resolveMergeTargetsForBeadIds: () => resolveMergeTargetsForBeadIds,
   resolveMergeTargets: () => resolveMergeTargets,
   resolveChainEpicMembership: () => resolveChainEpicMembership,
@@ -54323,7 +53925,7 @@ function executePublicationPlan(targets, options2) {
     throw error2;
   }
 }
-async function run20() {
+async function run19() {
   let options2;
   try {
     options2 = parseOptions(process.argv.slice(3));
@@ -54546,7 +54148,7 @@ function createPiJsonProjector(context) {
 var exports_run = {};
 __export(exports_run, {
   startEventTailer: () => startEventTailer,
-  run: () => run21,
+  run: () => run20,
   resolveBasePin: () => resolveBasePin,
   readSafeSnapshotFile: () => readSafeSnapshotFile,
   readBeadSummary: () => readBeadSummary,
@@ -54562,7 +54164,7 @@ __export(exports_run, {
 import { dirname as dirname20, join as join43, resolve as resolve16, sep as sep4 } from "path";
 import { constants as fsConstants, existsSync as existsSync39, fstatSync as fstatSync2, openSync as openSync4, readFileSync as readFileSync32, readSync, readdirSync as readdirSync16, realpathSync as realpathSync5, statSync as statSync11, closeSync as closeSync3 } from "fs";
 import { randomBytes } from "crypto";
-import { spawn as cpSpawn, execFileSync as execFileSync3, execSync as execSync6 } from "child_process";
+import { spawn as cpSpawn, execFileSync as execFileSync3, execSync as execSync5 } from "child_process";
 function formatBackgroundLaunchLine(opts) {
   if (opts.outputMode !== "json")
     return `${opts.jobId ?? opts.pid ?? ""}
@@ -55084,7 +54686,7 @@ function recordTmuxLiveFeedStarted(options2) {
   }
 }
 function runGit2(cwd, args) {
-  return execSync6(["git", ...args.map(shellQuote2)].join(" "), {
+  return execSync5(["git", ...args.map(shellQuote2)].join(" "), {
     cwd,
     stdio: "pipe",
     encoding: "utf-8",
@@ -55531,7 +55133,7 @@ function buildInjectedDiffContext(cwd, maxFiles = 20, explicitBaseSha) {
     try {
       return {
         ok: true,
-        output: execSync6(command, {
+        output: execSync5(command, {
           cwd,
           stdio: "pipe",
           encoding: "utf-8",
@@ -55857,7 +55459,7 @@ function buildInjectedObligationsDiffVariables(cwd, maxFiles = 20, explicitBaseS
 `)
   };
 }
-async function run21() {
+async function run20() {
   const args = await parseArgs9(process.argv.slice(3));
   ensureObservabilityDb2(process.cwd());
   const loader = new SpecialistLoader;
@@ -59508,15 +59110,15 @@ function evaluateReadiness(epicId, state, chainRecords, sqlite) {
 }
 function gatherEpicList(sqlite, unresolvedOnly) {
   const epicRuns = sqlite.listEpicRuns();
-  return epicRuns.filter((run22) => !unresolvedOnly || isEpicUnresolvedState(run22.status)).map((run22) => {
-    const chainRecords = sqlite.listEpicChains(run22.epic_id);
-    const readiness = evaluateReadiness(run22.epic_id, run22.status, chainRecords, sqlite);
+  return epicRuns.filter((run21) => !unresolvedOnly || isEpicUnresolvedState(run21.status)).map((run21) => {
+    const chainRecords = sqlite.listEpicChains(run21.epic_id);
+    const readiness = evaluateReadiness(run21.epic_id, run21.status, chainRecords, sqlite);
     return {
-      epic_id: run22.epic_id,
-      state: run22.status,
+      epic_id: run21.epic_id,
+      state: run21.status,
       chain_count: chainRecords.length,
       readiness,
-      updated_at_ms: run22.updated_at_ms
+      updated_at_ms: run21.updated_at_ms
     };
   });
 }
@@ -60142,7 +59744,7 @@ function formatActivationAge(nowMs, atMs) {
 // src/cli/ps.ts
 var exports_ps = {};
 __export(exports_ps, {
-  run: () => run22,
+  run: () => run21,
   formatSpawnedByLine: () => formatSpawnedByLine
 });
 import { spawnSync as spawnSync23 } from "child_process";
@@ -61218,7 +60820,7 @@ async function follow(args) {
     interval = setInterval(drawFrame, 1000);
   });
 }
-async function run22() {
+async function run21() {
   const args = parseArgs10(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
@@ -61266,7 +60868,7 @@ var init_ps = __esm(() => {
 // src/cli/result.ts
 var exports_result = {};
 __export(exports_result, {
-  run: () => run23
+  run: () => run22
 });
 import { existsSync as existsSync42, readFileSync as readFileSync35 } from "fs";
 import { join as join46 } from "path";
@@ -61485,7 +61087,7 @@ function formatStartupSnapshot(snapshot) {
 `)}
 `;
 }
-async function run23() {
+async function run22() {
   const args = parseArgs11(process.argv.slice(3));
   const emitJson = (status, output2, error2, startupContext = null) => {
     console.log(JSON.stringify({
@@ -61909,7 +61511,7 @@ var init_timeline_query = __esm(() => {
 // src/cli/feed.ts
 var exports_feed = {};
 __export(exports_feed, {
-  run: () => run24
+  run: () => run23
 });
 import {
   closeSync as closeSync4,
@@ -62627,7 +62229,7 @@ async function followMerged(sqliteClient, jobsDir, options2) {
     }, 750);
   });
 }
-async function run24() {
+async function run23() {
   const options2 = parseArgs12(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
@@ -62680,7 +62282,7 @@ var init_feed2 = __esm(() => {
 // src/cli/forensic.ts
 var exports_forensic = {};
 __export(exports_forensic, {
-  run: () => run25
+  run: () => run24
 });
 function parseArgs13(argv) {
   const options2 = { json: true, limit: 1000 };
@@ -62748,7 +62350,7 @@ function parseSince2(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-async function run25() {
+async function run24() {
   const options2 = parseArgs13(process.argv.slice(3));
   const client = createObservabilitySqliteClient();
   if (!client)
@@ -63514,7 +63116,7 @@ var init_prometheus_projection = __esm(() => {
 // src/cli/metrics.ts
 var exports_metrics = {};
 __export(exports_metrics, {
-  run: () => run26
+  run: () => run25
 });
 function parseArgs14(argv) {
   let format = "prometheus";
@@ -63552,7 +63154,7 @@ function parseSince3(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-async function run26() {
+async function run25() {
   const options2 = parseArgs14(process.argv.slice(3));
   if (options2.format !== "prometheus")
     throw new Error(`Unsupported metrics format: ${options2.format}`);
@@ -63565,7 +63167,7 @@ var init_metrics = __esm(() => {
 // src/cli/log.ts
 var exports_log = {};
 __export(exports_log, {
-  run: () => run27,
+  run: () => run26,
   isForensicAgentInternal: () => isForensicAgentInternal
 });
 import { existsSync as existsSync45, readdirSync as readdirSync20, statSync as statSync13 } from "fs";
@@ -63991,7 +63593,7 @@ function printRow(row, json) {
   ].filter(Boolean).join(" ");
   console.log(`${head} ${eventDetail(row.event)}`.trim());
 }
-async function run27(argv = process.argv.slice(3)) {
+async function run26(argv = process.argv.slice(3)) {
   let options2;
   try {
     options2 = parseArgs15(argv);
@@ -64186,10 +63788,10 @@ var init_log2 = __esm(() => {
 // src/cli/steer.ts
 var exports_steer = {};
 __export(exports_steer, {
-  run: () => run28
+  run: () => run27
 });
 import { writeFileSync as writeFileSync20 } from "fs";
-async function run28() {
+async function run27() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
@@ -64246,10 +63848,10 @@ var init_steer = __esm(() => {
 // src/cli/resume.ts
 var exports_resume = {};
 __export(exports_resume, {
-  run: () => run29
+  run: () => run28
 });
 import { writeFileSync as writeFileSync21 } from "fs";
-async function run29() {
+async function run28() {
   const jobId = process.argv[3];
   const task = process.argv[4];
   if (!jobId || !task) {
@@ -64314,9 +63916,9 @@ var init_resume = __esm(() => {
 // src/cli/follow-up.ts
 var exports_follow_up = {};
 __export(exports_follow_up, {
-  run: () => run30
+  run: () => run29
 });
-async function run30() {
+async function run29() {
   process.stderr.write("\x1B[33m\u26A0 DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
   const { run: resumeRun } = await Promise.resolve().then(() => (init_resume(), exports_resume));
   return resumeRun();
@@ -64425,7 +64027,7 @@ var init_worktree_gc = __esm(() => {
 // src/cli/clean.ts
 var exports_clean = {};
 __export(exports_clean, {
-  run: () => run31
+  run: () => run30
 });
 import { existsSync as existsSync47, readFileSync as readFileSync39, readdirSync as readdirSync22, rmSync as rmSync7, statSync as statSync14 } from "fs";
 import { join as join51 } from "path";
@@ -64937,7 +64539,7 @@ function removeStaleProcesses(statuses, dryRun) {
   }
   return updatedCount;
 }
-async function run31() {
+async function run30() {
   let options2;
   try {
     options2 = parseOptions2(process.argv.slice(3));
@@ -65042,7 +64644,7 @@ var init_clean = __esm(() => {
 // src/cli/end.ts
 var exports_end = {};
 __export(exports_end, {
-  run: () => run32
+  run: () => run31
 });
 import { spawnSync as spawnSync25 } from "child_process";
 function parseOptions3(argv) {
@@ -65126,7 +64728,7 @@ async function publishChain(beadId, options2) {
     console.log("Publication mode: direct merge");
   }
 }
-async function run32() {
+async function run31() {
   let options2;
   try {
     options2 = parseOptions3(process.argv.slice(3));
@@ -65167,7 +64769,7 @@ var init_end = __esm(() => {
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run33
+  run: () => run32
 });
 function parseStopArgs(argv) {
   let jobId;
@@ -65190,7 +64792,7 @@ function parseStopArgs(argv) {
   }
   return { jobId, force, closeBeadAnyway };
 }
-async function run33() {
+async function run32() {
   let parsed;
   try {
     parsed = parseStopArgs(process.argv.slice(3));
@@ -65218,13 +64820,13 @@ var init_stop = __esm(() => {
 // src/cli/finalize.ts
 var exports_finalize = {};
 __export(exports_finalize, {
-  run: () => run34
+  run: () => run33
 });
 function parseFinalizeArgs(argv) {
   const jobId = argv.find((token) => !token.startsWith("-"));
   return { jobId };
 }
-async function run34() {
+async function run33() {
   const parsed = parseFinalizeArgs(process.argv.slice(3));
   const jobId = parsed.jobId;
   if (!jobId) {
@@ -65246,9 +64848,9 @@ var init_finalize = __esm(() => {
 // src/cli/attach-tui.ts
 var exports_attach_tui = {};
 __export(exports_attach_tui, {
-  run: () => run35
+  run: () => run34
 });
-async function run35(target, deps = {}) {
+async function run34(target, deps = {}) {
   const piTui = await Promise.resolve().then(() => (init_dist2(), exports_dist));
   const { TUI: TUI2, ProcessTerminal: ProcessTerminal2, Container: Container2, Input: Input2, matchesKey: matchesKey2, Key: Key2 } = piTui;
   const terminal = new ProcessTerminal2;
@@ -65368,7 +64970,7 @@ var init_attach_tui = __esm(() => {
 // src/cli/attach.ts
 var exports_attach = {};
 __export(exports_attach, {
-  run: () => run36
+  run: () => run35
 });
 import readline3 from "readline";
 function exitWithError(message) {
@@ -65485,7 +65087,7 @@ function pickTarget(targets) {
     render2();
   });
 }
-async function run36(deps = {}) {
+async function run35(deps = {}) {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
     if (!process.stdout.isTTY || !process.stdin.isTTY)
@@ -65501,8 +65103,8 @@ async function run36(deps = {}) {
 }
 async function attachTarget(target, deps) {
   const runTui = deps.runTui ?? (async (resolvedTarget) => {
-    const { run: run37 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
-    return run37(resolvedTarget, deps);
+    const { run: run36 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
+    return run36(resolvedTarget, deps);
   });
   return runTui(target);
 }
@@ -65625,7 +65227,7 @@ var init_drift_detector = __esm(() => {
 // src/cli/prune-stale-defaults.ts
 var exports_prune_stale_defaults = {};
 __export(exports_prune_stale_defaults, {
-  run: () => run37
+  run: () => run36
 });
 import { resolve as resolve19 } from "path";
 function parseArgs16(argv) {
@@ -65665,7 +65267,7 @@ function printHelp() {
   console.log("  --keep-diverged   Preserve diverged .specialists/default entries");
   console.log("  --root            Repo root to scan");
 }
-async function run37(argv = process.argv.slice(3)) {
+async function run36(argv = process.argv.slice(3)) {
   const { dryRun, root, help, keepDiverged } = parseArgs16(argv);
   if (help) {
     printHelp();
@@ -65697,12 +65299,12 @@ var init_prune_stale_defaults = __esm(() => {
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run38
+  run: () => run37
 });
 function section2(title) {
   const bar = "\u2500".repeat(60);
   return `
-${bold12(cyan7(title))}
+${bold11(cyan7(title))}
 ${dim13(bar)}`;
 }
 function cmd2(s) {
@@ -65711,17 +65313,17 @@ function cmd2(s) {
 function flag(s) {
   return green13(s);
 }
-async function run38() {
+async function run37() {
   const lines = [
     "",
-    bold12("specialists  \xB7  Quick Start Guide"),
+    bold11("specialists  \xB7  Quick Start Guide"),
     dim13("One MCP server. Multiple AI backends. Intelligent orchestration."),
     dim13("Tip: sp is a shorter alias \u2014 sp run, sp list, sp feed etc. work identically."),
     ""
   ];
   lines.push(section2("1. Installation"));
   lines.push("");
-  lines.push(`  ${bold12("Prerequisite: Bun")}   ${cmd2("bun --version")}           # verify Bun >=1.0.0`);
+  lines.push(`  ${bold11("Prerequisite: Bun")}   ${cmd2("bun --version")}           # verify Bun >=1.0.0`);
   lines.push(`  ${cmd2("curl -fsSL https://bun.sh/install | bash")}   # install Bun if missing`);
   lines.push(`  ${cmd2("npm install -g xtrm-tools")}                 # install runtime prerequisite`);
   lines.push(`  ${cmd2("xt install")}                               # install xtrm-managed assets`);
@@ -65760,10 +65362,10 @@ async function run38() {
   lines.push("");
   lines.push(section2("4. Running a Specialist"));
   lines.push("");
-  lines.push(`  ${bold12("Foreground")} (streams output to stdout):`);
+  lines.push(`  ${bold11("Foreground")} (streams output to stdout):`);
   lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim13('"Review src/api.ts for security issues"')}`);
   lines.push("");
-  lines.push(`  ${bold12("Tracked run")} (linked to a beads issue for workflow integration):`);
+  lines.push(`  ${bold11("Tracked run")} (linked to a beads issue for workflow integration):`);
   lines.push(`  ${cmd2("specialists run code-review")} ${flag("--bead")} ${dim13("unitAI-abc")}`);
   lines.push(`  ${dim13("  # uses bead description as prompt, tracks result in issue")}`);
   lines.push("");
@@ -65778,33 +65380,33 @@ async function run38() {
   lines.push("");
   lines.push(section2("5. Async Job Lifecycle"));
   lines.push("");
-  lines.push(`  ${bold12("MCP pattern")}: ${cmd2("use_specialist")} (foreground, returns result directly)`);
-  lines.push(`  ${bold12("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim13("[job started: <id>]")} to stderr`);
-  lines.push(`  ${bold12("Agent pattern")}: ${cmd2('specialists run <name> --prompt "..." --background')} detaches and returns the job id`);
-  lines.push(`  ${bold12("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} native backgrounding, interactive shells only`);
+  lines.push(`  ${bold11("MCP pattern")}: ${cmd2("use_specialist")} (foreground, returns result directly)`);
+  lines.push(`  ${bold11("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim13("[job started: <id>]")} to stderr`);
+  lines.push(`  ${bold11("Agent pattern")}: ${cmd2('specialists run <name> --prompt "..." --background')} detaches and returns the job id`);
+  lines.push(`  ${bold11("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} native backgrounding, interactive shells only`);
   lines.push("");
-  lines.push(`  ${bold12("Watch progress")} \u2014 stream events as they arrive:`);
+  lines.push(`  ${bold11("Watch progress")} \u2014 stream events as they arrive:`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")}            # print events so far`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")} ${flag("--follow")}      # tail and stream live updates`);
   lines.push("");
-  lines.push(`  ${bold12("Read results")} \u2014 print the final output:`);
+  lines.push(`  ${bold11("Read results")} \u2014 print the final output:`);
   lines.push(`  ${cmd2("specialists result job_a1b2c3d4")}          # exits 1 if still running`);
   lines.push("");
-  lines.push(`  ${bold12("Steer a running job")} \u2014 redirect the agent mid-run without cancelling:`);
+  lines.push(`  ${bold11("Steer a running job")} \u2014 redirect the agent mid-run without cancelling:`);
   lines.push(`  ${cmd2("specialists steer job_a1b2c3d4")} ${flag('"focus only on supervisor.ts"')}`);
   lines.push(`  ${dim13("  # delivered after current tool calls finish, before the next LLM call")}`);
   lines.push("");
-  lines.push(`  ${bold12("Keep-alive multi-turn")} \u2014 start with ${flag("--keep-alive")}, then follow up:`);
+  lines.push(`  ${bold11("Keep-alive multi-turn")} \u2014 start with ${flag("--keep-alive")}, then follow up:`);
   lines.push(`  ${cmd2("specialists run debugger")} ${flag("--bead unitAI-abc --keep-alive")}`);
   lines.push(`  ${dim13("  # \u2192 status: waiting after first turn")}`);
   lines.push(`  ${cmd2("specialists result a1b2c3")}                   # read first turn`);
   lines.push(`  ${cmd2("specialists follow-up a1b2c3")} ${flag('"now write the fix"')}    # next turn, same Pi context`);
   lines.push(`  ${cmd2("specialists feed a1b2c3")} ${flag("--follow")}               # watch response`);
   lines.push("");
-  lines.push(`  ${bold12("Cancel a job")}:`);
+  lines.push(`  ${bold11("Cancel a job")}:`);
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
   lines.push("");
-  lines.push(`  ${bold12("Job files")} in ${dim13(".specialists/jobs/<job-id>/")}:`);
+  lines.push(`  ${bold11("Job files")} in ${dim13(".specialists/jobs/<job-id>/")}:`);
   lines.push(`  ${dim13("status.json")}   \u2014 id, specialist, status, pid, started_at, elapsed_s, current_tool`);
   lines.push(`  ${dim13("events.jsonl")} \u2014 one JSON event per line (tool_use, text, agent_end, error \u2026)`);
   lines.push(`  ${dim13("result.txt")}    \u2014 final output (written when status=done)`);
@@ -65874,7 +65476,7 @@ async function run38() {
   lines.push("");
   lines.push(`  Specialists emits lifecycle events to ${dim13(".specialists/trace.jsonl")}:`);
   lines.push("");
-  lines.push(`  ${bold12("Hook point")}              ${bold12("When fired")}`);
+  lines.push(`  ${bold11("Hook point")}              ${bold11("When fired")}`);
   lines.push(`  ${yellow11("specialist:start")}       before the agent session begins`);
   lines.push(`  ${yellow11("specialist:token")}       on each streamed token (delta)`);
   lines.push(`  ${yellow11("specialist:done")}        after successful completion`);
@@ -65890,35 +65492,35 @@ async function run38() {
   lines.push("");
   lines.push(`  After ${cmd2("specialists init")}, these MCP tools are available to Claude:`);
   lines.push("");
-  lines.push(`  ${bold12("specialist_init")}    \u2014 bootstrap: bd init + list specialists`);
-  lines.push(`  ${bold12("list_specialists")}   \u2014 discover specialists (project/user/system)`);
-  lines.push(`  ${bold12("use_specialist")}     \u2014 full lifecycle: load \u2192 agents.md \u2192 run \u2192 output`);
-  lines.push(`  ${bold12("feed_specialist")}    \u2014 stream events/output by job ID`);
-  lines.push(`  ${bold12("steer_specialist")}      \u2014 send a mid-run message to a running job`);
-  lines.push(`  ${bold12("resume_specialist")}    \u2014 resume a waiting keep-alive session with a next-turn prompt`);
-  lines.push(`  ${bold12("stop_specialist")}      \u2014 cancel a running job by ID`);
-  lines.push(`  ${bold12("specialist_status")}  \u2014 circuit breaker health + staleness`);
+  lines.push(`  ${bold11("specialist_init")}    \u2014 bootstrap: bd init + list specialists`);
+  lines.push(`  ${bold11("list_specialists")}   \u2014 discover specialists (project/user/system)`);
+  lines.push(`  ${bold11("use_specialist")}     \u2014 full lifecycle: load \u2192 agents.md \u2192 run \u2192 output`);
+  lines.push(`  ${bold11("feed_specialist")}    \u2014 stream events/output by job ID`);
+  lines.push(`  ${bold11("steer_specialist")}      \u2014 send a mid-run message to a running job`);
+  lines.push(`  ${bold11("resume_specialist")}    \u2014 resume a waiting keep-alive session with a next-turn prompt`);
+  lines.push(`  ${bold11("stop_specialist")}      \u2014 cancel a running job by ID`);
+  lines.push(`  ${bold11("specialist_status")}  \u2014 circuit breaker health + staleness`);
   lines.push("");
   lines.push(section2("10. Common Workflows"));
   lines.push("");
-  lines.push(`  ${bold12("Foreground review, save to file:")}`);
+  lines.push(`  ${bold11("Foreground review, save to file:")}`);
   lines.push(`  ${cmd2('specialists run code-review --prompt "Audit src/" > review.md')}`);
   lines.push("");
-  lines.push(`  ${bold12("Tracked run with beads integration:")}`);
+  lines.push(`  ${bold11("Tracked run with beads integration:")}`);
   lines.push(`  ${cmd2("specialists run deep-analysis --bead unitAI-abc")}`);
   lines.push(`  ${dim13("  # prompt from bead, result tracked in bead")}`);
   lines.push("");
-  lines.push(`  ${bold12("Steer a job mid-run:")}`);
+  lines.push(`  ${bold11("Steer a job mid-run:")}`);
   lines.push(`  ${cmd2('specialists steer <job-id> "focus only on the auth module"')}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push("");
-  lines.push(`  ${bold12("Multi-turn keep-alive (iterative work):")}`);
+  lines.push(`  ${bold11("Multi-turn keep-alive (iterative work):")}`);
   lines.push(`  ${cmd2("specialists run debugger --bead unitAI-abc --keep-alive")}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push(`  ${cmd2('specialists follow-up <job-id> "now write the fix for the root cause"')}`);
   lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
   lines.push("");
-  lines.push(`  ${bold12("Override model for a single run:")}`);
+  lines.push(`  ${bold11("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
   lines.push("");
   lines.push(dim13("\u2500".repeat(62)));
@@ -65928,10 +65530,10 @@ async function run38() {
   console.log(lines.join(`
 `));
 }
-var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue4 = (s) => `\x1B[34m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`;
+var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue4 = (s) => `\x1B[34m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`;
 
 // src/specialist/pr-drift-refresh.ts
-import { execSync as execSync7 } from "child_process";
+import { execSync as execSync6 } from "child_process";
 import { createHash as createHash9 } from "crypto";
 function hashSummary(input2) {
   return createHash9("sha256").update(input2).digest("hex").slice(0, 16);
@@ -65992,7 +65594,7 @@ async function refreshPrDriftForJob(opts) {
   }
   let stdout;
   try {
-    stdout = execSync7(`gh pr view ${prNumber} --json state,mergeable,mergeStateStatus,baseRefName,baseRefOid,headRefOid,url`, { encoding: "utf8", timeout: 1e4, stdio: ["ignore", "pipe", "pipe"] });
+    stdout = execSync6(`gh pr view ${prNumber} --json state,mergeable,mergeStateStatus,baseRefName,baseRefOid,headRefOid,url`, { encoding: "utf8", timeout: 1e4, stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
     const { kind, summary } = classifyError(err);
     const patch2 = { pr_classification: "unknown", pr_drift_checked_at_ms: now };
@@ -66090,7 +65692,7 @@ var init_dead_job_audit = __esm(() => {
 var exports_doctor = {};
 __export(exports_doctor, {
   setStatusError: () => setStatusError,
-  run: () => run39,
+  run: () => run38,
   resolvePackageAssetDir: () => resolvePackageAssetDir,
   renderProcessSummary: () => renderProcessSummary,
   parseVersionTuple: () => parseVersionTuple,
@@ -66120,7 +65722,7 @@ function hint(msg) {
 function section3(label) {
   const line = "\u2500".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold13(`\u2500\u2500 ${label} ${line}`)}`);
+${bold12(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
   const r = spawnSync26(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
@@ -66572,7 +66174,7 @@ function renderDriftTable(root, json = false) {
     return;
   }
   console.log(`
-${bold13("specialists doctor drift")}
+${bold12("specialists doctor drift")}
 `);
   if (report.summary.findings === 0) {
     ok3("No drift found");
@@ -66715,7 +66317,7 @@ function runDoctorOrphans() {
   const sqliteClient = createObservabilitySqliteClient();
   if (!sqliteClient) {
     console.log(`
-${bold13("specialists doctor orphans")}
+${bold12("specialists doctor orphans")}
 `);
     fail9("observability SQLite not available");
     fix("specialists db setup");
@@ -66730,7 +66332,7 @@ ${bold13("specialists doctor orphans")}
       integrity: findings.filter((item) => item.kind === "integrity-violation")
     };
     console.log(`
-${bold13("specialists doctor orphans")}
+${bold12("specialists doctor orphans")}
 `);
     if (findings.length === 0) {
       ok3("No orphan/stale/integrity findings");
@@ -66841,7 +66443,7 @@ async function runDoctorPrDrift(json) {
       console.log(JSON.stringify({ jobs: results }, null, 2));
     } else {
       console.log(`
-${bold13("specialists doctor --pr-drift")}
+${bold12("specialists doctor --pr-drift")}
 `);
       if (results.length === 0) {
         ok3("No PR-linked jobs need drift refresh");
@@ -66889,7 +66491,7 @@ async function runDoctorReapDeadJobs(opts) {
       console.log(JSON.stringify(result, null, 2));
     } else {
       console.log(`
-${bold13("specialists doctor --reap-dead-jobs")}
+${bold12("specialists doctor --reap-dead-jobs")}
 `);
       if (result.found.length === 0) {
         ok3("No dead running/waiting jobs found");
@@ -66906,7 +66508,7 @@ ${bold13("specialists doctor --reap-dead-jobs")}
     client.close();
   }
 }
-async function run39(argv = process.argv.slice(3)) {
+async function run38(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (subcommand === "orphans") {
     runDoctorOrphans();
@@ -66923,7 +66525,7 @@ async function run39(argv = process.argv.slice(3)) {
   }
   if (opts.specialists) {
     console.log(`
-${bold13("specialists doctor --specialists")}
+${bold12("specialists doctor --specialists")}
 `);
     const overridesOk2 = await checkSpecialistOverrides();
     console.log("");
@@ -66939,7 +66541,7 @@ ${bold13("specialists doctor --specialists")}
     process.exit(1);
   }
   console.log(`
-${bold13("specialists doctor")}
+${bold12("specialists doctor")}
 `);
   const piOk = checkPi();
   const spOk = checkSpAlias();
@@ -66956,14 +66558,14 @@ ${bold13("specialists doctor")}
   const allOk = piOk && spOk && bdOk && xtOk && hooksOk && versionOk && skillDriftOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
   console.log("");
   if (allOk) {
-    console.log(`  ${green14("\u2713")} ${bold13("All checks passed")}  \u2014 specialists is healthy`);
+    console.log(`  ${green14("\u2713")} ${bold12("All checks passed")}  \u2014 specialists is healthy`);
   } else {
-    console.log(`  ${yellow12("\u25CB")} ${bold13("Some checks failed")}  \u2014 follow the fix hints above`);
+    console.log(`  ${yellow12("\u25CB")} ${bold12("Some checks failed")}  \u2014 follow the fix hints above`);
     console.log(`  ${dim14("Hooks + default skill pool are vendored globally by xtrm-tools; reinstall if drift or missing files appear.")}`);
   }
   console.log("");
 }
-var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, SPECIALISTS_DIR, USER_SPECIALISTS_DIR, XTRM_HOME, GLOBAL_HOOKS_DIR, GLOBAL_DEFAULT_SKILLS_DIR, HOOK_NAMES;
+var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, SPECIALISTS_DIR, USER_SPECIALISTS_DIR, XTRM_HOME, GLOBAL_HOOKS_DIR, GLOBAL_DEFAULT_SKILLS_DIR, HOOK_NAMES;
 var init_doctor = __esm(() => {
   init_observability_sqlite();
   init_pr_drift_refresh();
@@ -67148,8 +66750,8 @@ async function runAgenticFollowthroughProbe(model, specName, opts = {}) {
   mkdirSync21(probeDir, { recursive: true, mode: 448 });
   writeFileSync24(join55(probeDir, "probe-notes.md"), `# Probe notes
 `, { mode: 384 });
-  const run40 = opts.runSpecialist ?? runScriptSpecialist;
-  const result = await withTimeout(run40({
+  const run39 = opts.runSpecialist ?? runScriptSpecialist;
+  const result = await withTimeout(run39({
     specialist: specName,
     model_override: model,
     template: PROBE_TEMPLATE,
@@ -67280,7 +66882,7 @@ __export(exports_setup, {
   runFetchBenchmarks: () => runFetchBenchmarks,
   runDiscovery: () => runDiscovery,
   runApply: () => runApply,
-  run: () => run40
+  run: () => run39
 });
 import { spawnSync as spawnSync27 } from "child_process";
 import { readFileSync as readFileSync44 } from "fs";
@@ -67367,7 +66969,7 @@ function pickMode(current, next) {
     throw new Error("Choose exactly one setup mode");
   return next;
 }
-async function run40(argv = process.argv.slice(3)) {
+async function run39(argv = process.argv.slice(3)) {
   const args = parseArgs17(argv);
   switch (args.mode) {
     case "discovery":
@@ -67649,7 +67251,7 @@ function ageFrom(timestamp) {
   return Date.now() - Date.parse(timestamp);
 }
 function formatBenchmarkFetch(result) {
-  const lines = ["", bold14("sp setup --fetch-benchmarks")];
+  const lines = ["", bold13("sp setup --fetch-benchmarks")];
   lines.push(`  offline: ${result.offline ? "yes" : "no"}`);
   lines.push(`  cache_status: ${result.cache_status}`);
   if (result.snapshot)
@@ -67668,7 +67270,7 @@ function formatPlan(plan) {
     score: "n/a",
     rationale_snippet: write.reason
   }));
-  const lines = ["", bold14("sp setup --plan"), `  preset: ${plan.preset}`];
+  const lines = ["", bold13("sp setup --plan"), `  preset: ${plan.preset}`];
   lines.push("");
   lines.push("  specialist         | current model         | recommended model                 | score   | rationale");
   lines.push("  ------------------ | -------------------- | --------------------------------- | ------- | --------------------");
@@ -67685,7 +67287,7 @@ function truncatePlanRationale(value, maxLength = 36) {
   return `${value.slice(0, maxLength - 1)}\u2026`;
 }
 function formatDiscovery(state) {
-  const lines = ["", bold14("sp setup --discovery")];
+  const lines = ["", bold13("sp setup --discovery")];
   lines.push(`  models: ${state.models.length}`);
   lines.push(`  registry: ${state.registry.length}`);
   lines.push(`  global_user_config: ${state.missing_configs.global_user_config ? yellow13("missing") : green15("present")}`);
@@ -67697,7 +67299,7 @@ function formatDiscovery(state) {
 `);
 }
 function formatApplyResult(result) {
-  const lines = ["", bold14("sp setup --apply")];
+  const lines = ["", bold13("sp setup --apply")];
   lines.push(`  path: ${result.path}`);
   lines.push(`  dry_run: ${result.dry_run ? "yes" : "no"}`);
   lines.push(`  applied: ${result.applied}`);
@@ -67711,7 +67313,7 @@ function formatApplyResult(result) {
 function formatProbeResult(result) {
   return [
     "",
-    bold14("sp setup --probe-only"),
+    bold13("sp setup --probe-only"),
     `  verdict: ${result.verdict}`,
     `  turns: ${result.metrics.turns_used}`,
     `  tools: ${result.metrics.tools_used}`,
@@ -67725,7 +67327,7 @@ function formatProbeResult(result) {
 function renderInteractiveWorkflow() {
   return [
     "",
-    bold14("sp setup --interactive"),
+    bold13("sp setup --interactive"),
     "  1. Run sp setup --discovery --json",
     "  2. Run sp setup --fetch-benchmarks --json",
     "  3. Pipe operator JSON into sp setup --plan <preset>",
@@ -67741,7 +67343,7 @@ function renderInteractiveWorkflow() {
 function assertNever2(value) {
   throw new Error(`Unhandled setup mode: ${String(value)}`);
 }
-var EX_TEMPFAIL = 75, bold14 = (s) => `\x1B[1m${s}\x1B[0m`, dim15 = (s) => `\x1B[2m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m`, green15 = (s) => `\x1B[32m${s}\x1B[0m`, SetupInputSchema, SetupWriteSchema, SetupPlanEntrySchema, SetupPlanSchema;
+var EX_TEMPFAIL = 75, bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim15 = (s) => `\x1B[2m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m`, green15 = (s) => `\x1B[32m${s}\x1B[0m`, SetupInputSchema, SetupWriteSchema, SetupPlanEntrySchema, SetupPlanSchema;
 var init_setup = __esm(() => {
   init_zod();
   init_benchmarks();
@@ -67884,7 +67486,7 @@ var init_serve_hot_reload = () => {};
 var exports_serve = {};
 __export(exports_serve, {
   startServe: () => startServe,
-  run: () => run41,
+  run: () => run40,
   recordAuditFailure: () => recordAuditFailure,
   evaluateReadiness: () => evaluateReadiness2,
   createReadinessState: () => createReadinessState,
@@ -68290,7 +67892,7 @@ async function startServe(argv = process.argv.slice(3)) {
   console.log(`sp serve listening on ${args.port}`);
   return { server, args, db, readinessState };
 }
-async function run41(argv = process.argv.slice(3)) {
+async function run40(argv = process.argv.slice(3)) {
   await startServe(argv);
 }
 var AUDIT_WINDOW_MS = 60000, DEFAULT_REQUIRED_PI_FLAGS;
@@ -68309,7 +67911,7 @@ var init_serve = __esm(() => {
 var exports_script = {};
 __export(exports_script, {
   scriptCli: () => scriptCli,
-  run: () => run42,
+  run: () => run41,
   parseArgs: () => parseArgs19,
   mapExitCode: () => mapExitCode
 });
@@ -68453,7 +68055,7 @@ function runUnderLock(lockPath, argv) {
     return 75;
   return flock.status ?? 1;
 }
-async function run42(argv = process.argv.slice(3)) {
+async function run41(argv = process.argv.slice(3)) {
   const args = parseArgs19(argv);
   if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
     process.exit(runUnderLock(args.singleInstance, argv));
@@ -68485,24 +68087,24 @@ var init_script = __esm(() => {
 // src/cli/help.ts
 var exports_help2 = {};
 __export(exports_help2, {
-  run: () => run43
+  run: () => run42
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run43() {
+async function run42() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
     "",
-    bold15("Usage:"),
+    bold14("Usage:"),
     "  specialists|sp [command]",
     "  specialists|sp [command] --help",
     "",
     dim16("  sp is a shorter alias \u2014 sp run, sp list, sp feed etc. all work identically."),
     "",
-    bold15("Common flows:"),
+    bold14("Common flows:"),
     "",
     "  Tracked work (primary)",
     '    bd create "Task title" -t task -p 1 --json',
@@ -68545,16 +68147,16 @@ async function run43() {
     "    specialists log <job-id> -f                    # \u2192 full runtime/control/error log",
     "    specialists end [--pr]                        # \u2192 session-close publish helper",
     "",
-    bold15("Core commands:"),
+    bold14("Core commands:"),
     ...formatCommands(CORE_COMMANDS),
     "",
-    bold15("Extended commands:"),
+    bold14("Extended commands:"),
     ...formatCommands(EXTENDED_COMMANDS),
     "",
-    bold15("xtrm worktree commands:"),
+    bold14("xtrm worktree commands:"),
     ...formatCommands(WORKTREE_COMMANDS),
     "",
-    bold15("Examples:"),
+    bold14("Examples:"),
     "  specialists init",
     "  specialists setup --discovery --json",
     "  specialists list",
@@ -68578,7 +68180,7 @@ async function run43() {
     "  specialists end --pr                             # close session with PR publication mode",
     "  specialists result <job-id> --wait",
     "",
-    bold15("More help:"),
+    bold14("More help:"),
     "  specialists quickstart         Full guide and workflow reference",
     "  specialists view --help        View specialist configs",
     "  specialists edit --help        Edit specialist fields (dot-path, presets)",
@@ -68598,7 +68200,7 @@ async function run43() {
   console.log(lines.join(`
 `));
 }
-var bold15 = (s) => `\x1B[1m${s}\x1B[0m`, dim16 = (s) => `\x1B[2m${s}\x1B[0m`, CORE_COMMANDS, EXTENDED_COMMANDS, WORKTREE_COMMANDS;
+var bold14 = (s) => `\x1B[1m${s}\x1B[0m`, dim16 = (s) => `\x1B[2m${s}\x1B[0m`, CORE_COMMANDS, EXTENDED_COMMANDS, WORKTREE_COMMANDS;
 var init_help = __esm(() => {
   CORE_COMMANDS = [
     ["init", "Bootstrap a project: dirs, workflow injection, project MCP registration"],
@@ -79108,7 +78710,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run44() {
+async function run43() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -79413,25 +79015,6 @@ async function run44() {
     const globalFlag = process.argv.includes("--global");
     const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
     return handler({ syncDefaults, syncSkills, noXtrmCheck, global: globalFlag });
-  }
-  if (sub === "memory") {
-    if (wantsHelp()) {
-      console.log([
-        "",
-        "Usage: specialists memory <sync|refresh> [--force] [--json]",
-        "",
-        "Sync bd memories into local SQLite FTS cache used for specialist context injection.",
-        "",
-        "Commands:",
-        "  sync       Sync cache when stale or mismatched (use --force to always rebuild)",
-        "  refresh    Invalidate cache then full rebuild from bd memories",
-        ""
-      ].join(`
-`));
-      return;
-    }
-    const { run: handler } = await Promise.resolve().then(() => (init_memory(), exports_memory));
-    return handler(process.argv.slice(3));
   }
   if (sub === "db") {
     if (wantsHelp()) {
@@ -80507,7 +80090,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run44().then(() => {
+run43().then(() => {
   if (sub && sub !== "serve")
     process.exit(process.exitCode ?? 0);
 }).catch((error2) => {

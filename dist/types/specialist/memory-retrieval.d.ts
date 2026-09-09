@@ -1,4 +1,3 @@
-import { type MemoryCacheInputRecord } from './observability-sqlite.js';
 export declare const STATIC_WORKFLOW_RULES_BLOCK: string;
 export interface MemoryRecord {
     key: string;
@@ -10,22 +9,22 @@ export interface MemoryInjectionResult {
     estimatedTokens: number;
 }
 export declare function extractMemoryKeywords(title: string, description?: string): string[];
-export declare function parseMemoriesPayload(jsonText: string): MemoryCacheInputRecord[];
+export declare function parseMemoriesPayload(jsonText: string): MemoryRecord[];
 export declare function shouldRefreshCache(args: {
     nowMs: number;
     cacheCount: number | null;
     cacheLastSyncAtMs: number | null;
     sourceCount: number;
 }): boolean;
-export declare function syncMemoriesCacheFromBd(cwd: string, nowMs?: number, forceFullSync?: boolean): {
+export declare function syncMemoriesCacheFromBd(_cwd: string, _nowMs?: number, _forceFullSync?: boolean): {
     synced: boolean;
     memoryCount: number;
 };
-export declare function invalidateAndRefreshMemoriesCache(cwd: string, nowMs?: number): {
+export declare function invalidateAndRefreshMemoriesCache(_cwd: string, _nowMs?: number): {
     synced: boolean;
     memoryCount: number;
 };
-export declare function buildFilteredMemoryInjection(args: {
+export declare function buildFilteredMemoryInjection(_args: {
     cwd: string;
     beadTitle: string;
     beadDescription?: string;
