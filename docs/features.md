@@ -1189,43 +1189,9 @@ Enforcement lives in pi session layer (not specialists code):
 
 ---
 
-## 25) Memory injection at specialist spawn
+## 25) Per-bead context injection at specialist spawn (retired)
 
-Runner injects project context at specialist spawn using keyword-filtered memory retrieval from a local SQLite FTS cache. This replaced the previous full `bd prime` dump (~3000 tokens) with targeted retrieval (~600 tokens max).
-
-### Injection pipeline
-
-| # | Source | Tokens | Condition | Purpose |
-|---|--------|--------|-----------|--------|
-| 0 | Caveman-micro output directive | ~80 | Always | Terse output style (+26pp accuracy, ~65% token savings) |
-| 1 | GitNexus workflow mandate | ~200 | `.gitnexus/meta.json` exists | Code intelligence usage rules |
-| — | `.xtrm/memory.md` | — | Injected by xtrm Pi extension, not runner | Saves ~800 tokens per spawn |
-| 2 | Static workflow rules | ~60 | Always | `STATIC_WORKFLOW_RULES_BLOCK` from `memory-retrieval.ts` |
-| 3 | Keyword-filtered memories | ~0-600 | `--bead <id>` provided | FTS query on bead title/description keywords |
-| 4 | GitNexus pre-query snapshot | ~0-200 | `.gitnexus/` exists + CamelCase tokens in bead title | Caller/callee summaries |
-
-### Keyword-filtered memory retrieval
-
-`src/specialist/memory-retrieval.ts` provides `buildFilteredMemoryInjection()`:
-
-1. Extract keywords from bead title + description (max 6, stop-word filtered)
-2. Query FTS cache (`specialist_memories_cache` SQLite table) for matching `bd memories`
-3. Return top matches within 600-token budget
-
-Key parameters:
-- `MAX_KEYWORDS = 6`
-- `MAX_MEMORIES = 10`
-- `MAX_MEMORY_TOKENS = 600`
-- `CACHE_MAX_AGE_MS = 3600000` (1 hour)
-
-### FTS cache sync triggers
-
-| Trigger | Type |
-|---------|------|
-| `specialists init` | Full bootstrap sync |
-| `PostToolUse` hook (`specialists-memory-cache-sync.mjs`) | Incremental after memory mutations |
-| `sp memory sync [--force]` | Manual CLI sync |
-| `sp memory refresh` | Invalidate + full rebuild |
+The runner injects no stored per-bead context (removed S1 unitAI-cnca3 through S4 unitAI-j45ai: spawn injection, management CLI, sync hook, init wiring, SQLite persistence, curator specialist, audit skill). Doctrinal context comes from the xtrm-loader Pi extension, which injects ONLY the doctrine file — the user-owned memory file is never injected.
 
 ### Extension opt-out
 
@@ -1261,7 +1227,6 @@ Every spawn emits a `meta` event with `model: "memory_injection"` recording toke
 ### Non-fatal behavior
 
 All injection sources are non-fatal:
-- Missing FTS cache → no keyword-filtered memories (static rules still inject)
 - `.gitnexus/meta.json` missing → no GitNexus mandate or pre-query
 - GitNexus CLI unavailable → pre-query skipped silently
 
