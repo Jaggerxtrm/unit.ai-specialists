@@ -45,4 +45,17 @@ describe('researcher Exa integration', () => {
       '~/.xtrm/skills/optional/research-methods/research/references/exa.md',
     ]));
   });
+
+  it('declares the no-MCP-server boundary explicitly (unitAI-s46da)', () => {
+    // No definition-side MCP config path exists: the adapter extension only
+    // registers pi's --mcp-config flag; no config value is wired per-role,
+    // so 0 MCP servers is the expected state, not a silent failure.
+    expect(researcher.execution).not.toHaveProperty('mcp_config');
+    expect(researcher.execution).not.toHaveProperty('mcpConfig');
+    // required_tools stays empty so pre-run validation passes when Exa tools are absent.
+    expect(researcher.capabilities?.required_tools ?? []).toEqual([]);
+    // The prompt must teach the 0-server fallback instead of assuming the tools.
+    expect(researcher.prompt.system ?? '').toContain('no MCP servers');
+    expect(researcher.prompt.system ?? '').toContain('live official sources');
+  });
 });
