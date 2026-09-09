@@ -133,7 +133,8 @@ function assistantText(event: PiAgentSessionEvent): string | undefined {
 }
 
 /** Canonical reader for the nested message.usage short-key shape Pi session events carry. */
-export function nativeSessionTokenUsage(event: PiAgentSessionEvent): TimelineTokenUsage | undefined {  const usage = record(assistantMessage(event)?.usage);
+export function nativeSessionTokenUsage(event: PiAgentSessionEvent): TimelineTokenUsage | undefined {
+  const usage = record(assistantMessage(event)?.usage);
   if (!usage) return undefined;
   const projected: TimelineTokenUsage = {
     input_tokens: numberField(usage.input),
