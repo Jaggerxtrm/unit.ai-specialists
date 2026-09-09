@@ -37,7 +37,6 @@ Run `sp list` for the live merged registry, including user-local specialists. Th
 | `debugger` | 2.0.0 | user-configured | HIGH | user-configured | Root-cause symptoms, regressions, flaky tests, and unknown-cause bugs before executor. |
 | `executor` | 1.0.0 | user-configured | HIGH | user-configured | Implement already-scoped code or docs changes in an isolated worktree. |
 | `explorer` | 1.1.0 | user-configured | READ_ONLY | user-configured | Map architecture, call flows, dependencies, and implementation options without edits. |
-| `memory-processor` | 1.1.0 | user-configured | MEDIUM | user-configured | Curate persistent project memory into `.xtrm/memory.md`. |
 | `node-coordinator` | 1.3.0 | user-configured | LOW | user-configured | Drive NodeSupervisor research-node runs through `sp node` commands. |
 | `obligations-scanner` | 1.0.0 | user-configured | READ_ONLY | user-configured | Scan source for unmet obligations (TODO, FIXME, XXX, HACK) and emit actionable reports. |
 | `overthinker` | 1.0.0 | user-configured | READ_ONLY | user-configured | Deep reasoning, tradeoff review, premortems, architecture critique. |

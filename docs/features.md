@@ -764,7 +764,7 @@ Specialists can opt out of the worktree guard by setting:
 When `requires_worktree: false`:
 - Worktree guard is bypassed even for MEDIUM/HIGH permission
 - Specialist can write directly to the main checkout
-- Use for workflow specialists that manage shared state (e.g. memory-processor writes `.xtrm/memory.md`)
+- Use for workflow specialists that manage shared state directly in the main checkout
 
 **Default**: `requires_worktree: true` — all edit-capable specialists are gated.
 
