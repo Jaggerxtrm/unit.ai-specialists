@@ -1052,7 +1052,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(mod.formatSpendShort({ input_tokens: 0, output_tokens: 0 })).toBe('');
     for (const view of [base, { ...base, token_usage: { input_tokens: 0, output_tokens: 0 } }]) {
       const row = mod.renderFleetRowLine(view);
-      expect(row).toBe(`${mod.RAIL}     ● explorer (m) · bd-1 · running 41s · working`);
+      expect(row).toBe('    ● explorer (m) · bd-1 · running 41s · working');
       expect(row).not.toContain('spent');
     }
   });
@@ -1445,6 +1445,32 @@ describe('settlement wake — a finished child notifies its coordinator (unitAI-
     );
     expect(() => sink.emit(ev('activation_completed'))).not.toThrow();
     expect(seen).toEqual(['activation_completed']);
+  });
+
+  it('wake content carries the #8d7fe8 rail; rows and cards carry none (unitAI-beqby.17)', async () => {
+    const mod = await loadExtension();
+    expect(mod.RAIL).toBe('\x1b[38;2;141;127;232m│\x1b[0m');
+    const wake = mod.formatSettlementWake({
+      activationId: 'act:aaaa', specialist: 'explorer', beadId: 'bd-1', outcome: 'completed',
+    });
+    for (const line of wake.split('\n')) {
+      expect(line.startsWith(mod.RAIL)).toBe(true);
+    }
+    const ask = mod.formatAskWake({
+      activationId: 'act:aaaa', specialist: 'explorer', beadId: 'bd-1', kind: 'question', body: 'Which?',
+    });
+    for (const line of ask.split('\n')) {
+      expect(line.startsWith(mod.RAIL)).toBe(true);
+    }
+    const row = mod.renderFleetRowLine({
+      activation_id: 'act:x', specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+      resolved_model: 'm', elapsed_s: 41, last_activity_at: Math.floor(Date.now() / 1000),
+    });
+    expect(row).not.toContain(mod.RAIL);
+    expect(mod.renderCollapsedLine({ activations: [], asks: [] })).not.toContain(mod.RAIL);
+    for (const line of mod.renderSectionLines({ activations: [], asks: [] }, { expanded: true })) {
+      expect(line).not.toContain(mod.RAIL);
+    }
   });
 
   it('names the activation and says what to call next', async () => {
