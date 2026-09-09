@@ -262,7 +262,7 @@ describe('native activation observability parity', () => {
     expect(forensic?.redaction_status).toBe('redacted');
   });
 
-  it('rolls back status and events together when a projected event batch fails', () => {
+  it('renumbers duplicate seqs instead of failing the batch (unitAI-dd52z supersedes rollback-on-duplicate)', () => {
     client = createObservabilitySqliteClientAtPath(dbPath);
     expect(client).not.toBeNull();
     const status = {
@@ -271,16 +271,20 @@ describe('native activation observability parity', () => {
       started_at_ms: Date.now(),
     };
 
+    // Retried jobs and second writers reuse seqs; the writer renumbers (dd52z)
+    // instead of throwing, so the batch commits with distinct seqs. The old
+    // rollback-on-duplicate expectation predates that design and cannot hold.
     expect(() => client!.upsertStatusWithEvents(status, [
       { t: Date.now(), seq: 1, type: 'turn', phase: 'start' },
       { t: Date.now(), seq: 1, type: 'turn', phase: 'end' },
-    ], { attemptId: 'att:atomic:1', attemptNo: 1 })).toThrow();
+    ], { attemptId: 'att:atomic:1', attemptNo: 1 })).not.toThrow();
 
     client!.close();
     client = null;
     raw = new Database(dbPath);
-    expect(raw.query("SELECT COUNT(*) AS count FROM specialist_jobs WHERE job_id = 'act:atomic'").get()).toEqual({ count: 0 });
-    expect(raw.query("SELECT COUNT(*) AS count FROM specialist_events WHERE job_id = 'act:atomic'").get()).toEqual({ count: 0 });
+    expect(raw.query("SELECT COUNT(*) AS count FROM specialist_jobs WHERE job_id = 'act:atomic'").get()).toEqual({ count: 1 });
+    const seqs = raw.query("SELECT seq AS seq FROM specialist_events WHERE job_id = 'act:atomic' ORDER BY seq").all() as Array<{ seq: number }>;
+    expect(seqs.map((r) => r.seq)).toEqual([1, 2]);
   });
 
   it('uses only shared event kinds and names every intentional native gap', () => {
