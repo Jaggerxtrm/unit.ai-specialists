@@ -257,6 +257,18 @@ describe('specialist-subagents extension (Pi coordinator surface)', () => {
     });
   });
 
+  it('thinking_override passes through on bead_id dispatch, omitted by default', async () => {
+    const mod = await loadExtension();
+    const pi = makeFakePi();
+    const { host, calls } = makeFakeHost();
+    mod.default(pi, { createHost: () => host });
+    const dispatch = toolNamed(pi, 'specialist_dispatch');
+    await dispatch.execute('tc1', { specialist: 'explorer', bead_id: 'bd-1', thinking_override: 'high' });
+    expect(calls.start[0]).toMatchObject({ thinkingOverride: 'high' });
+    await dispatch.execute('tc2', { specialist: 'explorer', bead_id: 'bd-1' });
+    expect(calls.start[1]).not.toHaveProperty('thinkingOverride');
+  });
+
   it('epic_context_depth passes through on bead_id dispatch, omitted by default', async () => {
     const mod = await loadExtension();
     const pi = makeFakePi();
@@ -887,15 +899,16 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     }
   });
 
-  it('falls back to a belowEditor mirror when the seam is absent, never aboveEditor', async () => {
+  it('stays hidden when the seam is absent — never paints a widget (unitAI-beqby.9)', async () => {
     const { pi, ctx } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command_tick();
-    const lines = ctx.painted.widgets['specialist-fleet'];
-    expect(lines).toBeDefined();
-    expect(lines[0]).toContain('specialists');
-    expect(ctx.painted.widgetOptions['specialist-fleet']).toMatchObject({ placement: 'belowEditor' });
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
     expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
+    for (const options of Object.values(ctx.painted.widgetOptions)) {
+      expect(options?.placement).not.toBe('aboveEditor');
+      expect(options?.placement).not.toBe('belowEditor');
+    }
   });
 
   it('collapsed line prioritises needs-reply and row lines carry no forensic ids', async () => {
@@ -955,13 +968,15 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.statuses['specialist-fleet']).toBeUndefined();
   });
 
-  it('/specialists hide stops painting and /specialists show resumes it', async () => {
+  it('/specialists hide/show report text and never paint a widget without the seam', async () => {
     const { pi, ctx, command } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command('specialists').handler('hide', ctx);
     expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
     await command('specialists').handler('show', ctx);
-    expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
+    expect(ctx.painted.notices.at(-1)[0]).toContain('specialists');
   });
 
   it('/specialists inspect prints the expanded text report and never mounts ui.custom (unitAI-nmxhg)', async () => {
@@ -989,9 +1004,10 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       }],
       asks: [],
     };
-    const lines = mod.renderSectionLines(fleet);
+    const lines = mod.renderSectionLines(fleet, { nowMs: 560 }); // frame 7 = ⠧
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines[1]).toMatch(/● researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k · working/);
+    expect(lines[1]).toMatch(/⠧ researcher \(gpt-5\.6-sol high\) · ISSUE-92 · running 47s · 2\.1k/);
+    expect(lines[1]).not.toContain('working'); // spinner marker carries it
     expect(lines[1]).not.toContain('spent');
     // Command default: /specialists with no action reports the expanded rows.
     await command('specialists').handler('', ctx);
@@ -1006,7 +1022,9 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
   });
 
   it('specialists mapping never yields index-derived elapsed (unitAI-d99hb)', async () => {
-    const { pi, ctx, host } = await boot();
+    const sections = new Map();
+    const registerFooterSection = (key, render) => { sections.set(key, render); return () => { sections.delete(key); }; };
+    const { pi, host } = await boot(undefined, { registerFooterSection });
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     const startedAt = Date.now() - 41000;
     host.list.mockReturnValue([0, 1].map((i) => ({
@@ -1017,8 +1035,7 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       lastActivityAt: Math.floor(Date.now() / 1000),
     })));
     host.pendingAsks.mockReturnValue([]);
-    await command_tick();
-    const text = (ctx.painted.widgets['specialist-fleet'] ?? []).join('\n');
+    const text = (sections.get('specialist-fleet')() ?? []).join('\n');
     // Bare `.map(toActivationView)` passed the element index as nowMs, freezing
     // every row at 0s. Both rows must show live elapsed, neither 0s.
     expect(text).toMatch(/spec-0.*4[12]s/);
@@ -1035,8 +1052,8 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(mod.formatSpendShort(undefined)).toBe('');
     expect(mod.formatSpendShort({ input_tokens: 0, output_tokens: 0 })).toBe('');
     for (const view of [base, { ...base, token_usage: { input_tokens: 0, output_tokens: 0 } }]) {
-      const row = mod.renderFleetRowLine(view);
-      expect(row).toBe('    ● explorer (m) · bd-1 · running 41s · working');
+      const row = mod.renderFleetRowLine(view, [], 0); // frame 0 = ⠋
+      expect(row).toBe('    ⠋ explorer (m) · bd-1 · running 41s');
       expect(row).not.toContain('spent');
     }
   });
@@ -1049,40 +1066,37 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
       state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
       elapsed_s: 47, token_usage: { input_tokens: 1500, output_tokens: 600 },
       last_activity_at: Math.floor(Date.now() / 1000),
-    });
-    expect(row).toMatch(/running 47s · 2\.1k · working/);
+    }, [], 560);
+    expect(row).toMatch(/running 47s · 2\.1k/);
+    expect(row.startsWith('    ⠧ ')).toBe(true); // 560/80 = frame 7
+    expect(row).not.toContain('working');
     expect(row).not.toContain('spent');
   });
 
-  it('rows carry the purpose excerpt, truncated to the row budget (unitAI-uvg4j)', async () => {
+  it('working rows tick a ms-resolution spinner from nowMs; working word collapsed (unitAI-beqby.18)', async () => {
     const { mod } = await boot();
     const base = {
-      activation_id: 'act:x', specialist: 'researcher', bead_id: 'ISSUE-92',
-      state: 'running', resolved_model: 'm', elapsed_s: 47,
-      last_activity_at: Math.floor(Date.now() / 1000),
+      activation_id: 'act:x', specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+      resolved_model: 'm', last_activity_at: Math.floor(Date.now() / 1000),
     };
-    expect(mod.renderFleetRowLine({ ...base, purpose: 'researching activation transport' }))
-      .toBe('    ● researcher (m) · ISSUE-92 · researching activation transport · running 47s · working');
-    const long = mod.renderFleetRowLine({ ...base, purpose: `${'p '.repeat(100)}` });
-    expect(long.slice(4)).not.toMatch(/  /); // skip the four-space row indent
-    expect(long.split(' · ')[2].length).toBeLessThanOrEqual(mod.PURPOSE_ROW_MAX);
-    expect(mod.renderFleetRowLine(base))
-      .toBe('    ● researcher (m) · ISSUE-92 · running 47s · working');
-  });
-
-  it('elapsed always renders in seconds and settled rows keep token totals (unitAI-uvg4j)', async () => {
-    const { mod } = await boot();
-    expect(mod.formatElapsedShort(243)).toBe('243s');
-    expect(mod.formatElapsedShort(3700)).toBe('3700s');
-    const settled = mod.renderFleetRowLine({
-      activation_id: 'act:x', specialist: 'researcher', bead_id: 'ISSUE-92',
-      state: 'settled', resolved_model: 'm', elapsed_s: 243,
-      token_usage: { input_tokens: 1500, output_tokens: 600 },
-      last_activity_at: Math.floor(Date.now() / 1000),
-    });
-    expect(settled).toContain('243s');
-    expect(settled).toMatch(/2\.1k/);
-    expect(settled).not.toContain('4m');
+    const at = (nowMs, view = base) => mod.renderFleetRowLine(view, [], nowMs);
+    // Deterministic: same nowMs always yields the same frame; elapsed_s ticks
+    // the elapsed text only, never the marker (seconds cannot move at ora speed).
+    expect(at(0)).toBe(at(0));
+    expect(at(0)).toBe('    ⠋ explorer (m) · bd-1 · running 0s');
+    expect(at(80)).toBe('    ⠙ explorer (m) · bd-1 · running 0s');
+    expect(at(0, { ...base, elapsed_s: 42 })).toBe('    ⠋ explorer (m) · bd-1 · running 42s');
+    expect(at(0)).not.toContain('working'); // spinner marker carries it
+    // Settled rows keep ● and their tail; idle (>30s quiet) keeps ● + idle Xs;
+    // needs-reply keeps !.
+    expect(mod.renderFleetRowLine({ ...base, state: 'done', elapsed_s: 41 }, [], 0))
+      .toBe('    ● explorer (m) · bd-1 · done 41s · done');
+    expect(mod.renderFleetRowLine({ ...base, elapsed_s: 41, last_activity_at: Math.floor(Date.now() / 1000) - 60 }, [], 0))
+      .toMatch(/^    ● .* · idle 60s/);
+    const askRow = mod.renderFleetRowLine({ ...base, elapsed_s: 41 }, [
+      { activation_id: 'act:x', asked_at: Math.floor(Date.now() / 1000) - 5 },
+    ], 0);
+    expect(askRow.startsWith('    ! ')).toBe(true);
   });
 
   it('needs-reply rows render with a ! marker and sort before idle rows (unitAI-nmxhg)', async () => {
@@ -1108,39 +1122,10 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
         from: 'x', body: 'Which option?', asked_at: now - 31,
       }],
     };
-    const lines = mod.renderSectionLines(fleet);
+    const lines = mod.renderSectionLines(fleet, { nowMs: 560 }); // frame 7 = ⠧
     expect(lines[1]).toMatch(/! reviewer \(gpt-5\.6-sol high\) · ISSUE-92 · needs reply 31s/);
-    expect(lines[2]).toContain('● researcher');
+    expect(lines[2]).toContain('⠧ researcher');
     expect(lines.join('\n')).not.toContain('act:ask'); // no forensic ids in rows
-  });
-
-  it('fleet chrome is lowercase with tree indentation (unitAI-beqby.5)', async () => {
-    const { mod } = await boot();
-    const now = Math.floor(Date.now() / 1000);
-    const fleet = {
-      activations: [{
-        activation_id: 'act:aaaa', specialist: 'researcher', bead_id: 'ISSUE-92',
-        state: 'running', resolved_model: 'gpt-5.6-sol', thinking_level: 'high',
-        elapsed_s: 47, token_usage: { input: 1500, output: 600, cache: 0 },
-        last_activity_at: now,
-      }],
-      asks: [],
-    };
-    // Collapsed: two-space tree branch, chrome lowercase, identifiers canonical.
-    expect(mod.renderCollapsedLine(fleet))
-      .toBe('  └ specialists · 1 active · 0 waiting · /specialists inspect');
-    expect(mod.renderCollapsedLine({ activations: [], asks: [] }))
-      .toBe('  └ specialists · idle · /specialists inspect');
-    // Execution row: four-space indent, ● marker, canonical identifier case.
-    expect(mod.renderSectionLines(fleet)[1])
-      .toBe('    ● researcher (gpt-5.6-sol high) · ISSUE-92 · running 47s · 2.1k · working');
-    // Ask row: four-space indent with ! marker (seconds elided: wall-clock flake).
-    const askRow = mod.renderFleetRowLine(
-      { activation_id: 'act:q', specialist: 'reviewer', bead_id: 'ISSUE-92' },
-      [{ activation_id: 'act:q', asked_at: now - 31 }],
-    );
-    expect(askRow.startsWith('    ! reviewer (?model) · ISSUE-92 · needs reply ')).toBe(true);
-    expect(askRow.endsWith('s')).toBe(true);
   });
 
   it('/specialists reports in text too, so json and print modes are not blind', async () => {
@@ -1203,17 +1188,17 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
     expect(ctx.painted.notices).toEqual([]);   // report() falls back to console
   });
 
-  it('stops painting into a context whose session was replaced', async () => {
+  it('paints nothing without the seam, even across a session switch', async () => {
     const { pi, ctx } = await boot();
     await toolNamed(pi, 'specialist_status').execute('tc0', {});
     await command_tick();
-    expect(ctx.painted.widgets['specialist-fleet']).toBeDefined();
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
 
     // A switchSession keeps the same ctx object but changes the session id.
-    ctx.painted.widgets['specialist-fleet'] = 'STALE';
+    // Hide-until-seam paints no widget into any context, stale or live.
     ctx.sessionManager.getSessionId = () => 'session-2';
     await command_tick();
-    expect(ctx.painted.widgets['specialist-fleet']).toBe('STALE');
+    expect(ctx.painted.widgets['specialist-fleet']).toBeUndefined();
   });
 
   it('survives a context that throws on property access during teardown', async () => {
@@ -1225,9 +1210,9 @@ describe('operator surface: commands and Fleet view (unitAI-rrdnt.46)', () => {
 });
 
 /**
- * Advance one poll interval. This drives the REAL timer the extension installs
- * rather than re-firing session_start, which would re-capture the context and
- * quietly defeat every staleness assertion below.
+ * Advance one (former) poll interval. Kept so seam-absent tests assert
+ * steadiness across ticks: with hide-until-seam there is no timer, so this
+ * is a no-op that proves nothing gets painted late either.
  */
 async function command_tick() {
   await vi.advanceTimersByTimeAsync(1000);
@@ -1489,6 +1474,32 @@ describe('settlement wake — a finished child notifies its coordinator (unitAI-
     );
     expect(() => sink.emit(ev('activation_completed'))).not.toThrow();
     expect(seen).toEqual(['activation_completed']);
+  });
+
+  it('wake content carries the #8d7fe8 rail; rows and cards carry none (unitAI-beqby.17)', async () => {
+    const mod = await loadExtension();
+    expect(mod.RAIL).toBe('\x1b[38;2;141;127;232m│\x1b[0m');
+    const wake = mod.formatSettlementWake({
+      activationId: 'act:aaaa', specialist: 'explorer', beadId: 'bd-1', outcome: 'completed',
+    });
+    for (const line of wake.split('\n')) {
+      expect(line.startsWith(mod.RAIL)).toBe(true);
+    }
+    const ask = mod.formatAskWake({
+      activationId: 'act:aaaa', specialist: 'explorer', beadId: 'bd-1', kind: 'question', body: 'Which?',
+    });
+    for (const line of ask.split('\n')) {
+      expect(line.startsWith(mod.RAIL)).toBe(true);
+    }
+    const row = mod.renderFleetRowLine({
+      activation_id: 'act:x', specialist: 'explorer', bead_id: 'bd-1', state: 'running',
+      resolved_model: 'm', elapsed_s: 41, last_activity_at: Math.floor(Date.now() / 1000),
+    });
+    expect(row).not.toContain(mod.RAIL);
+    expect(mod.renderCollapsedLine({ activations: [], asks: [] })).not.toContain(mod.RAIL);
+    for (const line of mod.renderSectionLines({ activations: [], asks: [] }, { expanded: true })) {
+      expect(line).not.toContain(mod.RAIL);
+    }
   });
 
   it('names the activation and says what to call next', async () => {

@@ -144,6 +144,13 @@ export declare class NativeActivationHost {
     private readonly now;
     private readonly registry;
     /**
+     * Last per-message usage value seen per activation, keyed by live snapshot.
+     * Feeds accumulateTokenUsage so delta-shape and cumulative-shape providers both
+     * project monotonic totals. WeakMap: the entry dies with the snapshot, and resume
+     * keeps the same snapshot so counters continue across attempts by construction.
+     */
+    private readonly lastUsageSeen;
+    /**
      * One transport for the whole host. Messages carry their own activationId, so a single
      * instance serves every child and the parent enumerates asks across the Fleet in one
      * place rather than walking activations.

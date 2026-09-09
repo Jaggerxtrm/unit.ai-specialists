@@ -34,6 +34,7 @@
 
 import * as z from 'zod';
 import type { NativeActivationHost } from '../../activation/native-host.js';
+import { THINKING_LEVELS } from '../../activation/types.js';
 import type { ActivationSnapshot, ActivationTokenUsage } from '../../activation/types.js';
 import { DispatchRejectedError } from '../../activation/types.js';
 import type { PendingAsk } from '../../activation/interaction.js';
@@ -63,6 +64,7 @@ export interface ActivationView {
   requested_model?: string;
   resolved_model: string;
   model_override: boolean;
+  thinking_override: boolean;
   /** Seconds since dispatch, from the in-memory snapshot — never an observability.db query. */
   elapsed_s: number;
   /** Cumulative spend counts. Omitted until the first usage event (never zero-filled). */
@@ -90,6 +92,7 @@ export function toActivationView(snapshot: ActivationSnapshot, nowMs: number = D
     ...(snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {}),
     resolved_model: snapshot.resolvedModel,
     model_override: snapshot.modelOverride,
+    thinking_override: snapshot.thinkingOverride,
     elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
     ...(snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {}),
     ...(snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {}),
@@ -151,6 +154,8 @@ export interface ActivationResultView {
   requested_model?: string;
   resolved_model: string;
   model_override: boolean;
+  thinking_level?: string;
+  thinking_override: boolean;
   fallback_used: boolean;
   completed_at: number;
 }
@@ -169,6 +174,8 @@ export function toActivationResultView(result: ActivationResult): ActivationResu
     ...(result.requestedModel ? { requested_model: result.requestedModel } : {}),
     resolved_model: result.resolvedModel,
     model_override: result.modelOverride,
+    ...(result.thinkingLevel ? { thinking_level: result.thinkingLevel } : {}),
+    thinking_override: result.thinkingOverride,
     fallback_used: result.fallbackUsed,
     completed_at: result.completedAt,
   };
@@ -205,6 +212,9 @@ export const specialistDispatchSchema = z.object({
   ),
   model_override: z.string().optional().describe(
     'Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced.',
+  ),
+  thinking_override: z.enum(THINKING_LEVELS).optional().describe(
+    'Override the definition thinking_level for THIS activation only. Absent means the definition level. An unknown value is refused before the session is created.',
   ),
   requested_by: z.string().optional().describe(
     'ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant.',
@@ -243,6 +253,7 @@ export function createSpecialistDispatchTool(
           specialist: input.specialist,
           beadId: input.bead_id,
           ...(input.model_override ? { modelOverride: input.model_override } : {}),
+          ...(input.thinking_override ? { thinkingOverride: input.thinking_override } : {}),
           requestedByParticipantId: input.requested_by ?? 'adapter::specialists-mcp',
           ...(input.coordinator_session_id ? { coordinatorSessionId: input.coordinator_session_id } : {}),
         });

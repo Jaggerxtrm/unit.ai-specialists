@@ -1020,6 +1020,81 @@ describe('observability-sqlite', () => {
     });
   });
 
+  describe('concurrent forensic writers (unitAI-dd52z)', () => {
+    const duplicateSeqs = (jobId: string): unknown[] => {
+      db = new Database(resolveObservabilityDbLocation(tempRoot).dbPath, { readonly: true });
+      const dups: unknown[] = [];
+      for (const tbl of ['specialist_events', 'specialist_forensic_events']) {
+        dups.push(...(db.query(
+          `SELECT job_id, seq, COUNT(*) AS c FROM ${tbl} WHERE job_id = ? GROUP BY job_id, seq HAVING c > 1`,
+        ).all(jobId) as unknown[]));
+      }
+      return dups;
+    };
+
+    const countRows = (tbl: string, jobId: string): number => {
+      const row = db!.query(`SELECT COUNT(*) AS c FROM ${tbl} WHERE job_id = ?`).get(jobId) as { c?: number };
+      return row.c ?? 0;
+    };
+
+    it('renumbers timeline seq past forensic-only rows instead of colliding', () => {
+      const client = createClient();
+      client.appendForensicEvent('job-xrace', 'researcher', undefined, createForensicEvent({
+        event_family: 'lifecycle',
+        event_name: 'dead_declared',
+        resource: {
+          service_namespace: 'xtrm',
+          service_name: 'specialists',
+          service_component: 'dead-job-audit',
+          deployment_environment: 'local',
+          repo: 'specialists',
+          participant_kind: 'specialist',
+          participant_role: 'researcher',
+        },
+        correlation: { job_id: 'job-xrace' },
+        body: {},
+      }));
+      client.appendEvent('job-xrace', 'researcher', undefined, { t: 1, type: 'run_start', specialist: 'researcher' } as never);
+      client.appendEvent('job-xrace', 'researcher', undefined, { t: 2, type: 'meta', specialist: 'researcher' } as never);
+
+      expect(duplicateSeqs('job-xrace')).toEqual([]);
+      expect(countRows('specialist_events', 'job-xrace')).toBe(2);
+      expect(countRows('specialist_forensic_events', 'job-xrace')).toBe(3);
+    });
+
+    it('resumes a poisoned job retry that reuses explicit seqs', () => {
+      const client = createClient();
+      client.appendEvent('job-xretry', 'researcher', undefined, { t: 1, type: 'run_start', specialist: 'researcher', seq: 1 } as never);
+      client.appendEvent('job-xretry', 'researcher', undefined, { t: 2, type: 'meta', specialist: 'researcher', seq: 2 } as never);
+      // A retried job restarts its local seq counter: reused seqs must renumber,
+      // never loop on UNIQUE constraint failed (job_id, seq).
+      client.appendEvent('job-xretry', 'researcher', undefined, { t: 3, type: 'run_start', specialist: 'researcher', seq: 1 } as never);
+      client.appendEvent('job-xretry', 'researcher', undefined, { t: 4, type: 'meta', specialist: 'researcher', seq: 2 } as never);
+
+      expect(duplicateSeqs('job-xretry')).toEqual([]);
+      expect(countRows('specialist_events', 'job-xretry')).toBe(4);
+      expect(countRows('specialist_forensic_events', 'job-xretry')).toBe(4);
+    });
+
+    it('two handles writing one job never emit duplicate (job_id, seq)', () => {
+      const first = createClient();
+      const second = createObservabilitySqliteClientAtPath(resolveObservabilityDbLocation(tempRoot).dbPath);
+      expect(second).not.toBeNull();
+      try {
+        for (let i = 0; i < 25; i += 1) {
+          first.appendEvent('job-xdual', 'researcher', undefined, { t: i * 2, type: 'meta', specialist: 'researcher' } as never);
+          second!.appendEvent('job-xdual', 'researcher', undefined, { t: i * 2 + 1, type: 'meta', specialist: 'researcher' } as never);
+        }
+      } finally {
+        second!.close();
+      }
+
+      expect(duplicateSeqs('job-xdual')).toEqual([]);
+      expect(countRows('specialist_events', 'job-xdual')).toBe(50);
+      expect(countRows('specialist_forensic_events', 'job-xdual')).toBe(50);
+    });
+  });
+
   describe('parseJournalMode', () => {
     it('normalizes journal mode to lowercase', () => {
       expect(parseJournalMode('WAL')).toBe('wal');

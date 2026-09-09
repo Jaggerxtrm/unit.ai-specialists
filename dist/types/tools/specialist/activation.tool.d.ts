@@ -27,6 +27,7 @@ export interface ActivationView {
     requested_model?: string;
     resolved_model: string;
     model_override: boolean;
+    thinking_override: boolean;
     /** Seconds since dispatch, from the in-memory snapshot — never an observability.db query. */
     elapsed_s: number;
     /** Cumulative spend counts. Omitted until the first usage event (never zero-filled). */
@@ -82,6 +83,8 @@ export interface ActivationResultView {
     requested_model?: string;
     resolved_model: string;
     model_override: boolean;
+    thinking_level?: string;
+    thinking_override: boolean;
     fallback_used: boolean;
     completed_at: number;
 }
@@ -90,6 +93,7 @@ export declare const specialistDispatchSchema: z.ZodObject<{
     specialist: z.ZodString;
     bead_id: z.ZodString;
     model_override: z.ZodOptional<z.ZodString>;
+    thinking_override: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
     requested_by: z.ZodOptional<z.ZodString>;
     coordinator_session_id: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
@@ -97,12 +101,14 @@ export declare const specialistDispatchSchema: z.ZodObject<{
     specialist: string;
     requested_by?: string | undefined;
     model_override?: string | undefined;
+    thinking_override?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
     coordinator_session_id?: string | undefined;
 }, {
     bead_id: string;
     specialist: string;
     requested_by?: string | undefined;
     model_override?: string | undefined;
+    thinking_override?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
     coordinator_session_id?: string | undefined;
 }>;
 /**
@@ -120,6 +126,7 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
         specialist: z.ZodString;
         bead_id: z.ZodString;
         model_override: z.ZodOptional<z.ZodString>;
+        thinking_override: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
         requested_by: z.ZodOptional<z.ZodString>;
         coordinator_session_id: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
@@ -127,12 +134,14 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
         specialist: string;
         requested_by?: string | undefined;
         model_override?: string | undefined;
+        thinking_override?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
         coordinator_session_id?: string | undefined;
     }, {
         bead_id: string;
         specialist: string;
         requested_by?: string | undefined;
         model_override?: string | undefined;
+        thinking_override?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
         coordinator_session_id?: string | undefined;
     }>;
     execute(input: z.infer<typeof specialistDispatchSchema>): Promise<{
@@ -168,6 +177,7 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
         requested_model?: string;
         resolved_model: string;
         model_override: boolean;
+        thinking_override: boolean;
         /** Seconds since dispatch, from the in-memory snapshot — never an observability.db query. */
         elapsed_s: number;
         /** Cumulative spend counts. Omitted until the first usage event (never zero-filled). */

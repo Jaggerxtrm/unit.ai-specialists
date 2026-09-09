@@ -46,6 +46,14 @@ export interface WorkspaceIdentity {
  */
 export type WorkspaceAccess = 'read' | 'write';
 /**
+ * Thinking levels the Pi session runtime accepts.
+ *
+ * Mirrors `thinking_level` in `src/specialist/schema.ts` — a manual dispatch override is
+ * constrained to the same set, never a free-form string the session would reject mid-turn.
+ */
+export declare const THINKING_LEVELS: readonly ["off", "minimal", "low", "medium", "high", "xhigh"];
+export type ThinkingLevel = typeof THINKING_LEVELS[number];
+/**
  * A request to activate a Specialist.
  *
  * Independent of TUI state by design. Tracked work is identified by `beadId` only: there is
@@ -62,6 +70,14 @@ export interface ActivationRequest {
      * rejected before session creation rather than silently replaced.
      */
     modelOverride?: string;
+    /**
+     * Overrides the definition's `thinking_level` for THIS activation only.
+     *
+     * Never mutates Specialist config. Absent means exactly the definition level, so a
+     * model-only override keeps current behavior. An unknown value is rejected before
+     * session creation rather than passed through to the Pi session.
+     */
+    thinkingOverride?: ThinkingLevel;
     requestedByParticipantId: ParticipantId;
     coordinatorSessionId?: string;
     /**
@@ -103,6 +119,8 @@ export interface ActivationSnapshot {
     modelOverride: boolean;
     /** Thinking level passed to session creation. Absent when unset — never fabricated. */
     thinkingLevel?: string;
+    /** True iff an explicit `thinkingOverride` was supplied. `thinkingLevel` carries the resolved value. */
+    thinkingOverride: boolean;
     /** Cumulative spend counts from the session event stream. Absent until the first usage event. */
     tokenUsage?: ActivationTokenUsage;
     /**
@@ -177,6 +195,10 @@ export interface ActivationResult {
     resolvedModel: string;
     /** True iff an explicit `modelOverride` was supplied. `requestedModel` carries which. */
     modelOverride: boolean;
+    /** Thinking level the session was created with. Absent when unset — never fabricated. */
+    thinkingLevel?: string;
+    /** True iff an explicit `thinkingOverride` was supplied for this activation. */
+    thinkingOverride: boolean;
     /**
      * Always false on the native runtime, and that is the contract, not an omission.
      *

@@ -197,8 +197,37 @@ describe('native activation observability parity', () => {
     });
   });
 
-  it('persists settle output to last_output and results, surviving dispose (unitAI-u3mqu)', () => {
+  it('accumulates token_usage across messages instead of replacing it (unitAI-beqby.15)', () => {
     client = createObservabilitySqliteClientAtPath(dbPath);
+    expect(client).not.toBeNull();
+    const observability = client!;
+    const sink = createActivationForensicSink(observability);
+    const base = {
+      activationId: 'act:spend', attemptId: 'att:spend:1',
+      participantId: 'specialist::researcher', specialist: 'researcher', beadId: 'unitAI-spend',
+    };
+    const assistantEnd = (usage: Record<string, number>) => ({
+      type: 'message_end', message: {
+        role: 'assistant', stopReason: 'stop', usage,
+        content: [{ type: 'text', text: 'answer' }],
+      },
+    });
+    sink.emit({ ...base, name: 'activation_started', payload: { pi_session_id: 'pi-spend' } });
+    // Reset shape (Spark symptom 1): the old replace showed 206 after 293.
+    sink.sessionEvent?.({ ...base, piSessionId: 'pi-spend', workspacePath: tempRoot, event: assistantEnd({ input: 293, output: 739 }) });
+    sink.sessionEvent?.({ ...base, piSessionId: 'pi-spend', workspacePath: tempRoot, event: assistantEnd({ input: 206, output: 204 }) });
+    // Cumulative growth shape (Spark symptom 2): add the growth, not the counter.
+    sink.sessionEvent?.({ ...base, piSessionId: 'pi-spend', workspacePath: tempRoot, event: assistantEnd({ input: 500, output: 300 }) });
+    observability.close();
+    client = null;
+    raw = new Database(dbPath);
+    const row = raw.query("SELECT status_json FROM specialist_jobs WHERE job_id = 'act:spend'").get() as { status_json: string };
+    const metrics = (JSON.parse(row.status_json) as { metrics?: { token_usage?: Record<string, number> } }).metrics;
+    expect(metrics?.token_usage?.input_tokens).toBe(293 + 206 + (500 - 206));
+    expect(metrics?.token_usage?.output_tokens).toBe(739 + 204 + (300 - 204));
+  });
+
+  it('persists settle output to last_output and results, surviving dispose (unitAI-u3mqu)', () => {    client = createObservabilitySqliteClientAtPath(dbPath);
     expect(client).not.toBeNull();
     const observability = client!;
     const sink = createActivationForensicSink(observability);
@@ -233,7 +262,7 @@ describe('native activation observability parity', () => {
     expect(forensic?.redaction_status).toBe('redacted');
   });
 
-  it('rolls back status and events together when a projected event batch fails', () => {
+  it('renumbers duplicate seqs instead of failing the batch (unitAI-dd52z supersedes rollback-on-duplicate)', () => {
     client = createObservabilitySqliteClientAtPath(dbPath);
     expect(client).not.toBeNull();
     const status = {
@@ -242,16 +271,20 @@ describe('native activation observability parity', () => {
       started_at_ms: Date.now(),
     };
 
+    // Retried jobs and second writers reuse seqs; the writer renumbers (dd52z)
+    // instead of throwing, so the batch commits with distinct seqs. The old
+    // rollback-on-duplicate expectation predates that design and cannot hold.
     expect(() => client!.upsertStatusWithEvents(status, [
       { t: Date.now(), seq: 1, type: 'turn', phase: 'start' },
       { t: Date.now(), seq: 1, type: 'turn', phase: 'end' },
-    ], { attemptId: 'att:atomic:1', attemptNo: 1 })).toThrow();
+    ], { attemptId: 'att:atomic:1', attemptNo: 1 })).not.toThrow();
 
     client!.close();
     client = null;
     raw = new Database(dbPath);
-    expect(raw.query("SELECT COUNT(*) AS count FROM specialist_jobs WHERE job_id = 'act:atomic'").get()).toEqual({ count: 0 });
-    expect(raw.query("SELECT COUNT(*) AS count FROM specialist_events WHERE job_id = 'act:atomic'").get()).toEqual({ count: 0 });
+    expect(raw.query("SELECT COUNT(*) AS count FROM specialist_jobs WHERE job_id = 'act:atomic'").get()).toEqual({ count: 1 });
+    const seqs = raw.query("SELECT seq AS seq FROM specialist_events WHERE job_id = 'act:atomic' ORDER BY seq").all() as Array<{ seq: number }>;
+    expect(seqs.map((r) => r.seq)).toEqual([1, 2]);
   });
 
   it('uses only shared event kinds and names every intentional native gap', () => {

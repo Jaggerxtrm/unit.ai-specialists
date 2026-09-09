@@ -46,6 +46,7 @@ import {
   resolveObservabilityDbLocation,
   resolveRuntimeToolContract,
   SpecialistLoader,
+  THINKING_LEVELS,
   admitCoordinatorToolCall,
   leaseScopeFor,
   readBuildId,
@@ -99,6 +100,18 @@ export const DEFAULT_REQUESTED_BY = 'adapter::pi-extension';
 
 export const FLEET_MAX_ROWS = 8;
 
+// Wake rail (unitAI-beqby.17): far-left │ gutter in #8d7fe8 (24-bit
+// 38;2;141;127;232). Carried only by wake follow-up content
+// (specialist_settled / specialist_ask); fleet rows and tool-result cards
+// carry no rail.
+export const RAIL = '\x1b[38;2;141;127;232m│\x1b[0m';
+
+export function withRail(line) {
+  const text = String(line ?? '');
+  if (!text) return RAIL;
+  return `${RAIL} ${text}`;
+}
+
 export function fleetSummaryOf({ activations, asks }) {
   const act = activations ?? [];
   const pending = asks ?? [];
@@ -147,9 +160,20 @@ export function renderCollapsedLine({ activations, asks }) {
   return `  └ specialists · ${parts.join(' · ')} · ${hint}`;
 }
 
+/** Braille spinner frames (ora dots) for running-and-working rows. The frame
+ * is selected pure-functionally from the injected nowMs clock (no timers or
+ * state in the render path): the footer section repaints on every TUI render
+ * pass, so an 80ms frame advances at ora speed. Tests inject nowMs directly. */
+export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+export const SPINNER_FRAME_MS = 80;
+
 /** One row per specialist. Forensic IDs never appear here. An activation with a
- * pending ask renders as a needs-reply row (`!` marker) outranking idle rows. */
-export function renderFleetRowLine(view, asks = []) {
+ * pending ask renders as a needs-reply row (`!` marker) outranking idle rows.
+ * A running-and-working row leads with a spinner frame ticked by nowMs, and
+ * the redundant `working` word is collapsed into that marker (the spinner IS
+ * the working signal); idle-Xs rows keep their `idle Xs` tail. All other
+ * rows keep their existing markers. */
+export function renderFleetRowLine(view, asks = [], nowMs = Date.now()) {
   const model = view.thinking_level
     ? `${view.resolved_model ?? '?model'} ${view.thinking_level}`
     : (view.resolved_model ?? '?model');
@@ -171,19 +195,26 @@ export function renderFleetRowLine(view, asks = []) {
   // Spend renders for every state, not only running: final spend stays visible after settle.
   const spend = tokens ? ` · ${tokens}` : '';
   const why = purpose ? ` · ${purpose}` : '';
-  return `    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
+  const isWorking = view.state === 'running' && activity === 'working';
+  const marker = isWorking
+    ? SPINNER_FRAMES[Math.floor(nowMs / SPINNER_FRAME_MS) % SPINNER_FRAMES.length]
+    : '●';
+  // Working rows end at spend: the spinner marker already says working.
+  // Every other row keeps its trailing activity word (incl. idle Xs).
+  const tail = isWorking ? '' : ` · ${activity}`;
+  return `    ${marker} ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend}${tail}`;
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
  * Expanded by default; needs-reply rows sort first. */
-export function renderSectionLines({ activations, asks }, { expanded = true } = {}) {
+export function renderSectionLines({ activations, asks }, { expanded = true, nowMs = Date.now() } = {}) {
   const lines = [renderCollapsedLine({ activations, asks })];
   if (!expanded) return lines;
   const askIds = new Set((asks ?? []).map((a) => a.activation_id));
   const ordered = [...(activations ?? [])].sort(
     (a, b) => Number(askIds.has(b.activation_id)) - Number(askIds.has(a.activation_id)),
   );
-  const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks));
+  const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks, nowMs));
   lines.push(...rows);
   const overflow = (activations ?? []).length - rows.length;
   if (overflow > 0) lines.push(`    +${overflow} more`);
@@ -343,7 +374,7 @@ export function formatAskWake(ask) {
     'Call specialist_status to read this ask\'s message_id from pending_asks, then ' +
       'answer it with specialist_reply. The child is alive and resumable; it stays ' +
       'blocked until you answer.',
-  ].join('\n');
+  ].map((line) => withRail(line)).join('\n');
 }
 
 /** The wake message a finished child produces. Exported so its shape is testable. */
@@ -361,7 +392,7 @@ export function formatSettlementWake(done) {
         + 'be resumed with specialist_resume if the cause was transient.'
       : 'Call specialist_status to read its validated result. The activation is settled and '
         + 'stays resumable until you dispose it with specialist_stop_activation.',
-  ].join('\n');
+  ].map((line) => withRail(line)).join('\n');
 }
 
 // ── Result projection ────────────────────────────────────────────────────────
@@ -588,7 +619,8 @@ function humanResultOf() {
       try { payload = JSON.parse(raw); } catch { /* fall through to raw lines */ }
       const summary = payload ? summarizePayload(payload) : null;
       const lines = summary ?? (raw ? raw.split('\n') : ['(empty result)']);
-      return summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
+      const body = summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
+      return body;
     };
     // pi wraps every tool renderer in a MouseRegion and walks invalidate()
     // on theme/resume; a missing method kills the session (unitAI-q02sz).
@@ -812,6 +844,14 @@ export default function specialistSubagentsExtension(pi, options = {}) {
             'model is refused before the session is created, never silently replaced.',
         }),
       ),
+      thinking_override: Type.Optional(
+        Type.String({
+          description:
+            'Override the thinking level for THIS activation only ' +
+            `(${THINKING_LEVELS.join('|')}). An unknown level is refused before the ` +
+            'session is created, never silently replaced.',
+        }),
+      ),
       requested_by: Type.Optional(
         Type.String({
           description:
@@ -883,6 +923,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
           // Inline-contract dispatch creates a fresh bead with no parent: no lineage.
           ...(epicContextDepth !== undefined && !autoCreatedBeadId ? { epicContextDepth } : {}),
           ...(params.model_override ? { modelOverride: params.model_override } : {}),
+          ...(params.thinking_override ? { thinkingOverride: params.thinking_override } : {}),
           requestedByParticipantId: params.requested_by ?? DEFAULT_REQUESTED_BY,
           ...(params.coordinator_session_id ? { coordinatorSessionId: params.coordinator_session_id } : {}),
         });
@@ -1316,11 +1357,9 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   }
 
   const FLEET_WIDGET_KEY = 'specialist-fleet';
-  const FLEET_POLL_MS = 1000;
 
   /** Operator-facing toggle. The widget is shown by default; `/specialists hide` opts out. */
   let fleetVisible = true;
-  let fleetTimer = null;
 
   /** Snapshot state and pending asks together — every caller needs both. */
   const readFleet = () => {
@@ -1353,7 +1392,8 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     if (!fleetVisible) return [];
     const fleet = readFleet();
     if (fleet.activations.length === 0 && fleet.asks.length === 0) return [];
-    return renderFleetSection(fleet, { expanded: fleetExpanded });
+    // One clock per paint so every row in the frame shares the spinner frame.
+    return renderFleetSection(fleet, { expanded: fleetExpanded, nowMs: Date.now() });
   };
 
   // Seam lookup order: explicit test seam, then the core footer's global hook,
@@ -1368,20 +1408,12 @@ export default function specialistSubagentsExtension(pi, options = {}) {
     return null;
   };
 
-  const paintFleetFallback = () => {
-    const ctx = liveContext({ requireUI: true });
-    if (!ctx) return;
-    if (typeof ctx.ui?.setWidget !== 'function') return; // RPC/headless: silent skip
-    const fleet = readFleet();
-    const content =
-      fleetVisible && (fleet.activations.length > 0 || fleet.asks.length > 0)
-        ? renderFleetSection(fleet, { expanded: fleetExpanded })
-        : undefined;
-    try {
-      ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'belowEditor' });
-    } catch { /* a widget that cannot paint must not break the session */ }
-  };
-  const paintFleet = () => { if (!fleetUnregister) paintFleetFallback(); };
+  // Hide-until-seam (unitAI-beqby.9, operator decision): the footer-section seam
+  // is the only fleet surface. When the seam is absent the fleet stays hidden —
+  // no setWidget fallback, so no aboveEditor/belowEditor widget competes with
+  // the footer. Slash commands still report the fleet as text. The section
+  // renders on the footer's own cycle, so repaints are no-ops everywhere else.
+  const paintFleet = () => {};
 
   // Inspector deferred with UI-4 (unitAI-nmxhg): /specialists inspect prints the
   // expanded text report instead of mounting a ui.custom pane.
@@ -1398,11 +1430,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       catch { fleetUnregister = null; }
     }
     if (fleetUnregister) return; // section renders on the footer's own cycle
-    if (fleetTimer) clearInterval(fleetTimer);
-    // Fallback tick is a null check until the first dispatch creates a host.
-    fleetTimer = setInterval(paintFleetFallback, FLEET_POLL_MS);
-    fleetTimer.unref?.();
-    paintFleetFallback();
+    // No seam: the fleet stays hidden (hide-until-seam, unitAI-beqby.9).
   });
 
   /** Report to the operator on whichever surface the current mode actually has. */
@@ -1491,7 +1519,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
         return;
       }
       report(ctx, `Answered ${message.messageId} on activation ${message.activationId}.`);
-      paintFleetFallback();
     },
   });
   pi.registerCommand('fleet:reply', {
@@ -1529,7 +1556,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       }
       await disposeActivation(activationId, reason || 'pi operator request');
       report(ctx, `Stopped ${activationId}.`);
-      paintFleetFallback();
   };
   const resumeHandler = async (args, ctx) => {
     const trimmed = args.trim();
@@ -1555,7 +1581,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
       return;
     }
     report(ctx, `Resumed ${activationId}.`);
-    paintFleetFallback();
   };
   pi.registerCommand('specialists:stop', {
     description: 'Stop and dispose a native activation. Usage: /specialists:stop <activation_id> [reason]',
@@ -1581,10 +1606,6 @@ export default function specialistSubagentsExtension(pi, options = {}) {
   // A child must never outlive the coordinator process. Best-effort: stop and
   // dispose every live activation when the pi session shuts down.
   pi.on('session_shutdown', async () => {
-    if (fleetTimer) {
-      clearInterval(fleetTimer);
-      fleetTimer = null;
-    }
     try { fleetUnregister?.(); } catch {}
     fleetUnregister = null;
     if (!host) return;

@@ -157,7 +157,7 @@ function loaderFor(spec: Record<string, unknown>) {
   return { get: async () => spec } as never;
 }
 
-function readOnlySpec() {
+function readOnlySpec(executionExtra: Record<string, unknown> = {}) {
   return {
     specialist: {
       metadata: { name: 'researcher', version: '1.0.0', description: 'd', category: 'c' },
@@ -167,6 +167,7 @@ function readOnlySpec() {
         response_format: 'text',
         output_type: 'research',
         bare: false,
+        ...executionExtra,
       },
       prompt: { system: 'You are the researcher.', task_template: 'Do: {{bead_id}}' },
     },
@@ -364,6 +365,86 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
       requestedByParticipantId: 'coordinator',
       modelOverride: 'bogus/model',
     })).rejects.toThrow(/model_unavailable/);
+
+    expect(record.createArgs).toBeUndefined();
+    expect(sink.names).toContain('activation_rejected');
+  });
+
+  it('resolves an explicit thinking override over the definition level and records it', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record, assistantText: 'the answer' });
+
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec({ thinking_level: 'low' })),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      cwd: hostWorkspace(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator',
+      thinkingOverride: 'high',
+    });
+    const result = await handle.result;
+
+    expect(record.createArgs!.thinkingLevel).toBe('high');
+    const snapshot = host.inspect(handle.activationId)!;
+    expect(snapshot.thinkingLevel).toBe('high');
+    expect(snapshot.thinkingOverride).toBe(true);
+    expect(result.thinkingLevel).toBe('high');
+    expect(result.thinkingOverride).toBe(true);
+  });
+
+  it('preserves the definition level when no thinking override is given', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record, assistantText: 'the answer' });
+
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec({ thinking_level: 'low' })),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      cwd: hostWorkspace(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator',
+    });
+    const result = await handle.result;
+
+    expect(record.createArgs!.thinkingLevel).toBe('low');
+    const snapshot = host.inspect(handle.activationId)!;
+    expect(snapshot.thinkingLevel).toBe('low');
+    expect(snapshot.thinkingOverride).toBe(false);
+    expect(result.thinkingLevel).toBe('low');
+    expect(result.thinkingOverride).toBe(false);
+  });
+
+  it('rejects an unknown thinking override before creating a session', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record });
+    const sink = collectingSink();
+
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec({ thinking_level: 'low' })),
+      beadsClient: { readBead: () => BEAD } as never,
+      forensics: sink,
+      loadSdk: async () => makeSdk(record, session),
+      cwd: hostWorkspace(),
+    });
+
+    await expect(host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator',
+      thinkingOverride: 'turbo' as never,
+    })).rejects.toThrow(/invalid_thinking_override/);
 
     expect(record.createArgs).toBeUndefined();
     expect(sink.names).toContain('activation_rejected');
@@ -735,6 +816,69 @@ describe('snapshot tokenUsage (unitAI-crjh7)', () => {
     session.emit(assistantEnd({ input: 303, output: 120, cacheWrite: 0, cacheRead: 15729, reasoning: 0, totalTokens: 16152 }));
     expect(totals()).toBe(15923 + 16152);
     expect(host.liveStats(handle.activationId)?.token_usage?.input_tokens).toBe(15798 + 303);
+  });
+
+  it('stays monotonic on reset-shape deltas and takes latest on cumulative-shape counters (unitAI-beqby.15)', async () => {
+    const startHost = async () => {
+      const record: { createArgs?: Record<string, unknown> } = {};
+      const session = fakeSession({ record, holdOpen: true });
+      const host = new NativeActivationHost({
+        beadGate: NO_CONTRACT_STATE,
+        loader: loaderFor(readOnlySpec()),
+        beadsClient: { readBead: () => BEAD } as never,
+        loadSdk: async () => makeSdk(record, session),
+        forensics: { emit: () => {} },
+        cwd: hostWorkspace(),
+      });
+      const handle = await host.start({
+        specialist: 'researcher',
+        beadId: 'ISSUE-1',
+        requestedByParticipantId: 'coordinator:test',
+      });
+      return { host, session, handle };
+    };
+    const assistantEnd = (usage: Record<string, number>) => ({
+      type: 'message_end',
+      message: {
+        role: 'assistant', provider: 'provider', model: 'model', stopReason: 'stop',
+        usage,
+        content: [{ type: 'text', text: 'answer' }],
+      },
+    } as never);
+    const inputOf = (h: NativeActivationHost, id: string) =>
+      h.inspect(id)?.tokenUsage?.input_tokens ?? 0;
+
+    // Spark symptom 1 (act:7e5baa87-c42): successive per-message counts DECREASE
+    // (293->206). A spread-merge shows 206; the total must hold 293+206 and climb.
+    {
+      const { host, session, handle } = await startHost();
+      session.emit(assistantEnd({ input: 293, output: 739, cacheRead: 49649, reasoning: 496 }));
+      expect(inputOf(host, handle.activationId)).toBe(293);
+      session.emit(assistantEnd({ input: 206, output: 204, cacheRead: 51313, reasoning: 0 }));
+      const usage = host.inspect(handle.activationId)?.tokenUsage;
+      expect(usage?.input_tokens).toBe(293 + 206);
+      expect(usage?.output_tokens).toBe(739 + 204);
+      // Zero carries no information: it neither clears the total nor corrupts the
+      // next delta, so reasoning holds at 496 instead of dropping to 0.
+      expect(usage?.reasoning_tokens).toBe(496);
+      // Cache reads are per-message deltas on this shape (input reset proves it),
+      // so they sum like the rest.
+      expect(usage?.cache_read_tokens).toBe(49649 + 51313);
+    }
+
+    // Spark symptom 2 (act:10e9333c-983): message_end usage is cumulative per
+    // message. Blind summing double-counts every message toward 990k; the total
+    // must track the latest counter instead.
+    {
+      const { host, session, handle } = await startHost();
+      session.emit(assistantEnd({ input: 10000, output: 500, cacheRead: 40000 }));
+      session.emit(assistantEnd({ input: 30000, output: 900, cacheRead: 120000 }));
+      session.emit(assistantEnd({ input: 60000, output: 1300, cacheRead: 250000 }));
+      const usage = host.inspect(handle.activationId)?.tokenUsage;
+      expect(usage?.input_tokens).toBe(60000);
+      expect(usage?.output_tokens).toBe(1300);
+      expect(usage?.cache_read_tokens).toBe(250000);
+    }
   });
 });
 

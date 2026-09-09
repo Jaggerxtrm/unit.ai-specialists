@@ -11469,7 +11469,7 @@ function withRetry(operation, context) {
       if (lastError.message.includes("Cannot use a closed database")) {
         throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
       }
-      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
+      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy") || lastError.message.includes("UNIQUE constraint failed");
       if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
         break;
       }
@@ -12369,8 +12369,15 @@ class SqliteClient {
     const attemptNo = typeof row.attempt_no === "bigint" ? Number(row.attempt_no) : typeof row.attempt_no === "number" ? row.attempt_no : 0;
     return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === "string" ? row.attempt_id : null };
   }
+  isTimelineSeqUsed(jobId, seq) {
+    const inTimeline = this.db.query("SELECT 1 FROM specialist_events WHERE job_id = ? AND seq = ? LIMIT 1").get(jobId, seq);
+    if (inTimeline)
+      return true;
+    return Boolean(this.db.query("SELECT 1 FROM specialist_forensic_events WHERE job_id = ? AND seq = ? LIMIT 1").get(jobId, seq));
+  }
   writeEventRow(jobId, specialist, beadId, event, identity) {
-    const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
+    const requestedSeq = typeof event.seq === "number" && event.seq > 0 ? event.seq : NaN;
+    const seq = Number.isFinite(requestedSeq) && !this.isTimelineSeqUsed(jobId, requestedSeq) ? requestedSeq : Math.max(this.getNextSpecialistEventSeq(jobId), this.getNextForensicEventSeq(jobId));
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
     const current = this.readJobAttempt(jobId);
@@ -76307,6 +76314,8 @@ import { existsSync as existsSync19, linkSync, mkdirSync as mkdirSync10, readFil
 import { join as join18 } from "path";
 
 // src/activation/types.ts
+var THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
 class DispatchRejectedError extends Error {
   reason;
   detail;
@@ -76628,6 +76637,7 @@ function toActivationView(snapshot, nowMs = Date.now()) {
     ...snapshot.requestedModel ? { requested_model: snapshot.requestedModel } : {},
     resolved_model: snapshot.resolvedModel,
     model_override: snapshot.modelOverride,
+    thinking_override: snapshot.thinkingOverride,
     elapsed_s: Math.max(0, Math.floor((nowMs - snapshot.startedAt) / 1000)),
     ...snapshot.tokenUsage ? { token_usage: { ...snapshot.tokenUsage } } : {},
     ...snapshot.thinkingLevel ? { thinking_level: snapshot.thinkingLevel } : {},
@@ -76662,6 +76672,8 @@ function toActivationResultView(result) {
     ...result.requestedModel ? { requested_model: result.requestedModel } : {},
     resolved_model: result.resolvedModel,
     model_override: result.modelOverride,
+    ...result.thinkingLevel ? { thinking_level: result.thinkingLevel } : {},
+    thinking_override: result.thinkingOverride,
     fallback_used: result.fallbackUsed,
     completed_at: result.completedAt
   };
@@ -76677,6 +76689,7 @@ var specialistDispatchSchema = objectType({
   specialist: stringType().describe("Specialist name, e.g. codebase-explorer"),
   bead_id: stringType().describe("The Bead that is this activation's task contract \u2014 a COMPLETE 7-section contract " + "(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY " + "level, which must be exactly one of LOW, MEDIUM, HIGH or CRITICAL. That is EIGHT " + "required parts, not seven; SCRUTINY is the one most often left out. Write each section " + "as a heading: either the section name on its own line with its body beneath, or " + "`PROBLEM: the body` on one line. Both forms are accepted. " + "A draft or incomplete Bead is refused before any model turn. No free-form task " + "text is accepted: a task that needs more definition belongs in the Bead (see the " + "planning skill)."),
   model_override: stringType().optional().describe("Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced."),
+  thinking_override: enumType(THINKING_LEVELS).optional().describe("Override the definition thinking_level for THIS activation only. Absent means the definition level. An unknown value is refused before the session is created."),
   requested_by: stringType().optional().describe("ParticipantId of the requesting coordinator. Defaults to the MCP gateway participant."),
   coordinator_session_id: stringType().optional().describe("MCP session id, for lineage.")
 });
@@ -76691,6 +76704,7 @@ function createSpecialistDispatchTool(getHost, getPusher) {
           specialist: input.specialist,
           beadId: input.bead_id,
           ...input.model_override ? { modelOverride: input.model_override } : {},
+          ...input.thinking_override ? { thinkingOverride: input.thinking_override } : {},
           requestedByParticipantId: input.requested_by ?? "adapter::specialists-mcp",
           ...input.coordinator_session_id ? { coordinatorSessionId: input.coordinator_session_id } : {}
         });
@@ -77638,6 +77652,34 @@ function nativeSessionTokenUsage(event) {
   };
   return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
 }
+var USAGE_COUNTER_KEYS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_creation_tokens",
+  "cache_read_tokens",
+  "reasoning_tokens",
+  "tool_tokens",
+  "total_tokens"
+];
+function accumulateTokenUsage(prev, incoming, lastSeen) {
+  const merged = { ...prev ?? {} };
+  const carried = USAGE_COUNTER_KEYS.filter((key) => {
+    const value = incoming[key];
+    return typeof value === "number" && Number.isFinite(value) && value > 0;
+  });
+  const cumulative = carried.every((key) => lastSeen[key] === undefined || incoming[key] >= lastSeen[key]);
+  for (const key of carried) {
+    const value = incoming[key];
+    const last = lastSeen[key];
+    const delta = last !== undefined && cumulative ? value - last : value;
+    merged[key] = (typeof merged[key] === "number" ? merged[key] : 0) + delta;
+    lastSeen[key] = value;
+  }
+  if (merged.usage_source === undefined && typeof incoming.usage_source === "string") {
+    merged.usage_source = incoming.usage_source;
+  }
+  return merged;
+}
 function resultContent(result) {
   if (typeof result === "string")
     return result;
@@ -77958,6 +78000,7 @@ class NativeActivationHost {
   cwd;
   now;
   registry = new FleetRegistry;
+  lastUsageSeen = new WeakMap;
   interactions;
   constructor(deps = {}) {
     this.cwd = deps.cwd ?? process.cwd();
@@ -77984,7 +78027,8 @@ class NativeActivationHost {
     });
     emit("activation_requested", {
       requested_by: request.requestedByParticipantId,
-      model_override: request.modelOverride ?? null
+      model_override: request.modelOverride ?? null,
+      thinking_override: request.thinkingOverride ?? null
     });
     const reject = (reason, detail = {}) => {
       emit("activation_rejected", { reason, ...detail });
@@ -78033,6 +78077,13 @@ class NativeActivationHost {
     const sdk = await this.loadSdk();
     const configuredModel = resolveModelChain(execution)[0];
     const requestedModel = request.modelOverride ?? configuredModel;
+    if (request.thinkingOverride !== undefined && !THINKING_LEVELS.includes(request.thinkingOverride)) {
+      return reject("invalid_thinking_override", {
+        thinkingOverride: request.thinkingOverride,
+        note: `supported thinking levels: ${THINKING_LEVELS.join(", ")}`
+      });
+    }
+    const thinkingLevel = request.thinkingOverride ?? execution.thinking_level;
     if (!requestedModel)
       return reject("no_model_configured");
     const modelRuntime = await createGateModelRuntime(sdk);
@@ -78088,6 +78139,8 @@ class NativeActivationHost {
       requested_model: requestedModel,
       resolved_model: resolvedModel,
       model_override: Boolean(request.modelOverride),
+      thinking_level: thinkingLevel ?? null,
+      thinking_override: request.thinkingOverride !== undefined,
       workspace: workspace.worktreePath,
       tools: toolContract.toolsList.join(","),
       custom_tools: `${ASK_TOOL},${ESCALATE_TOOL}`
@@ -78151,7 +78204,7 @@ class NativeActivationHost {
       customTools: [...askTools, ...guardedTools.tools],
       cwd: workspace.worktreePath,
       model: modelCheck.model,
-      ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...thinkingLevel ? { thinkingLevel } : {},
       noTools: "builtin",
       tools: [...toolContract.toolsList, ASK_TOOL, ESCALATE_TOOL],
       systemPrompt: systemPrompt.text
@@ -78172,7 +78225,8 @@ class NativeActivationHost {
       requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
-      ...execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {},
+      ...thinkingLevel ? { thinkingLevel } : {},
+      thinkingOverride: request.thinkingOverride !== undefined,
       ...purpose ? { purpose } : {},
       startedAt,
       lastActivityAt: startedAt
@@ -78199,14 +78253,9 @@ class NativeActivationHost {
     if (event.type === "message_end") {
       const usage = extractTokenUsage(event);
       if (usage) {
-        const prev = snapshot.tokenUsage ?? {};
-        const merged = { ...prev };
-        for (const [key, value] of Object.entries(usage)) {
-          if (value === undefined)
-            continue;
-          merged[key] = (prev[key] ?? 0) + value;
-        }
-        snapshot.tokenUsage = merged;
+        const seen = this.lastUsageSeen.get(snapshot) ?? {};
+        snapshot.tokenUsage = accumulateTokenUsage(snapshot.tokenUsage, usage, seen);
+        this.lastUsageSeen.set(snapshot, seen);
       }
     }
     this.forensics.sessionEvent?.({
@@ -78270,6 +78319,8 @@ class NativeActivationHost {
           requestedModel: snapshot.requestedModel,
           resolvedModel: snapshot.resolvedModel,
           modelOverride: snapshot.modelOverride,
+          ...snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {},
+          thinkingOverride: snapshot.thinkingOverride,
           fallbackUsed: false,
           completedAt: this.now()
         };
@@ -78294,6 +78345,8 @@ class NativeActivationHost {
         requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
+        ...snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {},
+        thinkingOverride: snapshot.thinkingOverride,
         fallbackUsed: false,
         completedAt: this.now()
       };
@@ -78314,6 +78367,8 @@ class NativeActivationHost {
         requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
+        ...snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {},
+        thinkingOverride: snapshot.thinkingOverride,
         fallbackUsed: false,
         completedAt: this.now()
       };
@@ -78501,7 +78556,9 @@ class NativeActivationHost {
     emit("activation_resumed", {
       requested_model: record4.snapshot.requestedModel,
       resolved_model: record4.snapshot.resolvedModel,
-      model_override: record4.snapshot.modelOverride
+      model_override: record4.snapshot.modelOverride,
+      thinking_level: record4.snapshot.thinkingLevel ?? null,
+      thinking_override: record4.snapshot.thinkingOverride
     });
     record4.unsubscribe();
     record4.unsubscribe = record4.session.subscribe((event) => this.onSessionEvent(record4.snapshot, event, emit));
@@ -78678,6 +78735,7 @@ function newProjectionState(input) {
     startedAtMs: input.startedAtMs,
     lastEventAtMs: input.startedAtMs,
     status: "starting",
+    lastUsageSeen: {},
     toolCalls: [],
     turns: 0,
     autoRetries: 0,
@@ -78775,7 +78833,7 @@ function createActivationForensicSink(observability) {
             state.latestOutput = timelineEvent.content;
           }
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOKEN_USAGE)
-            state.tokenUsage = timelineEvent.token_usage;
+            state.tokenUsage = accumulateTokenUsage(state.tokenUsage, timelineEvent.token_usage, state.lastUsageSeen);
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.FINISH_REASON)
             state.finishReason = timelineEvent.finish_reason;
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOOL && timelineEvent.phase === "end") {

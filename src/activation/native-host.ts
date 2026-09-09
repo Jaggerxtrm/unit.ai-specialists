@@ -50,7 +50,7 @@ import { acquire as acquireLease, admitToolCall, release as releaseLease } from 
 import { createGuardedTools } from './guarded-tools.js';
 import { createAskTools, ASK_TOOL, ESCALATE_TOOL } from './ask-tool.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
-import { nativeSessionTokenUsage } from '../specialist/native-activation-observability.js';
+import { nativeSessionTokenUsage, accumulateTokenUsage } from '../specialist/native-activation-observability.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
 import { FleetRegistry, RESUMABLE_STATES, nextAttemptId } from './registry.js';
 import {
@@ -62,6 +62,7 @@ import {
   type ActivationState,
   type ActivationTokenUsage,
   type LiveActivationStats,
+  THINKING_LEVELS,
   type WorkspaceAccess,
   type WorkspaceIdentity,
 } from './types.js';
@@ -223,6 +224,14 @@ export class NativeActivationHost {
   private readonly registry = new FleetRegistry();
 
   /**
+   * Last per-message usage value seen per activation, keyed by live snapshot.
+   * Feeds accumulateTokenUsage so delta-shape and cumulative-shape providers both
+   * project monotonic totals. WeakMap: the entry dies with the snapshot, and resume
+   * keeps the same snapshot so counters continue across attempts by construction.
+   */
+  private readonly lastUsageSeen = new WeakMap<object, Record<string, number>>();
+
+  /**
    * One transport for the whole host. Messages carry their own activationId, so a single
    * instance serves every child and the parent enumerates asks across the Fleet in one
    * place rather than walking activations.
@@ -272,6 +281,7 @@ export class NativeActivationHost {
     emit('activation_requested', {
       requested_by: request.requestedByParticipantId,
       model_override: request.modelOverride ?? null,
+      thinking_override: request.thinkingOverride ?? null,
     });
 
     const reject = (reason: string, detail: Record<string, unknown> = {}): never => {
@@ -344,6 +354,13 @@ export class NativeActivationHost {
     // forensics and its own acceptance, not a silent widening of acceptance B.
     const configuredModel = resolveModelChain(execution)[0];
     const requestedModel = request.modelOverride ?? configuredModel;
+    if (request.thinkingOverride !== undefined && !(THINKING_LEVELS as readonly string[]).includes(request.thinkingOverride)) {
+      return reject('invalid_thinking_override', {
+        thinkingOverride: request.thinkingOverride,
+        note: `supported thinking levels: ${THINKING_LEVELS.join(', ')}`,
+      });
+    }
+    const thinkingLevel = request.thinkingOverride ?? execution.thinking_level;
     if (!requestedModel) return reject('no_model_configured');
 
     // An explicit override that is unavailable must fail here rather than silently
@@ -415,6 +432,8 @@ export class NativeActivationHost {
       requested_model: requestedModel,
       resolved_model: resolvedModel,
       model_override: Boolean(request.modelOverride),
+      thinking_level: thinkingLevel ?? null,
+      thinking_override: request.thinkingOverride !== undefined,
       workspace: workspace.worktreePath,
       tools: toolContract.toolsList.join(','),
       custom_tools: `${ASK_TOOL},${ESCALATE_TOOL}`,
@@ -500,7 +519,7 @@ export class NativeActivationHost {
       // The pi SDK takes a Model object here. Passing the provider-qualified string
       // instead is accepted silently and then fails mid-turn with an unresolved provider.
       model: modelCheck.model,
-      ...(execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
       // Fail-closed: only the resolved contract's tools, never pi's defaults. `noTools`
       // must be "builtin" rather than `tools: []`, which would also empty customTools.
       noTools: 'builtin',
@@ -537,7 +556,8 @@ export class NativeActivationHost {
       requestedModel,
       resolvedModel,
       modelOverride: Boolean(request.modelOverride),
-      ...(execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      thinkingOverride: request.thinkingOverride !== undefined,
       // Captured once at dispatch from the validated contract; the tick stays an in-memory read.
       ...(purpose ? { purpose } : {}),
       startedAt,
@@ -575,22 +595,17 @@ export class NativeActivationHost {
     emit: (name: string, payload?: Record<string, unknown>) => void,
   ): void {
     snapshot.lastActivityAt = this.now();
-    // Session spend is the SUM of per-message provider counts (pi's `addUsage`
-    // semantics): each message_end carries only its own request's tokens, so a
-    // spread-merge would replace the running total with one message's counts and
-    // the row would flap down or blank. Accumulate on message_end only — the one
-    // event per message carrying final usage — so streaming updates carrying
-    // partial or zero usage can never double-count or clear the total.
+    // Session spend merges one message's provider counts into the running total
+    // (unitAI-beqby.15): per-message deltas add whole, cumulative-per-message
+    // counters add only their growth, so neither shape flaps the row down nor
+    // explodes it. Accumulate on message_end only — the one event per message
+    // carrying final usage — so streaming partials can never double-count.
     if (event.type === 'message_end') {
       const usage = extractTokenUsage(event);
       if (usage) {
-        const prev = snapshot.tokenUsage ?? {};
-        const merged: typeof prev = { ...prev };
-        for (const [key, value] of Object.entries(usage) as Array<[keyof typeof prev, number]>) {
-          if (value === undefined) continue;
-          merged[key] = (prev[key] ?? 0) + value;
-        }
-        snapshot.tokenUsage = merged;
+        const seen = this.lastUsageSeen.get(snapshot) ?? {};
+        snapshot.tokenUsage = accumulateTokenUsage(snapshot.tokenUsage, usage, seen);
+        this.lastUsageSeen.set(snapshot, seen);
       }
     }
 
@@ -671,6 +686,8 @@ export class NativeActivationHost {
       requestedModel: snapshot.requestedModel,
           resolvedModel: snapshot.resolvedModel,
           modelOverride: snapshot.modelOverride,
+          ...(snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {}),
+          thinkingOverride: snapshot.thinkingOverride,
           fallbackUsed: false,
           completedAt: this.now(),
         };
@@ -701,6 +718,8 @@ export class NativeActivationHost {
       requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
+        ...(snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {}),
+        thinkingOverride: snapshot.thinkingOverride,
         fallbackUsed: false,
         completedAt: this.now(),
       };
@@ -722,6 +741,8 @@ export class NativeActivationHost {
       requestedModel: snapshot.requestedModel,
         resolvedModel: snapshot.resolvedModel,
         modelOverride: snapshot.modelOverride,
+        ...(snapshot.thinkingLevel ? { thinkingLevel: snapshot.thinkingLevel } : {}),
+        thinkingOverride: snapshot.thinkingOverride,
         fallbackUsed: false,
         completedAt: this.now(),
       };
@@ -991,6 +1012,8 @@ export class NativeActivationHost {
       requested_model: record.snapshot.requestedModel,
       resolved_model: record.snapshot.resolvedModel,
       model_override: record.snapshot.modelOverride,
+      thinking_level: record.snapshot.thinkingLevel ?? null,
+      thinking_override: record.snapshot.thinkingOverride,
     });
 
     record.unsubscribe();
