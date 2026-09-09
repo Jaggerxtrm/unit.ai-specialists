@@ -11469,7 +11469,7 @@ function withRetry(operation, context) {
       if (lastError.message.includes("Cannot use a closed database")) {
         throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
       }
-      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
+      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy") || lastError.message.includes("UNIQUE constraint failed");
       if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
         break;
       }
@@ -12369,8 +12369,15 @@ class SqliteClient {
     const attemptNo = typeof row.attempt_no === "bigint" ? Number(row.attempt_no) : typeof row.attempt_no === "number" ? row.attempt_no : 0;
     return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === "string" ? row.attempt_id : null };
   }
+  isTimelineSeqUsed(jobId, seq) {
+    const inTimeline = this.db.query("SELECT 1 FROM specialist_events WHERE job_id = ? AND seq = ? LIMIT 1").get(jobId, seq);
+    if (inTimeline)
+      return true;
+    return Boolean(this.db.query("SELECT 1 FROM specialist_forensic_events WHERE job_id = ? AND seq = ? LIMIT 1").get(jobId, seq));
+  }
   writeEventRow(jobId, specialist, beadId, event, identity) {
-    const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
+    const requestedSeq = typeof event.seq === "number" && event.seq > 0 ? event.seq : NaN;
+    const seq = Number.isFinite(requestedSeq) && !this.isTimelineSeqUsed(jobId, requestedSeq) ? requestedSeq : Math.max(this.getNextSpecialistEventSeq(jobId), this.getNextForensicEventSeq(jobId));
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
     const current = this.readJobAttempt(jobId);
