@@ -19,7 +19,7 @@ import { buildV2Server } from '../../../src/mcp/v2-server.js';
  * Domain parity (gates, refusals, dispatch) lives in
  * activation-mcp-tools.test.ts / activation-dispatch-inline.test.ts at the
  * tool level plus live before/after probes; here the wire contract is proved:
- * exact 2026-07-28 negotiation, server/discover, 6-tool surface, resultType,
+ * exact 2026-07-28 negotiation, server/discover, 7-tool surface, resultType,
  * partitioned errors, and per-request independence.
  */
 
@@ -34,6 +34,7 @@ const EXPECTED_TOOLS = [
   'specialist_status',
   'specialist_dispatch',
   'specialist_reply',
+  'specialist_resume',
   'specialist_stop_activation',
   'specialist_list',
 ];
@@ -162,7 +163,7 @@ describe('v2 modern negotiation (strict 2026-07-28)', () => {
 });
 
 describe('v2 tool surface (t2kol parity)', () => {
-  it('tools/list returns the 6-tool surface in deterministic order with modern resultType', async () => {
+  it('tools/list returns the 7-tool surface in deterministic order with modern resultType', async () => {
     const res = await client.call('tools/list', { _meta: META });
     expect(res.error).toBeUndefined();
     const result = res.result as { tools: Array<{ name: string }>; resultType: string };
@@ -211,6 +212,35 @@ describe('v2 tool surface (t2kol parity)', () => {
     const res = await client.call('tools/call', { name: 'nope', arguments: {}, _meta: META });
     expect(res.error?.code).toBe(-32602);
   });
+
+  it('specialist_resume reports an unknown activation as a returned error payload', async () => {
+    const res = await client.call('tools/call', {
+      name: 'specialist_resume',
+      arguments: { activation_id: 'act:nope', prompt: 'carry on' },
+      _meta: META,
+    });
+    expect(res.error).toBeUndefined();
+    const result = res.result as {
+      content: Array<{ type: string; text: string }>;
+      resultType: string;
+    };
+    expect(result.resultType).toBe('complete');
+    const payload = JSON.parse(result.content[0].text) as { status: string; error: string };
+    expect(payload.status).toBe('error');
+    expect(payload.error).toContain('Unknown activation: act:nope');
+  });
+
+  it('specialist_resume surfaces a missing prompt as an isError result (zod throw, per E3)', async () => {
+    const res = await client.call('tools/call', {
+      name: 'specialist_resume',
+      arguments: { activation_id: 'act:aaaa' },
+      _meta: META,
+    });
+    expect(res.error).toBeUndefined();
+    const result = res.result as { isError: boolean; resultType: string };
+    expect(result.isError).toBe(true);
+    expect(result.resultType).toBe('complete');
+  });
 });
 
 describe('v2 statelessness (no cross-request server state)', () => {
@@ -221,8 +251,8 @@ describe('v2 statelessness (no cross-request server state)', () => {
     const second = await client.call('tools/list', { _meta: capsB });
     expect(first.error).toBeUndefined();
     expect(second.error).toBeUndefined();
-    expect((first.result as { tools: unknown[] }).tools.length).toBe(6);
-    expect((second.result as { tools: unknown[] }).tools.length).toBe(6);
+    expect((first.result as { tools: unknown[] }).tools.length).toBe(7);
+    expect((second.result as { tools: unknown[] }).tools.length).toBe(7);
   });
 
   it('a tool call needs no prior handshake or discovery', async () => {
