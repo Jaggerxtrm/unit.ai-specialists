@@ -80,6 +80,16 @@ describe('isRateLimitError', () => {
     expect(isRateLimitError(new Error('quota exceeded'))).toBe(true);
   });
 
+  // unitAI-xxjw2: opencode free-tier quota surfaces as FreeUsageLimitError.
+  it('matches opencode FreeUsageLimitError by name and usage-limit message', () => {
+    const named = new Error('Request failed');
+    named.name = 'FreeUsageLimitError';
+    expect(isRateLimitError(named)).toBe(true);
+    expect(isTransientError(named)).toBe(true);
+    expect(isRateLimitError(new Error('Free usage limit exceeded for model'))).toBe(true);
+    expect(isRateLimitError(new Error('Total usage limit reached (10/10)'))).toBe(true);
+  });
+
   it('returns false for non-rate-limit errors', () => {
     expect(isRateLimitError(null)).toBe(false);
     expect(isRateLimitError(new Error('503 service unavailable'))).toBe(false);

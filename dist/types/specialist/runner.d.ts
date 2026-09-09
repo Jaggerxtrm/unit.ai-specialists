@@ -140,6 +140,7 @@ export declare function validateBeforeRun(spec: {
         };
     };
 }, permissionLevel: string, resolvedToolContract?: ResolvedToolContract): void;
+export declare function classifyFallbackError(error: unknown): string;
 export declare class SpecialistRunner {
     private deps;
     private sessionFactory;

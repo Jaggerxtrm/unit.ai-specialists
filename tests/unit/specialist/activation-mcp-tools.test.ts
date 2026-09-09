@@ -25,6 +25,7 @@ vi.mock('node:child_process', async (importOriginal) => {
 import {
   createSpecialistDispatchTool,
   createSpecialistReplyTool,
+  createSpecialistRetryTool,
   createSpecialistStopActivationTool,
   toActivationView,
 } from '../../../src/tools/specialist/activation.tool.js';
@@ -72,6 +73,8 @@ interface HostFixture {
   permission?: string;
   thinkingLevel?: string;
   readContractState?: () => string | undefined;
+  /** First turn fails terminally; later turns succeed — drives a real failed activation. */
+  failFirst?: { stopReason: string; errorMessage: string };
 }
 
 /**
@@ -81,9 +84,10 @@ interface HostFixture {
  * refusal below must leave it at zero, which is the in-process shadow of the process-table
  * assertion the live test makes.
  */
-function fakeSession(): PiAgentSessionLike {
+function fakeSession(failFirst?: { stopReason: string; errorMessage: string }): PiAgentSessionLike {
   const listeners: Array<(e: PiAgentSessionEvent) => void> = [];
   const messages: unknown[] = [];
+  let prompts = 0;
   const session = {
     sessionId: 'pi-sess-mcp',
     messages,
@@ -92,7 +96,15 @@ function fakeSession(): PiAgentSessionLike {
     activeTools: ['read', 'grep'],
     async prompt() {
       listeners.forEach(l => l({ type: 'agent_start' }));
-      messages.push({ role: 'assistant', content: 'done' });
+      prompts += 1;
+      // A fail-first session lets the retry test drive a real failed activation: the
+      // dispatch turn fails terminally ('permanent boom' classifies unknown, so no
+      // fallback walk), and the retried turn succeeds on the same session.
+      if (failFirst && prompts === 1) {
+        messages.push({ role: 'assistant', content: '', stopReason: failFirst.stopReason, errorMessage: failFirst.errorMessage });
+      } else {
+        messages.push({ role: 'assistant', content: 'done' });
+      }
       listeners.forEach(l => l({ type: 'agent_end', willRetry: false }));
       listeners.forEach(l => l({ type: 'agent_settled' }));
     },
@@ -136,7 +148,7 @@ afterEach(() => {
 function hostWith(fixture: HostFixture = {}) {
   const sessionsCreated = { count: 0 };
   const workspace = tempWorkspace();
-  const session = fakeSession();
+  const session = fakeSession(fixture.failFirst);
   const sdk: PiSdk = {
     createAgentSession: async () => { sessionsCreated.count += 1; return { session }; },
     ModelRuntime: { create: async () => ({ hasConfiguredAuth: () => true }) },
@@ -382,6 +394,67 @@ describe('specialist_reply — correlation is by message id and nothing else', (
 
     expect(out.status).toBe('error');
     expect(String(out.error)).toContain('msg:nope');
+  });
+});
+
+describe('specialist_retry — a failed activation is re-run in place, never redispatched', () => {
+  it('retries a failed activation and keeps its identity', async () => {
+    const { host, events } = hostWith({ failFirst: { stopReason: 'error', errorMessage: 'permanent boom' } });
+    const retry = createSpecialistRetryTool(() => host);
+
+    const handle = await host.start({
+      specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    expect((await handle.result).status).toBe('failed');
+
+    const out = await retry.execute({ activation_id: handle.activationId }) as Record<string, unknown>;
+    expect(out.status).toBe('retried');
+    expect(out.activation_id).toBe(handle.activationId);
+    expect(out.attempt_id).not.toBe(handle.attemptId);
+    await vi.waitFor(() => expect(host.inspect(handle.activationId)?.state).toBe('settled'));
+    expect(events).toContain('activation_retried');
+  });
+
+  it('forwards an explicit prompt and model override to the host', async () => {
+    const { host } = hostWith({ failFirst: { stopReason: 'error', errorMessage: 'permanent boom' } });
+    const seen: Array<[string, unknown]> = [];
+    const retry = createSpecialistRetryTool(() => new Proxy(host, {
+      get: (target, prop, receiver) => prop === 'retry'
+        ? async (id: string, opts: unknown) => { seen.push([id, opts]); return Reflect.get(target, prop, receiver).call(target, id, opts); }
+        : Reflect.get(target, prop, receiver),
+    }));
+
+    const handle = await host.start({
+      specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    await handle.result;
+
+    await retry.execute({ activation_id: handle.activationId, model_override: 'qwen', prompt: 'try again' });
+    expect(seen).toEqual([[handle.activationId, { modelOverride: 'qwen', prompt: 'try again' }]]);
+  });
+
+  it('refuses a settled activation as a rejected result pointing at resume', async () => {
+    const { host } = hostWith();
+    const retry = createSpecialistRetryTool(() => host);
+
+    const handle = await host.start({
+      specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    await handle.result;
+    expect(host.inspect(handle.activationId)?.state).toBe('settled');
+
+    const out = await retry.execute({ activation_id: handle.activationId }) as Record<string, unknown>;
+    expect(out.status).toBe('rejected');
+    expect(String(out.reason)).toMatch(/resume/);
+  });
+
+  it('reports an unknown activation as an error, never a retry', async () => {
+    const { host } = hostWith();
+    const retry = createSpecialistRetryTool(() => host);
+
+    const out = await retry.execute({ activation_id: 'act:nope' }) as Record<string, unknown>;
+    expect(out.status).toBe('rejected');
+    expect(String(out.reason)).toMatch(/unknown_activation/);
   });
 });
 

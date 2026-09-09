@@ -358,6 +358,26 @@ not delivery; only a receipt means delivered. A message that cannot be delivered
 readable `pending` state rather than disappearing, and the Specialist stays in `needs_reply`
 rather than failing or silently proceeding.
 
+## Fallbacks and retry
+
+A 429 no longer wastes the run. Dispatch walks the configured model chain
+(`model`, then `fallback_models` / `fallback_model`) on retryable provider errors —
+`rate_limit`, `timeout` and `transient` as classified by the same `classifyFallbackError`
+the CLI runner uses, so both paths agree about what a `FreeUsageLimitError` means. Auth,
+unknown and abort-class failures settle `failed` immediately: retrying those on another
+model is either wrong or blind. Each step is emitted forensically as `model_fallback`
+(`from_model`, `to_model`, `error_class`, `terminal`), and the winner lands on the
+snapshot and the result (`resolved_model`, `fallback_used`). An explicit `model_override`
+is a chain of one — an unavailable override is refused, never substituted.
+
+A failed activation is retryable in place with `specialist_retry` (both frontends,
+optionally with `model_override` for a manual switch after a quota window). Same
+activation id, new attempt: the bead, the workspace lease and — without an override —
+the session survive, so its context survives too. Failed only: an outstanding question
+is answered with `specialist_reply`, a settled or waiting activation resumes, a running
+one steers or stops first, and retry refuses those states with the pointer. An
+escalation that CAN wait stays an ask; retry is for runs that already died.
+
 ## Asking without restarting
 
 > **Two defects, one file, both invisible to the same class of test. The end-to-end path is
