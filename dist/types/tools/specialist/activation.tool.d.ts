@@ -91,24 +91,33 @@ export interface ActivationResultView {
 export declare function toActivationResultView(result: ActivationResult): ActivationResultView;
 export declare const specialistDispatchSchema: z.ZodObject<{
     specialist: z.ZodString;
-    bead_id: z.ZodString;
+    bead_id: z.ZodOptional<z.ZodString>;
+    contract: z.ZodOptional<z.ZodString>;
+    title: z.ZodOptional<z.ZodString>;
+    epic_context_depth: z.ZodOptional<z.ZodNumber>;
     model_override: z.ZodOptional<z.ZodString>;
     thinking_override: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
     requested_by: z.ZodOptional<z.ZodString>;
     coordinator_session_id: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    bead_id: string;
     specialist: string;
+    bead_id?: string | undefined;
+    contract?: string | undefined;
+    title?: string | undefined;
     requested_by?: string | undefined;
     model_override?: string | undefined;
     thinking_override?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
+    epic_context_depth?: number | undefined;
     coordinator_session_id?: string | undefined;
 }, {
-    bead_id: string;
     specialist: string;
+    bead_id?: string | undefined;
+    contract?: string | undefined;
+    title?: string | undefined;
     requested_by?: string | undefined;
     model_override?: string | undefined;
     thinking_override?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
+    epic_context_depth?: number | undefined;
     coordinator_session_id?: string | undefined;
 }>;
 /**
@@ -124,30 +133,39 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
     description: string;
     inputSchema: z.ZodObject<{
         specialist: z.ZodString;
-        bead_id: z.ZodString;
+        bead_id: z.ZodOptional<z.ZodString>;
+        contract: z.ZodOptional<z.ZodString>;
+        title: z.ZodOptional<z.ZodString>;
+        epic_context_depth: z.ZodOptional<z.ZodNumber>;
         model_override: z.ZodOptional<z.ZodString>;
         thinking_override: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
         requested_by: z.ZodOptional<z.ZodString>;
         coordinator_session_id: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
-        bead_id: string;
         specialist: string;
+        bead_id?: string | undefined;
+        contract?: string | undefined;
+        title?: string | undefined;
         requested_by?: string | undefined;
         model_override?: string | undefined;
         thinking_override?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
+        epic_context_depth?: number | undefined;
         coordinator_session_id?: string | undefined;
     }, {
-        bead_id: string;
         specialist: string;
+        bead_id?: string | undefined;
+        contract?: string | undefined;
+        title?: string | undefined;
         requested_by?: string | undefined;
         model_override?: string | undefined;
         thinking_override?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
+        epic_context_depth?: number | undefined;
         coordinator_session_id?: string | undefined;
     }>;
     execute(input: z.infer<typeof specialistDispatchSchema>): Promise<{
-        status: "rejected";
-        reason: string;
-        detail: {
+        build?: string | undefined;
+        missing?: string[] | undefined;
+        detail?: {
             specialist?: string;
             beadId?: string;
             missing?: string[];
@@ -156,13 +174,20 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
             requestedModel?: string;
             activationId?: string;
             note?: string;
-        };
+        } | undefined;
+        status: "rejected";
+        reason: string;
+    } | {
+        status: "error";
+        error: string;
     } | {
         step_contract: {
             root_work_ref: string;
             inputs: number;
             outputs: number;
         };
+        created_bead_id?: string | undefined;
+        created_bead_note?: string | undefined;
         activation_id: string;
         participant_id: string;
         attempt_id: string;
@@ -189,14 +214,18 @@ export declare function createSpecialistDispatchTool(getHost: () => NativeActiva
         /** Last session-event time. Per-tool "doing X now" inference is out of scope. */
         last_activity_at: number;
         status: "dispatched";
+        error?: undefined;
     } | {
         step_contract: {
             root_work_ref: string;
             inputs: number;
             outputs: number;
         };
+        created_bead_id?: string | undefined;
+        created_bead_note?: string | undefined;
         activation_id: string;
         status: "dispatched";
+        error?: undefined;
     }>;
 };
 export declare const specialistReplySchema: z.ZodObject<{
@@ -325,9 +354,9 @@ export declare function createSpecialistRetryTool(getHost: () => NativeActivatio
         model_override?: string | undefined;
     }>;
     execute(input: z.infer<typeof specialistRetrySchema>): Promise<{
-        status: "rejected";
-        reason: string;
-        detail: {
+        build?: string | undefined;
+        missing?: string[] | undefined;
+        detail?: {
             specialist?: string;
             beadId?: string;
             missing?: string[];
@@ -336,7 +365,9 @@ export declare function createSpecialistRetryTool(getHost: () => NativeActivatio
             requestedModel?: string;
             activationId?: string;
             note?: string;
-        };
+        } | undefined;
+        status: "rejected";
+        reason: string;
     } | {
         activation_id: string;
         participant_id: string;

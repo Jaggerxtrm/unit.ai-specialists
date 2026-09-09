@@ -10,35 +10,35 @@ export declare const useSpecialistSchema: z.ZodEffects<z.ZodObject<{
     context_depth: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     name: string;
-    bead_id?: string | undefined;
     prompt?: string | undefined;
+    bead_id?: string | undefined;
     variables?: Record<string, string> | undefined;
     backend_override?: string | undefined;
-    autonomy_level?: "LOW" | "MEDIUM" | "HIGH" | "READ_ONLY" | undefined;
+    autonomy_level?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH" | undefined;
     context_depth?: number | undefined;
 }, {
     name: string;
-    bead_id?: string | undefined;
     prompt?: string | undefined;
+    bead_id?: string | undefined;
     variables?: Record<string, string> | undefined;
     backend_override?: string | undefined;
-    autonomy_level?: "LOW" | "MEDIUM" | "HIGH" | "READ_ONLY" | undefined;
+    autonomy_level?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH" | undefined;
     context_depth?: number | undefined;
 }>, {
     name: string;
-    bead_id?: string | undefined;
     prompt?: string | undefined;
+    bead_id?: string | undefined;
     variables?: Record<string, string> | undefined;
     backend_override?: string | undefined;
-    autonomy_level?: "LOW" | "MEDIUM" | "HIGH" | "READ_ONLY" | undefined;
+    autonomy_level?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH" | undefined;
     context_depth?: number | undefined;
 }, {
     name: string;
-    bead_id?: string | undefined;
     prompt?: string | undefined;
+    bead_id?: string | undefined;
     variables?: Record<string, string> | undefined;
     backend_override?: string | undefined;
-    autonomy_level?: "LOW" | "MEDIUM" | "HIGH" | "READ_ONLY" | undefined;
+    autonomy_level?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH" | undefined;
     context_depth?: number | undefined;
 }>;
 export declare function createUseSpecialistTool(runner: SpecialistRunner): {
@@ -54,35 +54,35 @@ export declare function createUseSpecialistTool(runner: SpecialistRunner): {
         context_depth: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
         name: string;
-        bead_id?: string | undefined;
         prompt?: string | undefined;
+        bead_id?: string | undefined;
         variables?: Record<string, string> | undefined;
         backend_override?: string | undefined;
-        autonomy_level?: "LOW" | "MEDIUM" | "HIGH" | "READ_ONLY" | undefined;
+        autonomy_level?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH" | undefined;
         context_depth?: number | undefined;
     }, {
         name: string;
-        bead_id?: string | undefined;
         prompt?: string | undefined;
+        bead_id?: string | undefined;
         variables?: Record<string, string> | undefined;
         backend_override?: string | undefined;
-        autonomy_level?: "LOW" | "MEDIUM" | "HIGH" | "READ_ONLY" | undefined;
+        autonomy_level?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH" | undefined;
         context_depth?: number | undefined;
     }>, {
         name: string;
-        bead_id?: string | undefined;
         prompt?: string | undefined;
+        bead_id?: string | undefined;
         variables?: Record<string, string> | undefined;
         backend_override?: string | undefined;
-        autonomy_level?: "LOW" | "MEDIUM" | "HIGH" | "READ_ONLY" | undefined;
+        autonomy_level?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH" | undefined;
         context_depth?: number | undefined;
     }, {
         name: string;
-        bead_id?: string | undefined;
         prompt?: string | undefined;
+        bead_id?: string | undefined;
         variables?: Record<string, string> | undefined;
         backend_override?: string | undefined;
-        autonomy_level?: "LOW" | "MEDIUM" | "HIGH" | "READ_ONLY" | undefined;
+        autonomy_level?: "READ_ONLY" | "LOW" | "MEDIUM" | "HIGH" | undefined;
         context_depth?: number | undefined;
     }>;
     execute(input: z.infer<typeof useSpecialistSchema>, onProgress?: (msg: string) => void): Promise<import("../../specialist/runner.js").RunResult | {
