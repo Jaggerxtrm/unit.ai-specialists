@@ -545,7 +545,12 @@ export function createSpecialistRetryTool(
           ...(snapshot ? toActivationView(snapshot) : { activation_id: handle.activationId }),
         };
       } catch (error) {
-        if (error instanceof DispatchRejectedError) return rejectionResult(error);
+        if (error instanceof DispatchRejectedError) {
+          return renderRejection(
+            { reason: error.message, detail: error.detail, missing: error.detail.missing },
+            describeBuildIdentity(LOADED_BUILD_ID, readBuildId(DIST_LIB_PATH)),
+          );
+        }
         throw error;
       }
     },
