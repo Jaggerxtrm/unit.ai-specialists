@@ -100,10 +100,11 @@ export const DEFAULT_REQUESTED_BY = 'adapter::pi-extension';
 
 export const FLEET_MAX_ROWS = 8;
 
-// Magenta rail (unitAI-beqby.13): far-left │ gutter in the XTRM accent
-// (\x1b[35m, same family as the magenta helper in src/cli/format-helpers.ts).
-// One rail, no extra chrome. Every specialist event line carries it.
-export const RAIL = '\x1b[35m│\x1b[0m';
+// Wake rail (unitAI-beqby.17): far-left │ gutter in #8d7fe8 (24-bit
+// 38;2;141;127;232). Carried only by wake follow-up content
+// (specialist_settled / specialist_ask); fleet rows and tool-result cards
+// carry no rail.
+export const RAIL = '\x1b[38;2;141;127;232m│\x1b[0m';
 
 export function withRail(line) {
   const text = String(line ?? '');
@@ -152,11 +153,11 @@ export function formatSpendShort(tokenUsage) {
  * passive pi extension, so no arrow promise of any kind. */
 export function renderCollapsedLine({ activations, asks }) {
   const { active, waiting, needsReply, total } = fleetSummaryOf({ activations, asks });
-  if (total === 0 && needsReply === 0) return withRail('  └ specialists · idle · /specialists inspect');
+  if (total === 0 && needsReply === 0) return '  └ specialists · idle · /specialists inspect';
   const parts = [`${active} active`, `${waiting} waiting`];
   if (needsReply > 0) parts.push(`${needsReply} need reply`);
   const hint = needsReply > 0 ? '/specialists inspect · /specialists:reply' : '/specialists inspect';
-  return withRail(`  └ specialists · ${parts.join(' · ')} · ${hint}`);
+  return `  └ specialists · ${parts.join(' · ')} · ${hint}`;
 }
 
 /** One row per specialist. Forensic IDs never appear here. An activation with a
@@ -168,7 +169,7 @@ export function renderFleetRowLine(view, asks = []) {
   const ask = (asks ?? []).find((a) => a.activation_id === view.activation_id);
   if (ask) {
     const waiting = formatElapsedShort(Date.now() / 1000 - (ask.asked_at ?? Date.now() / 1000));
-    return withRail(`    ! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`);
+    return `    ! ${view.specialist} (${model}) · ${view.bead_id ?? '—'} · needs reply ${waiting}`;
   }
   const elapsed = formatElapsedShort(view.elapsed_s);
   const tokens = formatSpendShort(view.token_usage);
@@ -183,7 +184,7 @@ export function renderFleetRowLine(view, asks = []) {
   // Spend renders for every state, not only running: final spend stays visible after settle.
   const spend = tokens ? ` · ${tokens}` : '';
   const why = purpose ? ` · ${purpose}` : '';
-  return withRail(`    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`);
+  return `    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
@@ -198,7 +199,7 @@ export function renderSectionLines({ activations, asks }, { expanded = true } = 
   const rows = ordered.slice(0, FLEET_MAX_ROWS).map((view) => renderFleetRowLine(view, asks));
   lines.push(...rows);
   const overflow = (activations ?? []).length - rows.length;
-  if (overflow > 0) lines.push(withRail(`    +${overflow} more`));
+  if (overflow > 0) lines.push(`    +${overflow} more`);
   return lines;
 }
 
@@ -355,7 +356,7 @@ export function formatAskWake(ask) {
     'Call specialist_status to read this ask\'s message_id from pending_asks, then ' +
       'answer it with specialist_reply. The child is alive and resumable; it stays ' +
       'blocked until you answer.',
-  ].join('\n');
+  ].map((line) => withRail(line)).join('\n');
 }
 
 /** The wake message a finished child produces. Exported so its shape is testable. */
@@ -373,7 +374,7 @@ export function formatSettlementWake(done) {
         + 'be resumed with specialist_resume if the cause was transient.'
       : 'Call specialist_status to read its validated result. The activation is settled and '
         + 'stays resumable until you dispose it with specialist_stop_activation.',
-  ].join('\n');
+  ].map((line) => withRail(line)).join('\n');
 }
 
 // ── Result projection ────────────────────────────────────────────────────────
@@ -601,7 +602,7 @@ function humanResultOf() {
       const summary = payload ? summarizePayload(payload) : null;
       const lines = summary ?? (raw ? raw.split('\n') : ['(empty result)']);
       const body = summary && expanded ? [...summary, '', ...raw.split('\n')] : lines;
-      return body.map((line) => withRail(line));
+      return body;
     };
     // pi wraps every tool renderer in a MouseRegion and walks invalidate()
     // on theme/resume; a missing method kills the session (unitAI-q02sz).
