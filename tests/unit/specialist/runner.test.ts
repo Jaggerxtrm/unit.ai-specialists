@@ -727,7 +727,7 @@ describe('SpecialistRunner', () => {
       expect(defaultSessionOptions.systemPrompt).toContain('Specialist Run Context');
       expect(defaultSessionOptions.systemPrompt).toContain('Output Style (mandatory)');
       expect(defaultSessionOptions.systemPrompt).toContain('MANDATORY: GitNexus Code Intelligence');
-      expect(defaultSessionOptions.systemPrompt).toContain('Beads Workflow Quick Rules');
+      expect(defaultSessionOptions.systemPrompt).not.toContain('Beads Workflow Quick Rules');
       expect(defaultSessionOptions.systemPrompt).toContain('Output Contract');
       expect(defaultRenderedTask).toContain('## MANDATORY_RULES');
       expect(defaultRenderedTask).toContain('Bare rule');

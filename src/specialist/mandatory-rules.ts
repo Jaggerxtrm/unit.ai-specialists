@@ -370,12 +370,22 @@ export function buildMandatoryRulesInjection(
   ];
   const sets = collectMandatoryRuleSets(cwd, setIds);
   const inlineRules = mandatoryRules?.inline_rules ?? [];
+  // workflow-quick-rules global retired from memory text (unitAI-cnca3 S1):
+  // the STATIC block's persistence line is stripped. The set id is kept —
+  // cli/list display + mandatory-rules tests still key on it (whole-global
+  // removal is a follow-up, not S1).
   const globalsDisabled = mandatoryRules?.disable_default_globals ?? false;
   const globals = globalsDisabled
     ? []
     : [{
         id: 'workflow-quick-rules',
-        rules: [{ id: 'workflow-quick-rules-1', level: 'required', text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, '') }],
+        rules: [{
+          id: 'workflow-quick-rules-1',
+          level: 'required',
+          text: STATIC_WORKFLOW_RULES_BLOCK.trim()
+            .replace(/^##\s+Beads Workflow Quick Rules\n/, '')
+            .replace(/^- Store reusable insight:.*\n/m, ''),
+        }],
         priority: 'must_keep' as const,
       }];
 
