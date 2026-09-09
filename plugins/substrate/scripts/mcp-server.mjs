@@ -26,8 +26,9 @@ function resolveRuntime() {
 const entry = resolveRuntime();
 if (!entry) {
   console.error(
-    'substrate plugin: cannot locate the specialists runtime.\n' +
-      'Install @jaggerxtrm/specialists, or run the plugin from a built checkout ' +
+    'substrate plugin: cannot locate the specialists runtime (Bun runtime required).\n' +
+      'Install Bun from https://bun.sh (tested with bun 1.3.14), then ' +
+      'install @jaggerxtrm/specialists, or run the plugin from a built checkout ' +
       '(bun run build) so dist/index.js exists.',
   );
   process.exit(1);

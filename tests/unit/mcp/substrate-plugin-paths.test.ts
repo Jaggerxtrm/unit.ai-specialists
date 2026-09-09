@@ -70,4 +70,26 @@ describe('substrate plugin path discipline', () => {
     walk(parsed);
     expect(keys).not.toContain('env');
   });
+
+  it('pins the Bun runtime for the MCP server and every hook command', () => {
+    const mcp = JSON.parse(read('.mcp.json')) as {
+      mcpServers: Record<string, { command: string }>;
+    };
+    expect(mcp.mcpServers.substrate.command).toBe('bun');
+    const hooks = JSON.parse(read('hooks/hooks.json')) as {
+      hooks: Record<string, Array<{ hooks: Array<{ command?: string }> }>>;
+    };
+    const commands: string[] = [];
+    for (const entries of Object.values(hooks.hooks)) {
+      for (const entry of entries) {
+        for (const hook of entry.hooks) {
+          if (hook.command) commands.push(hook.command);
+        }
+      }
+    }
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) {
+      expect(command.startsWith('bun '), `hook command pins bun: ${command}`).toBe(true);
+    }
+  });
 });
