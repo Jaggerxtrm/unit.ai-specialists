@@ -160,8 +160,14 @@ export function renderCollapsedLine({ activations, asks }) {
   return `  └ specialists · ${parts.join(' · ')} · ${hint}`;
 }
 
+/** Braille spinner frames for running-and-working rows. Frame is selected
+ * pure-functionally from elapsed_s (no timers or state in the render path). */
+export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 /** One row per specialist. Forensic IDs never appear here. An activation with a
- * pending ask renders as a needs-reply row (`!` marker) outranking idle rows. */
+ * pending ask renders as a needs-reply row (`!` marker) outranking idle rows.
+ * A running-and-working row leads with a spinner frame ticked by elapsed_s;
+ * all other rows keep their existing markers. */
 export function renderFleetRowLine(view, asks = []) {
   const model = view.thinking_level
     ? `${view.resolved_model ?? '?model'} ${view.thinking_level}`
@@ -184,7 +190,10 @@ export function renderFleetRowLine(view, asks = []) {
   // Spend renders for every state, not only running: final spend stays visible after settle.
   const spend = tokens ? ` · ${tokens}` : '';
   const why = purpose ? ` · ${purpose}` : '';
-  return `    ● ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
+  const marker = (view.state === 'running' && activity === 'working')
+    ? SPINNER_FRAMES[Math.max(0, Math.floor(view.elapsed_s ?? 0)) % SPINNER_FRAMES.length]
+    : '●';
+  return `    ${marker} ${view.specialist} (${model}) · ${view.bead_id ?? '—'}${why} · ${view.state} ${elapsed}${spend} · ${activity}`;
 }
 
 /** Footer-section lines: collapsed + bounded expanded rows with overflow.
