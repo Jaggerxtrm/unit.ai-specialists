@@ -250,7 +250,10 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
   }
 
   // 2. Memory injection retired (unitAI-cnca3 S1): no bd-memory text in spawn prompts.
-  // GitNexus pre-query below still needs the bead title, so keep the read.
+  // Doctrine comes from xtrm-loader ONLY (memory-doctrine.md); memory.md is never
+  // injected (user-owned, maintained by `xt memory update`; Claude mirrors doctrine
+  // via project-memory.mjs). GitNexus pre-query below still needs the bead title,
+  // so keep the read.
   if (inputBeadId) {
     const beadForMemory = readBeadForMemory(inputBeadId);
     if (beadForMemory?.title) {
