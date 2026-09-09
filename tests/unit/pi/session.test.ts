@@ -1,7 +1,7 @@
 // tests/unit/pi/session.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { resolve, join } from 'node:path';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { mapSpecialistBackend, getProviderArgs } from '../../../src/pi/backendMap.js';
 
@@ -12,7 +12,8 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync, spawn } from 'node:child_process';
-import { PiAgentSession, StallTimeoutError, applyExtensionToolPolicyGate, resolveExecutionExtensionSelection, resolveRuntimeToolContract, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { PiAgentSession, StallTimeoutError, applyExtensionToolPolicyGate, deduplicateExtensionSources, resolveExecutionExtensionSelection, resolveRuntimeToolContract, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { __resetPiExtensionsPythonKernelPathCacheForTest } from '../../../src/pi/python-kernel-extension.js';
 import { getExtensionToolPolicyExtensionPath, NATIVE_TOOLS_ENV_KEY } from '../../../src/pi/extension-tool-policy-extension.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
@@ -1459,5 +1460,105 @@ describe('kill()', () => {
 
     const err = await p;
     expect(err.message).toMatch(/killed/i);
+  });
+});
+
+// ── python-kernel double-load dedup (unitAI-il2io) ────────────────────────────
+describe('deduplicateExtensionSources (unitAI-il2io)', () => {
+  it('drops a directory-form duplicate of the managed python-kernel file copy', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'py-kernel-dir-'));
+    try {
+      const extDir = join(dir, 'extensions', 'python-kernel');
+      mkdirSync(extDir, { recursive: true });
+      const indexFile = join(extDir, 'index.ts');
+      writeFileSync(indexFile, 'export default function () {}\n');
+      const { kept, dropped } = deduplicateExtensionSources([indexFile], [extDir]);
+      expect(kept).toEqual([]);
+      expect(dropped).toEqual([{ dropped: extDir, keptAs: indexFile }]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('drops exact duplicate strings and keeps distinct plus remote sources', () => {
+    const { kept, dropped } = deduplicateExtensionSources(
+      ['/ext/managed'],
+      ['/ext/managed', '/ext/other', 'npm:@scope/pkg@1.0.0', 'npm:@scope/pkg@1.0.0'],
+    );
+    expect(kept).toEqual(['/ext/other', 'npm:@scope/pkg@1.0.0']);
+    expect(dropped.map((d) => d.dropped)).toEqual(['/ext/managed', 'npm:@scope/pkg@1.0.0']);
+  });
+
+  it('drops a symlinked dev-checkout duplicate of the managed copy', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'py-kernel-link-'));
+    try {
+      const managedDir = join(dir, 'managed', 'extensions', 'python-kernel');
+      mkdirSync(managedDir, { recursive: true });
+      const managedIndex = join(managedDir, 'index.ts');
+      writeFileSync(managedIndex, 'export default function () {}\n');
+      const devLink = join(dir, 'dev-python-kernel');
+      symlinkSync(managedDir, devLink);
+      const { kept, dropped } = deduplicateExtensionSources([managedIndex], [devLink]);
+      expect(kept).toEqual([]);
+      expect(dropped).toEqual([{ dropped: devLink, keptAs: managedIndex }]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('start() forwards the managed python-kernel once and logs the dropped dev copy', async () => {
+    vi.clearAllMocks();
+    const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-npm-global-pykernel-'));
+    const prevGlobalDir = process.env.PI_NPM_GLOBAL_DIR;
+    const fake = makeFakeProc();
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true as unknown as boolean);
+    try {
+      const managedDir = join(npmGlobalDir, '@jaggerxtrm', 'pi-extensions', 'extensions', 'python-kernel');
+      mkdirSync(managedDir, { recursive: true });
+      const managedIndex = join(managedDir, 'index.ts');
+      writeFileSync(managedIndex, 'export default function () {}\n');
+      const devDir = mkdtempSync(join(tmpdir(), 'py-kernel-dev-'));
+      try {
+        const devExtDir = join(devDir, 'python-kernel');
+        mkdirSync(devExtDir, { recursive: true });
+        writeFileSync(join(devExtDir, 'index.ts'), 'export default function () {}\n');
+        // Distinct dev copy (different inode): same tool, different path.
+        // Unit-level identity differs here; the spawn-level assertion below
+        // covers the same-file/symlink case via a linked dev path.
+        const linkedDev = join(devDir, 'linked-python-kernel');
+        symlinkSync(managedDir, linkedDev);
+
+        process.env.PI_NPM_GLOBAL_DIR = npmGlobalDir;
+        __resetPiExtensionsPythonKernelPathCacheForTest();
+
+        const session = await PiAgentSession.create({
+          model: 'gemini',
+          permissionLevel: 'MEDIUM',
+          extensionSources: [linkedDev, 'npm:@jaggerxtrm/pi-service-knowledge@1.0.0'],
+        });
+        await session.start();
+
+        const args: string[] = mockSpawn.mock.calls[0][1];
+        const extensionPairs = args
+          .map((arg, index) => (arg === '-e' ? args[index + 1] : null))
+          .filter((value): value is string => Boolean(value));
+        expect(extensionPairs).toContain(managedIndex);
+        expect(extensionPairs).not.toContain(linkedDev);
+        expect(extensionPairs).toContain('npm:@jaggerxtrm/pi-service-knowledge@1.0.0');
+        const logged = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+        expect(logged).toContain('DEDUP');
+        expect(logged).toContain(linkedDev);
+        expect(logged).toContain(managedIndex);
+        expect(fake).toBeDefined();
+      } finally {
+        rmSync(devDir, { recursive: true, force: true });
+      }
+    } finally {
+      stderrSpy.mockRestore();
+      __resetPiExtensionsPythonKernelPathCacheForTest();
+      if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
+      else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
+      rmSync(npmGlobalDir, { recursive: true, force: true });
+    }
   });
 });

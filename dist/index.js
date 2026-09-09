@@ -23769,7 +23769,7 @@ var init_tool_catalog = __esm(() => {
 // src/pi/session.ts
 import { createHash as createHash3 } from "crypto";
 import { spawn } from "child_process";
-import { existsSync as existsSync11, lstatSync as lstatSync2, mkdirSync as mkdirSync4, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "fs";
+import { existsSync as existsSync11, lstatSync as lstatSync2, mkdirSync as mkdirSync4, readFileSync as readFileSync6, realpathSync as realpathSync2, statSync as statSync2, writeFileSync as writeFileSync3 } from "fs";
 import { homedir as homedir4, tmpdir } from "os";
 import { isAbsolute as isAbsolute2, resolve as resolve7, sep as sep2, join as join11, dirname as dirname8 } from "path";
 function toRuntimeToolCatalogs(catalogIndex) {
@@ -23981,6 +23981,59 @@ function applyExtensionToolPolicyGate(args, contract, env) {
 }
 function isRemoteExtensionSource(source) {
   return source.startsWith("npm:") || source.startsWith("git:") || source.startsWith("http://") || source.startsWith("https://");
+}
+function canonicalizeLocalExtensionIdentity(source) {
+  if (isRemoteExtensionSource(source))
+    return null;
+  let candidate = source;
+  try {
+    const stat2 = statSync2(candidate);
+    if (stat2.isDirectory()) {
+      const indexCandidate = join11(candidate, "index.ts");
+      if (existsSync11(indexCandidate))
+        candidate = indexCandidate;
+    }
+  } catch {
+    return null;
+  }
+  try {
+    return realpathSync2(candidate);
+  } catch {
+    try {
+      return resolve7(candidate);
+    } catch {
+      return null;
+    }
+  }
+}
+function deduplicateExtensionSources(autoInjected, dynamicSources) {
+  const seenExact = new Set;
+  const keptByIdentity = new Map;
+  for (const auto of autoInjected) {
+    seenExact.add(auto);
+    const identity2 = canonicalizeLocalExtensionIdentity(auto);
+    if (identity2)
+      keptByIdentity.set(identity2, auto);
+  }
+  const kept = [];
+  const dropped = [];
+  for (const source of dynamicSources) {
+    if (seenExact.has(source)) {
+      dropped.push({ dropped: source, keptAs: source });
+      continue;
+    }
+    const identity2 = canonicalizeLocalExtensionIdentity(source);
+    const keptAs = identity2 ? keptByIdentity.get(identity2) : undefined;
+    if (identity2 && keptAs !== undefined) {
+      dropped.push({ dropped: source, keptAs });
+      continue;
+    }
+    seenExact.add(source);
+    if (identity2)
+      keptByIdentity.set(identity2, source);
+    kept.push(source);
+  }
+  return { kept, dropped };
 }
 function resolveExecutionExtensionSelection(extensions) {
   const excludeExtensions = [];
@@ -24392,7 +24445,16 @@ class PiAgentSession {
     if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync11(gitnexusContract.packagePath)) {
       args.push("-e", gitnexusContract.packagePath);
     }
-    for (const source of this.options.extensionSources ?? []) {
+    const autoInjectedForDedup = [
+      ...pyKernelPath ? [pyKernelPath] : [],
+      ...gitnexusContract?.status === "available" && gitnexusContract.packagePath ? [gitnexusContract.packagePath] : []
+    ];
+    const { kept: dedupedSources, dropped: droppedSources } = deduplicateExtensionSources(autoInjectedForDedup, this.options.extensionSources ?? []);
+    for (const { dropped, keptAs } of droppedSources) {
+      process.stderr.write(`[python-kernel] DEDUP: skipping duplicate extension source '${dropped}' (same as '${keptAs}'; kept '${keptAs}').
+`);
+    }
+    for (const source of dedupedSources) {
       args.push("-e", source);
     }
     if (this.options.systemPrompt) {
@@ -27782,7 +27844,7 @@ import {
   readFileSync as readFileSync9,
   renameSync as renameSync2,
   rmSync as rmSync2,
-  statSync as statSync2,
+  statSync as statSync3,
   writeFileSync as writeFileSync5,
   writeSync
 } from "fs";
@@ -28745,7 +28807,7 @@ class Supervisor {
     for (const entry of readdirSync2(this.resolvedJobsDir)) {
       const dir = join13(this.resolvedJobsDir, entry);
       try {
-        const stat2 = statSync2(dir);
+        const stat2 = statSync3(dir);
         if (!stat2.isDirectory())
           continue;
         if (stat2.mtimeMs < cutoff)
@@ -31301,7 +31363,7 @@ __export(exports_version, {
 import { createRequire as createRequire2 } from "module";
 import { fileURLToPath as fileURLToPath5 } from "url";
 import { dirname as dirname11, join as join23, sep as sep3 } from "path";
-import { existsSync as existsSync23, statSync as statSync3 } from "fs";
+import { existsSync as existsSync23, statSync as statSync4 } from "fs";
 import { spawnSync as spawnSync11 } from "child_process";
 function resolvePackage() {
   const req = createRequire2(import.meta.url);
@@ -31346,7 +31408,7 @@ function readBuiltAt(installRoot) {
   if (!existsSync23(distPath))
     return null;
   try {
-    return new Date(statSync3(distPath).mtime).toISOString();
+    return new Date(statSync4(distPath).mtime).toISOString();
   } catch {
     return null;
   }
@@ -34744,7 +34806,7 @@ import {
   lstatSync as lstatSync4,
   openSync as openSync2,
   readFileSync as readFileSync22,
-  realpathSync as realpathSync3
+  realpathSync as realpathSync4
 } from "fs";
 import { homedir as homedir7 } from "os";
 import { isAbsolute as isAbsolute3, join as join28, relative as relative3, resolve as resolve14 } from "path";
@@ -34761,7 +34823,7 @@ function canonicalizeSkillRoot(root, baseDir) {
   try {
     const normalized = normalizePath(root, baseDir);
     lstatSync4(normalized);
-    const canonical = realpathSync3(normalized);
+    const canonical = realpathSync4(normalized);
     const stat2 = lstatSync4(canonical);
     if (!stat2.isDirectory())
       throw new Error("not a directory");
@@ -34775,7 +34837,7 @@ function canonicalizeSkillPath(field, path, baseDir) {
   try {
     const normalized = normalizePath(path, baseDir);
     lstatSync4(normalized);
-    const canonical = realpathSync3(normalized);
+    const canonical = realpathSync4(normalized);
     const stat2 = lstatSync4(canonical);
     if (!stat2.isFile() && !stat2.isDirectory())
       throw new Error("not a file or directory");
@@ -34856,13 +34918,13 @@ function requireNoFollowFlag() {
   return constants2.O_NOFOLLOW;
 }
 function readSkillSourceBytes(path, noFollowFlag) {
-  if (realpathSync3(path) !== path)
+  if (realpathSync4(path) !== path)
     throw new Error("skill source canonical path changed");
   const declaredStat = lstatSync4(path);
   if (declaredStat.isSymbolicLink())
     throw new Error("symlinked skill source");
   const sourcePath = declaredStat.isDirectory() ? join28(path, "SKILL.md") : path;
-  if (realpathSync3(sourcePath) !== sourcePath)
+  if (realpathSync4(sourcePath) !== sourcePath)
     throw new Error("skill file canonical path changed");
   const sourceStat = lstatSync4(sourcePath);
   if (sourceStat.isSymbolicLink() || !sourceStat.isFile())
@@ -37358,7 +37420,7 @@ function fuzzyFilter(items, query, getText) {
 
 // node_modules/@earendil-works/pi-tui/dist/autocomplete.js
 import { spawn as spawn4 } from "child_process";
-import { readdirSync as readdirSync11, statSync as statSync4 } from "fs";
+import { readdirSync as readdirSync11, statSync as statSync5 } from "fs";
 import { homedir as homedir8 } from "os";
 import { basename as basename6, dirname as dirname15, join as join32 } from "path";
 function toDisplayPath(value) {
@@ -37728,7 +37790,7 @@ class CombinedAutocompleteProvider {
       baseDir = join32(this.basePath, displayBase);
     }
     try {
-      if (!statSync4(baseDir).isDirectory()) {
+      if (!statSync5(baseDir).isDirectory()) {
         return null;
       }
     } catch {
@@ -37787,7 +37849,7 @@ class CombinedAutocompleteProvider {
         if (!isDirectory && entry.isSymbolicLink()) {
           try {
             const fullPath = join32(searchDir, entry.name);
-            isDirectory = statSync4(fullPath).isDirectory();
+            isDirectory = statSync5(fullPath).isDirectory();
           } catch {}
         }
         let relativePath;
@@ -49503,7 +49565,7 @@ import {
   readFileSync as readFileSync27,
   renameSync as renameSync7,
   rmSync as rmSync4,
-  statSync as statSync6,
+  statSync as statSync7,
   writeFileSync as writeFileSync16
 } from "fs";
 import { homedir as homedir10 } from "os";
@@ -49596,7 +49658,7 @@ var init_repo_config = __esm(() => {
 });
 
 // src/cli/console/repo-discovery.ts
-import { existsSync as existsSync34, readdirSync as readdirSync13, statSync as statSync7 } from "fs";
+import { existsSync as existsSync34, readdirSync as readdirSync13, statSync as statSync8 } from "fs";
 import { homedir as homedir11 } from "os";
 import { join as join37 } from "path";
 function expandHomePath(p) {
@@ -49655,14 +49717,14 @@ function isWorktreeDir(path3) {
     const gitPath = join37(path3, ".git");
     if (!existsSync34(gitPath))
       return false;
-    return !statSync7(gitPath).isDirectory();
+    return !statSync8(gitPath).isDirectory();
   } catch {
     return false;
   }
 }
 function safeIsDirectory(path3) {
   try {
-    return existsSync34(path3) && statSync7(path3).isDirectory();
+    return existsSync34(path3) && statSync8(path3).isDirectory();
   } catch {
     return false;
   }
@@ -49707,7 +49769,7 @@ __export(exports_config_source, {
 });
 import { homedir as homedir12 } from "os";
 import { join as join38 } from "path";
-import { existsSync as existsSync35, readFileSync as readFileSync28, statSync as statSync8 } from "fs";
+import { existsSync as existsSync35, readFileSync as readFileSync28, statSync as statSync9 } from "fs";
 function readGlobalConfigSnapshot(loader) {
   const location = getGlobalUserConfigPath();
   const exists = existsSync35(location.path);
@@ -50072,7 +50134,7 @@ function writeGlobalConfigSafe(rawObj, expectedMtimeMs) {
   const location = getGlobalUserConfigPath();
   if (typeof expectedMtimeMs === "number" && existsSync35(location.path)) {
     try {
-      const stat2 = statSync8(location.path);
+      const stat2 = statSync9(location.path);
       if (Math.floor(stat2.mtimeMs) !== Math.floor(expectedMtimeMs)) {
         return { ok: false, errorClass: "mtime_mismatch" };
       }
@@ -50097,7 +50159,7 @@ function statConfigFileMtimeMs() {
   try {
     if (!existsSync35(location.path))
       return;
-    return statSync8(location.path).mtimeMs;
+    return statSync9(location.path).mtimeMs;
   } catch {
     return;
   }
@@ -50137,7 +50199,7 @@ var init_config_source = __esm(() => {
 
 // src/cli/console/runtime.ts
 import { spawnSync as spawnSync18 } from "child_process";
-import { existsSync as existsSync36, readdirSync as readdirSync14, readFileSync as readFileSync29, statSync as statSync9 } from "fs";
+import { existsSync as existsSync36, readdirSync as readdirSync14, readFileSync as readFileSync29, statSync as statSync10 } from "fs";
 import { basename as basename8, dirname as dirname19, join as join39 } from "path";
 function createRuntimeClient(cwd = process.cwd()) {
   return new LocalRuntimeClient(cwd);
@@ -50443,8 +50505,8 @@ class LocalRuntimeClient {
       return { raw: {}, exists: false };
     try {
       const raw = JSON.parse(readFileSync29(location.path, "utf-8"));
-      const { statSync: statSync10 } = await import("fs");
-      const mtimeMs = statSync10(location.path).mtimeMs;
+      const { statSync: statSync11 } = await import("fs");
+      const mtimeMs = statSync11(location.path).mtimeMs;
       return { raw, exists: true, mtimeMs };
     } catch {
       return { raw: {}, exists: true };
@@ -50736,7 +50798,7 @@ function scanSiblingsForRepos(repoRoot) {
     if (seen.has(root))
       continue;
     try {
-      if (!statSync9(root).isDirectory())
+      if (!statSync10(root).isDirectory())
         continue;
     } catch {
       continue;
@@ -50825,7 +50887,7 @@ function buildRepoConfigSnapshot(cwd) {
 function buildRepoConfigRow(entry, current) {
   let exists = false;
   try {
-    exists = statSync9(entry.path).isDirectory();
+    exists = statSync10(entry.path).isDirectory();
   } catch {
     exists = false;
   }
@@ -50838,7 +50900,7 @@ function buildRepoConfigRow(entry, current) {
     try {
       const location = resolveObservabilityDbLocation(entry.path);
       if (existsSync36(location.dbPath)) {
-        const st = statSync9(location.dbPath);
+        const st = statSync10(location.dbPath);
         dbExists = true;
         dbSizeBytes = st.size;
         const client = createObservabilitySqliteClientAtPath(location.dbPath);
@@ -54498,7 +54560,7 @@ __export(exports_run, {
   BACKGROUND_LAUNCH_SCHEMA: () => BACKGROUND_LAUNCH_SCHEMA
 });
 import { dirname as dirname20, join as join43, resolve as resolve16, sep as sep4 } from "path";
-import { constants as fsConstants, existsSync as existsSync39, fstatSync as fstatSync2, openSync as openSync4, readFileSync as readFileSync32, readSync, readdirSync as readdirSync16, realpathSync as realpathSync4, statSync as statSync10, closeSync as closeSync3 } from "fs";
+import { constants as fsConstants, existsSync as existsSync39, fstatSync as fstatSync2, openSync as openSync4, readFileSync as readFileSync32, readSync, readdirSync as readdirSync16, realpathSync as realpathSync5, statSync as statSync11, closeSync as closeSync3 } from "fs";
 import { randomBytes } from "crypto";
 import { spawn as cpSpawn, execFileSync as execFileSync3, execSync as execSync6 } from "child_process";
 function formatBackgroundLaunchLine(opts) {
@@ -54774,8 +54836,8 @@ function resolveNewestJobIdFromJobsDir(jobsDir, previousLatest, minMtimeMs) {
     const entries = readdirSync16(jobsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^[a-f0-9]{6}$/.test(entry.name) && entry.name !== previousLatest).map((entry) => {
       const dirPath = join43(jobsDir, entry.name);
       const statusPath = join43(dirPath, "status.json");
-      const stats = statSync10(dirPath);
-      const statusStats = statSync10(statusPath);
+      const stats = statSync11(dirPath);
+      const statusStats = statSync11(statusPath);
       return {
         id: entry.name,
         mtimeMs: Math.max(stats.mtimeMs, statusStats.mtimeMs)
@@ -56101,7 +56163,7 @@ var init_run = __esm(() => {
     fstatSync: fstatSync2,
     readSync,
     closeSync: closeSync3,
-    realpathSync: realpathSync4,
+    realpathSync: realpathSync5,
     constants: fsConstants
   };
   OBLIGATION_MARKER_REGEX = /\b(TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\(release\))(?![\w-])/;
@@ -61855,7 +61917,7 @@ import {
   openSync as openSync5,
   readFileSync as readFileSync37,
   readdirSync as readdirSync19,
-  statSync as statSync11
+  statSync as statSync12
 } from "fs";
 import { join as join48 } from "path";
 function getHumanEventKey2(event) {
@@ -62339,7 +62401,7 @@ function listMatchingJobIds(sqliteClient, jobsDir, options2) {
     for (const entry of readdirSync19(jobsDir)) {
       const jobDir = join48(jobsDir, entry);
       try {
-        if (!statSync11(jobDir).isDirectory())
+        if (!statSync12(jobDir).isDirectory())
           continue;
       } catch {
         continue;
@@ -62406,7 +62468,7 @@ function readJobEventsIncremental(sqliteClient, jobsDir, jobId, afterSeq, fileCa
   const eventsPath = join48(jobsDir, jobId, "events.jsonl");
   let stats;
   try {
-    stats = statSync11(eventsPath);
+    stats = statSync12(eventsPath);
   } catch {
     return [];
   }
@@ -63506,7 +63568,7 @@ __export(exports_log, {
   run: () => run27,
   isForensicAgentInternal: () => isForensicAgentInternal
 });
-import { existsSync as existsSync45, readdirSync as readdirSync20, statSync as statSync12 } from "fs";
+import { existsSync as existsSync45, readdirSync as readdirSync20, statSync as statSync13 } from "fs";
 import { basename as basename12, join as join49 } from "path";
 function parseSince4(value) {
   if (value.includes("T") || value.includes("-"))
@@ -63604,7 +63666,7 @@ function discoverDbTargets(cwd, repoFilter) {
   for (const entry of entries) {
     const root = join49(cwd, entry);
     try {
-      if (!statSync12(root).isDirectory())
+      if (!statSync13(root).isDirectory())
         continue;
     } catch {
       continue;
@@ -64365,7 +64427,7 @@ var exports_clean = {};
 __export(exports_clean, {
   run: () => run31
 });
-import { existsSync as existsSync47, readFileSync as readFileSync39, readdirSync as readdirSync22, rmSync as rmSync7, statSync as statSync13 } from "fs";
+import { existsSync as existsSync47, readFileSync as readFileSync39, readdirSync as readdirSync22, rmSync as rmSync7, statSync as statSync14 } from "fs";
 import { join as join51 } from "path";
 function parseDuration2(raw) {
   const match = /^(\d+)(ms|s|m|h|d)$/i.exec(raw.trim());
@@ -64522,7 +64584,7 @@ function readDirectorySizeBytes(directoryPath) {
   let totalBytes = 0;
   for (const entry of readdirSync22(directoryPath, { withFileTypes: true })) {
     const entryPath = join51(directoryPath, entry.name);
-    const stats = statSync13(entryPath);
+    const stats = statSync14(entryPath);
     totalBytes += stats.isDirectory() ? readDirectorySizeBytes(entryPath) : stats.size;
   }
   return totalBytes;
@@ -67720,7 +67782,7 @@ var init_setup = __esm(() => {
 });
 
 // src/cli/serve-hot-reload.ts
-import { existsSync as existsSync51, readdirSync as readdirSync26, statSync as statSync14, watch as fsWatch } from "fs";
+import { existsSync as existsSync51, readdirSync as readdirSync26, statSync as statSync15, watch as fsWatch } from "fs";
 import { join as join56 } from "path";
 function specialistNameFromFile(file) {
   const match = file.match(/^(.+)\.specialist\.(json|yaml)$/);
@@ -67733,7 +67795,7 @@ function snapshotMtimes(dir) {
   const entries = readdirSync26(dir).filter((name) => specialistNameFromFile(name) !== null);
   for (const name of entries) {
     try {
-      out.set(name, statSync14(join56(dir, name)).mtimeMs);
+      out.set(name, statSync15(join56(dir, name)).mtimeMs);
     } catch {}
   }
   return out;
@@ -76310,7 +76372,7 @@ import { join as join19 } from "path";
 
 // src/activation/workspace-lease.ts
 import { createHash as createHash5 } from "crypto";
-import { existsSync as existsSync19, linkSync, mkdirSync as mkdirSync10, readFileSync as readFileSync14, realpathSync as realpathSync2, renameSync as renameSync5, unlinkSync as unlinkSync2, writeFileSync as writeFileSync9 } from "fs";
+import { existsSync as existsSync19, linkSync, mkdirSync as mkdirSync10, readFileSync as readFileSync14, realpathSync as realpathSync3, renameSync as renameSync5, unlinkSync as unlinkSync2, writeFileSync as writeFileSync9 } from "fs";
 import { join as join18 } from "path";
 
 // src/activation/types.ts
@@ -76380,7 +76442,7 @@ function selfHolder(probe = procLeaseProbe()) {
 function workspaceKey(workspace) {
   let resolved = workspace.worktreePath;
   try {
-    resolved = realpathSync2(workspace.worktreePath);
+    resolved = realpathSync3(workspace.worktreePath);
   } catch {}
   return createHash5("sha256").update(resolved).digest("hex").slice(0, 16);
 }

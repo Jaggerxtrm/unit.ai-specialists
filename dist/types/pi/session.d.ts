@@ -180,6 +180,13 @@ export declare function resolvePermissionTools(options: {
  * stay inactive — a broken, misleading session. Never warn-and-continue.
  */
 export declare function applyExtensionToolPolicyGate(args: string[], contract: ResolvedToolContract | undefined, env: Record<string, string>): void;
+export declare function deduplicateExtensionSources(autoInjected: readonly string[], dynamicSources: readonly string[]): {
+    kept: string[];
+    dropped: Array<{
+        dropped: string;
+        keptAs: string;
+    }>;
+};
 export declare function resolveExecutionExtensionSelection(extensions: Readonly<Record<string, boolean | null | undefined>> | undefined): {
     excludeExtensions: string[];
     extensionSources: string[];
