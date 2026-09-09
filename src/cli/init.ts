@@ -10,7 +10,6 @@ import {
   resolveObservabilityDbLocation,
 } from '../specialist/observability-db.js';
 import { createObservabilitySqliteClientAtPath } from '../specialist/observability-sqlite.js';
-import { syncMemoriesCacheFromBd } from '../specialist/memory-retrieval.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
 import { SpecialistLoader } from '../specialist/loader.js';
 import {
@@ -450,7 +449,6 @@ function ensureProjectHookWiring(cwd: string): void {
   }
 
   // Wire hooks with symlinked .claude/hooks/ paths
-  addHook('PostToolUse',  'node .claude/hooks/specialists-memory-cache-sync.mjs');
   addHook('SessionStart', 'node .claude/hooks/specialists-session-start.mjs');
 
   if (changed) {
@@ -836,7 +834,6 @@ function validateInitPostconditions(cwd: string): ReadonlyArray<string> {
 
   const settings = readJsonObject(join(cwd, '.claude', 'settings.json'));
   const requiredHookWiring: ReadonlyArray<{ event: string; command: string }> = [
-    { event: 'PostToolUse', command: 'node .claude/hooks/specialists-memory-cache-sync.mjs' },
     { event: 'SessionStart', command: 'node .claude/hooks/specialists-session-start.mjs' },
   ];
 
@@ -1045,19 +1042,6 @@ export async function run(opts: InitOptions = {}): Promise<void> {
 
   // ── 7. Initialize observability database (never overwrites existing) ──────
   ensureObservabilityDb(cwd);
-
-  // ── 8. Full memory cache sync (FTS bootstrap) ──────────────────────────────
-  try {
-    const syncResult = syncMemoriesCacheFromBd(cwd, Date.now(), true);
-    if (syncResult.synced) {
-      ok(`synced memories FTS cache (${syncResult.memoryCount} records)`);
-    } else {
-      skip('memories FTS cache sync skipped (not available)');
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    warn(`memories FTS cache sync failed during init (non-fatal): ${message}`);
-  }
 
   const postconditionWarnings = validateInitPostconditions(cwd);
   if (postconditionWarnings.length > 0) {
