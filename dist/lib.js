@@ -6955,7 +6955,7 @@ import {
   lstatSync as lstatSync2,
   openSync,
   readFileSync as readFileSync6,
-  realpathSync
+  realpathSync as realpathSync2
 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
 import { isAbsolute as isAbsolute2, join as join8, relative, resolve as resolve10 } from "node:path";
@@ -7058,7 +7058,7 @@ var SK_PACKAGE_DIR = join3("@jaggerxtrm", "pi-service-knowledge");
 
 // src/pi/session.ts
 import { spawn } from "node:child_process";
-import { existsSync as existsSync5, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync as existsSync5, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir as homedir2, tmpdir } from "node:os";
 import { isAbsolute, resolve as resolve4, sep, join as join4, dirname as dirname4 } from "node:path";
 
@@ -11420,6 +11420,59 @@ function applyExtensionToolPolicyGate(args, contract, env) {
 function isRemoteExtensionSource(source) {
   return source.startsWith("npm:") || source.startsWith("git:") || source.startsWith("http://") || source.startsWith("https://");
 }
+function canonicalizeLocalExtensionIdentity(source) {
+  if (isRemoteExtensionSource(source))
+    return null;
+  let candidate = source;
+  try {
+    const stat = statSync(candidate);
+    if (stat.isDirectory()) {
+      const indexCandidate = join4(candidate, "index.ts");
+      if (existsSync5(indexCandidate))
+        candidate = indexCandidate;
+    }
+  } catch {
+    return null;
+  }
+  try {
+    return realpathSync(candidate);
+  } catch {
+    try {
+      return resolve4(candidate);
+    } catch {
+      return null;
+    }
+  }
+}
+function deduplicateExtensionSources(autoInjected, dynamicSources) {
+  const seenExact = new Set;
+  const keptByIdentity = new Map;
+  for (const auto of autoInjected) {
+    seenExact.add(auto);
+    const identity = canonicalizeLocalExtensionIdentity(auto);
+    if (identity)
+      keptByIdentity.set(identity, auto);
+  }
+  const kept = [];
+  const dropped = [];
+  for (const source of dynamicSources) {
+    if (seenExact.has(source)) {
+      dropped.push({ dropped: source, keptAs: source });
+      continue;
+    }
+    const identity = canonicalizeLocalExtensionIdentity(source);
+    const keptAs = identity ? keptByIdentity.get(identity) : undefined;
+    if (identity && keptAs !== undefined) {
+      dropped.push({ dropped: source, keptAs });
+      continue;
+    }
+    seenExact.add(source);
+    if (identity)
+      keptByIdentity.set(identity, source);
+    kept.push(source);
+  }
+  return { kept, dropped };
+}
 function resolveExecutionExtensionSelection(extensions) {
   const excludeExtensions = [];
   const extensionSources = [];
@@ -11832,7 +11885,16 @@ class PiAgentSession {
     if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync5(gitnexusContract.packagePath)) {
       args.push("-e", gitnexusContract.packagePath);
     }
-    for (const source of this.options.extensionSources ?? []) {
+    const autoInjectedForDedup = [
+      ...pyKernelPath ? [pyKernelPath] : [],
+      ...gitnexusContract?.status === "available" && gitnexusContract.packagePath ? [gitnexusContract.packagePath] : []
+    ];
+    const { kept: dedupedSources, dropped: droppedSources } = deduplicateExtensionSources(autoInjectedForDedup, this.options.extensionSources ?? []);
+    for (const { dropped, keptAs } of droppedSources) {
+      process.stderr.write(`[python-kernel] DEDUP: skipping duplicate extension source '${dropped}' (same as '${keptAs}'; kept '${keptAs}').
+`);
+    }
+    for (const source of dedupedSources) {
       args.push("-e", source);
     }
     if (this.options.systemPrompt) {
@@ -12390,7 +12452,7 @@ import { resolve as resolve7 } from "node:path";
 import { execSync } from "node:child_process";
 
 // src/specialist/observability-sqlite.ts
-import { existsSync as existsSync7, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync } from "node:fs";
+import { existsSync as existsSync7, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync as statSync2 } from "node:fs";
 import { dirname as dirname6, join as join7, normalize, resolve as resolve6 } from "node:path";
 
 // src/specialist/observability-db.ts
@@ -15568,7 +15630,7 @@ class SqliteClient {
   }
   getDatabaseSizeBytes() {
     try {
-      return statSync(this.dbPath).size;
+      return statSync2(this.dbPath).size;
     } catch {
       return 0;
     }
@@ -17552,7 +17614,7 @@ function canonicalizeSkillRoot(root, baseDir) {
   try {
     const normalized = normalizePath(root, baseDir);
     lstatSync2(normalized);
-    const canonical = realpathSync(normalized);
+    const canonical = realpathSync2(normalized);
     const stat = lstatSync2(canonical);
     if (!stat.isDirectory())
       throw new Error("not a directory");
@@ -17566,7 +17628,7 @@ function canonicalizeSkillPath(field, path, baseDir) {
   try {
     const normalized = normalizePath(path, baseDir);
     lstatSync2(normalized);
-    const canonical = realpathSync(normalized);
+    const canonical = realpathSync2(normalized);
     const stat = lstatSync2(canonical);
     if (!stat.isFile() && !stat.isDirectory())
       throw new Error("not a file or directory");
@@ -17647,13 +17709,13 @@ function requireNoFollowFlag() {
   return constants.O_NOFOLLOW;
 }
 function readSkillSourceBytes(path, noFollowFlag) {
-  if (realpathSync(path) !== path)
+  if (realpathSync2(path) !== path)
     throw new Error("skill source canonical path changed");
   const declaredStat = lstatSync2(path);
   if (declaredStat.isSymbolicLink())
     throw new Error("symlinked skill source");
   const sourcePath = declaredStat.isDirectory() ? join8(path, "SKILL.md") : path;
-  if (realpathSync(sourcePath) !== sourcePath)
+  if (realpathSync2(sourcePath) !== sourcePath)
     throw new Error("skill file canonical path changed");
   const sourceStat = lstatSync2(sourcePath);
   if (sourceStat.isSymbolicLink() || !sourceStat.isFile())
@@ -19176,7 +19238,7 @@ function formatReferenceLocation(specialist, fieldPath) {
 }
 
 // src/specialist/project-pack-skill-resolver.ts
-import { accessSync as accessSync2, constants as constants2, readdirSync, lstatSync as lstatSync3, realpathSync as realpathSync2 } from "node:fs";
+import { accessSync as accessSync2, constants as constants2, readdirSync, lstatSync as lstatSync3, realpathSync as realpathSync3 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
 import { join as join11, relative as relative2, isAbsolute as isAbsolute3 } from "node:path";
 var RESERVED_SKILL_ROOTS = [
@@ -19291,8 +19353,8 @@ function probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candi
   let canonicalCandidate;
   let canonicalSkillFile;
   try {
-    canonicalCandidate = realpathSync2(candidate);
-    canonicalSkillFile = realpathSync2(skillFile);
+    canonicalCandidate = realpathSync3(candidate);
+    canonicalSkillFile = realpathSync3(skillFile);
   } catch (error) {
     throw wrapFsError(skillName, candidateRel, "canonicalizing the skill path", error);
   }
@@ -19304,7 +19366,7 @@ function probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candi
 function resolveBareLogicalSkill(skillName, consumerRoot) {
   let canonicalConsumer;
   try {
-    canonicalConsumer = realpathSync2(consumerRoot);
+    canonicalConsumer = realpathSync3(consumerRoot);
   } catch (error) {
     if (error?.code === "ENOENT")
       return globalDefaultCandidate(skillName);
@@ -19313,7 +19375,7 @@ function resolveBareLogicalSkill(skillName, consumerRoot) {
   const skillsRoot = join11(canonicalConsumer, ".xtrm", "skills");
   let canonicalSkillsRoot;
   try {
-    canonicalSkillsRoot = realpathSync2(skillsRoot);
+    canonicalSkillsRoot = realpathSync3(skillsRoot);
   } catch (error) {
     if (error?.code === "ENOENT")
       return globalDefaultCandidate(skillName);
@@ -20578,7 +20640,7 @@ function isDeliveredStatus(status) {
 
 // src/activation/workspace-lease.ts
 import { createHash as createHash5 } from "node:crypto";
-import { existsSync as existsSync17, linkSync, mkdirSync as mkdirSync6, readFileSync as readFileSync11, realpathSync as realpathSync3, renameSync as renameSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { existsSync as existsSync17, linkSync, mkdirSync as mkdirSync6, readFileSync as readFileSync11, realpathSync as realpathSync4, renameSync as renameSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "node:fs";
 import { join as join15 } from "node:path";
 
 // src/activation/types.ts
@@ -20648,7 +20710,7 @@ function selfHolder(probe = procLeaseProbe()) {
 function workspaceKey(workspace) {
   let resolved = workspace.worktreePath;
   try {
-    resolved = realpathSync3(workspace.worktreePath);
+    resolved = realpathSync4(workspace.worktreePath);
   } catch {}
   return createHash5("sha256").update(resolved).digest("hex").slice(0, 16);
 }
