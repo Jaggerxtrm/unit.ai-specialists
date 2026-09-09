@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// DEPRECATED (Wave E1, bead unitAI-aiwva.2): superseded by the Substrate plugin hook
+// plugins/substrate/scripts/session-start.mjs, which reads Substrate state instead of
+// scanning <cwd>/.specialists/jobs. The plugin hook is authoritative where installed.
+// Removal tracked in bead unitAI-aiwva.15. Do not extend this file.
 // specialists-session-start — Claude Code SessionStart hook
 // Injects specialists context at the start of every session:
 //   • Active background jobs (if any)
