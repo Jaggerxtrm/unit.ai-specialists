@@ -78267,6 +78267,85 @@ var init_registry = __esm(() => {
   RETRYABLE_STATES = new Set(["failed"]);
 });
 
+// src/activation/authority-store.ts
+import { mkdirSync as mkdirSync22 } from "fs";
+import { createRequire as createRequire5 } from "module";
+import { homedir as homedir17 } from "os";
+import { dirname as dirname23, join as join57 } from "path";
+function resolveAuthorityDbPath(env = process.env) {
+  const override = (env.XTRM_STATE_DB ?? "").trim();
+  if (override)
+    return override;
+  return join57(homedir17(), ".xtrm", "state.db");
+}
+function openAuthorityDb(dbPath) {
+  try {
+    const bun = require4("bun:sqlite");
+    if (bun?.Database)
+      return new bun.Database(dbPath);
+  } catch {}
+  try {
+    const node = require4("node:sqlite");
+    if (node?.DatabaseSync) {
+      const DatabaseSync = node.DatabaseSync;
+      const inner = new DatabaseSync(dbPath);
+      return {
+        exec: (sql) => inner.exec(sql),
+        prepare: (sql) => {
+          const stmt = inner.prepare(sql);
+          return { run: (...params) => stmt.run(...params.map((v) => v === undefined ? null : v)) };
+        },
+        close: () => inner.close()
+      };
+    }
+  } catch {}
+  return null;
+}
+function createFileAuthorityWriter(dbPath = resolveAuthorityDbPath()) {
+  return {
+    record(snapshot) {
+      try {
+        mkdirSync22(dirname23(dbPath), { recursive: true });
+        const db = openAuthorityDb(dbPath);
+        if (!db)
+          return;
+        try {
+          db.exec(ACTIVATIONS_DDL);
+          db.prepare(`INSERT OR REPLACE INTO activations
+               (activation_id, specialist, state, bead_id, last_activity_at)
+             VALUES (?, ?, ?, ?, ?)`).run(snapshot.activationId, snapshot.specialist, snapshot.state, snapshot.beadId, snapshot.lastActivityAt);
+        } finally {
+          db.close();
+        }
+      } catch {}
+    },
+    remove(activationId) {
+      try {
+        const db = openAuthorityDb(dbPath);
+        if (!db)
+          return;
+        try {
+          db.exec(ACTIVATIONS_DDL);
+          db.prepare("DELETE FROM activations WHERE activation_id = ?").run(activationId);
+        } finally {
+          db.close();
+        }
+      } catch {}
+    }
+  };
+}
+var require4, ACTIVATIONS_DDL = `CREATE TABLE IF NOT EXISTS activations (
+  activation_id TEXT PRIMARY KEY,
+  specialist TEXT NOT NULL,
+  state TEXT NOT NULL,
+  bead_id TEXT,
+  last_activity_at INTEGER NOT NULL
+)`, NULL_AUTHORITY_WRITER;
+var init_authority_store = __esm(() => {
+  require4 = createRequire5(import.meta.url);
+  NULL_AUTHORITY_WRITER = { record: () => {}, remove: () => {} };
+});
+
 // src/activation/native-host.ts
 import { randomUUID as randomUUID8 } from "crypto";
 function extractTokenUsage(event) {
@@ -78301,6 +78380,7 @@ class NativeActivationHost {
   beadGate;
   cwd;
   now;
+  authority;
   registry = new FleetRegistry;
   lastUsageSeen = new WeakMap;
   interactions;
@@ -78313,6 +78393,7 @@ class NativeActivationHost {
     this.loadSdk = deps.loadSdk ?? loadPiSdk;
     this.beadGate = deps.beadGate ?? {};
     this.now = deps.now ?? (() => Date.now());
+    this.authority = deps.authority ?? NULL_AUTHORITY_WRITER;
   }
   async start(request) {
     const activationId = `act:${randomUUID8().slice(0, 12)}`;
@@ -78492,12 +78573,16 @@ class NativeActivationHost {
         const record5 = this.registry.get(activationId);
         if (record5)
           record5.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
+        if (record5)
+          this.save(record5.snapshot);
         emit(kind === "escalation" ? "escalation_raised" : "clarification_requested", { body });
       },
       onAnswered: (kind) => {
         const record5 = this.registry.get(activationId);
         if (record5)
           record5.snapshot.state = "running";
+        if (record5)
+          this.save(record5.snapshot);
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
@@ -78572,6 +78657,7 @@ class NativeActivationHost {
     });
     record4.result = result;
     this.registry.register(record4);
+    this.save(snapshot);
     return {
       activationId,
       participantId,
@@ -78608,6 +78694,7 @@ class NativeActivationHost {
     switch (event.type) {
       case "agent_start":
         snapshot.state = "running";
+        this.save(snapshot);
         emit("turn_started");
         break;
       case "agent_end":
@@ -78615,6 +78702,7 @@ class NativeActivationHost {
         break;
       case "agent_settled":
         snapshot.state = "settled";
+        this.save(snapshot);
         emit("activation_settled");
         this.releaseIfWriter(snapshot, "settled");
         break;
@@ -78642,6 +78730,7 @@ class NativeActivationHost {
       if (last && (last.stopReason === "error" || last.stopReason === "aborted")) {
         const detail = last.errorMessage ?? `turn ended with stopReason "${last.stopReason}"`;
         snapshot.state = "failed";
+        this.save(snapshot);
         emit("activation_failed", { error: detail, stop_reason: last.stopReason });
         return {
           activationId: snapshot.activationId,
@@ -78667,6 +78756,7 @@ class NativeActivationHost {
       const validation = { valid: true };
       emit("output_validation_passed");
       snapshot.state = "settled";
+      this.save(snapshot);
       emit("activation_completed", { pi_session_id: session.sessionId, output: output2 });
       this.releaseIfWriter(snapshot, "completed");
       return {
@@ -78689,6 +78779,7 @@ class NativeActivationHost {
       };
     } catch (error2) {
       snapshot.state = "failed";
+      this.save(snapshot);
       const message = error2 instanceof Error ? error2.message : String(error2);
       emit("activation_failed", { error: message });
       return {
@@ -78767,6 +78858,7 @@ class NativeActivationHost {
       record4.snapshot.piSessionId = nextSession.sessionId;
       record4.snapshot.state = "starting";
       record4.snapshot.lastActivityAt = this.now();
+      this.save(record4.snapshot);
       record4.unsubscribe = nextSession.subscribe((event) => this.onSessionEvent(record4.snapshot, event, ctx.emit));
       ctx.emit("activation_started", { pi_session_id: nextSession.sessionId });
       index += 1;
@@ -78832,6 +78924,7 @@ class NativeActivationHost {
     record4.snapshot.attemptId = attemptId;
     record4.snapshot.state = "starting";
     record4.snapshot.lastActivityAt = this.now();
+    this.save(record4.snapshot);
     const emit = (name, payload) => this.forensics.emit({
       activationId,
       attemptId,
@@ -78892,6 +78985,16 @@ class NativeActivationHost {
       body,
       inReplyTo: messageId
     });
+  }
+  save(snapshot) {
+    try {
+      this.authority.record(snapshot);
+    } catch {}
+  }
+  forget(activationId) {
+    try {
+      this.authority.remove(activationId);
+    } catch {}
   }
   releaseIfWriter(snapshot, reason) {
     if (snapshot.access !== "write")
@@ -78990,6 +79093,7 @@ class NativeActivationHost {
       record4.unsubscribe();
       record4.session.dispose();
       record4.snapshot.state = "stopped";
+      this.forget(record4.snapshot.activationId);
       this.releaseIfWriter(record4.snapshot, reason);
       this.forensics.emit({
         activationId,
@@ -79049,6 +79153,7 @@ class NativeActivationHost {
     }
     record4.snapshot.attemptId = attemptId;
     record4.snapshot.state = "starting";
+    this.save(record4.snapshot);
     const emit = (name, payload) => this.forensics.emit({
       activationId,
       attemptId,
@@ -79117,6 +79222,7 @@ var init_native_host = __esm(() => {
   init_pi_sdk();
   init_native_activation_observability();
   init_registry();
+  init_authority_store();
   init_types4();
   TOKEN_USAGE_KEYS = [
     "input_tokens",
@@ -79542,7 +79648,7 @@ __export(exports_server, {
   SpecialistsServer: () => SpecialistsServer
 });
 import { randomUUID as randomUUID10 } from "crypto";
-import { join as join57 } from "path";
+import { join as join58 } from "path";
 function createMcpCallContext(sessionId, request = {}) {
   return {
     mcpSessionId: sessionId,
@@ -79601,13 +79707,14 @@ class SpecialistsServer {
   constructor() {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
-    const hooks = new HookEmitter({ tracePath: join57(process.cwd(), ".specialists", "trace.jsonl") });
+    const hooks = new HookEmitter({ tracePath: join58(process.cwd(), ".specialists", "trace.jsonl") });
     const beadsClient = new BeadsClient;
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
     this.observability = createObservabilitySqliteClient();
     this.activationHost = new NativeActivationHost({
       loader,
       beadsClient,
+      authority: createFileAuthorityWriter(),
       ...this.observability ? { forensics: createActivationForensicSink(this.observability) } : {}
     });
     const getHost = () => this.activationHost;
@@ -79722,6 +79829,7 @@ var init_server3 = __esm(() => {
   init_specialist_list_tool();
   init_activation_tool();
   init_native_host();
+  init_authority_store();
   init_async_events();
   init_peer_adapter();
   init_forensic_sink();
@@ -107813,20 +107921,21 @@ __export(exports_v2_server, {
   serveV2Stdio: () => serveV2Stdio,
   buildV2Server: () => buildV2Server
 });
-import { join as join58 } from "path";
+import { join as join59 } from "path";
 function textResult(result) {
   return { content: [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }] };
 }
 function buildV2Server() {
   const circuitBreaker = new CircuitBreaker;
   const loader = new SpecialistLoader;
-  const hooks = new HookEmitter({ tracePath: join58(process.cwd(), ".specialists", "trace.jsonl") });
+  const hooks = new HookEmitter({ tracePath: join59(process.cwd(), ".specialists", "trace.jsonl") });
   const beadsClient = new BeadsClient;
   const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
   const observability = createObservabilitySqliteClient();
   const host = new NativeActivationHost({
     loader,
     beadsClient,
+    authority: createFileAuthorityWriter(),
     ...observability ? { forensics: createActivationForensicSink(observability) } : {}
   });
   const getHost = () => host;
@@ -107928,6 +108037,7 @@ var init_v2_server = __esm(() => {
   init_activation_tool();
   init_resume_tool();
   init_native_host();
+  init_authority_store();
   init_async_events();
   init_peer_adapter();
   init_forensic_sink();

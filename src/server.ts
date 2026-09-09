@@ -41,6 +41,7 @@ import {
   specialistStopSchema,
 } from './tools/specialist/activation.tool.js';
 import { NativeActivationHost } from './activation/native-host.js';
+import { createFileAuthorityWriter } from './activation/authority-store.js';
 import { RuntimeEventPusher } from './activation/async-events.js';
 import { PeerAdapter } from './activation/transport/peer-adapter.js';
 import { createActivationForensicSink } from './activation/forensic-sink.js';
@@ -160,6 +161,8 @@ export class SpecialistsServer {
     this.activationHost = new NativeActivationHost({
       loader,
       beadsClient,
+      // One Substrate authority shared with sb/Pi; path from XTRM_STATE_DB or ~/.xtrm/state.db.
+      authority: createFileAuthorityWriter(),
       ...(this.observability ? { forensics: createActivationForensicSink(this.observability) } : {}),
     });
     const getHost = () => this.activationHost;

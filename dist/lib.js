@@ -21206,6 +21206,11 @@ function nextAttemptId(current) {
 var RESUMABLE_STATES = new Set(["settled", "waiting", "needs_reply", "escalated"]);
 var RETRYABLE_STATES = new Set(["failed"]);
 
+// src/activation/authority-store.ts
+import { createRequire as createRequire2 } from "node:module";
+var require2 = createRequire2(import.meta.url);
+var NULL_AUTHORITY_WRITER = { record: () => {}, remove: () => {} };
+
 // src/activation/native-host.ts
 var TOKEN_USAGE_KEYS = [
   "input_tokens",
@@ -21251,6 +21256,7 @@ class NativeActivationHost {
   beadGate;
   cwd;
   now;
+  authority;
   registry = new FleetRegistry;
   lastUsageSeen = new WeakMap;
   interactions;
@@ -21263,6 +21269,7 @@ class NativeActivationHost {
     this.loadSdk = deps.loadSdk ?? loadPiSdk;
     this.beadGate = deps.beadGate ?? {};
     this.now = deps.now ?? (() => Date.now());
+    this.authority = deps.authority ?? NULL_AUTHORITY_WRITER;
   }
   async start(request) {
     const activationId = `act:${randomUUID3().slice(0, 12)}`;
@@ -21442,12 +21449,16 @@ class NativeActivationHost {
         const record3 = this.registry.get(activationId);
         if (record3)
           record3.snapshot.state = kind === "escalation" ? "escalated" : "needs_reply";
+        if (record3)
+          this.save(record3.snapshot);
         emit(kind === "escalation" ? "escalation_raised" : "clarification_requested", { body });
       },
       onAnswered: (kind) => {
         const record3 = this.registry.get(activationId);
         if (record3)
           record3.snapshot.state = "running";
+        if (record3)
+          this.save(record3.snapshot);
         emit(kind === "escalation" ? "escalation_resolved" : "clarification_answered");
       }
     });
@@ -21522,6 +21533,7 @@ class NativeActivationHost {
     });
     record2.result = result;
     this.registry.register(record2);
+    this.save(snapshot);
     return {
       activationId,
       participantId,
@@ -21558,6 +21570,7 @@ class NativeActivationHost {
     switch (event.type) {
       case "agent_start":
         snapshot.state = "running";
+        this.save(snapshot);
         emit("turn_started");
         break;
       case "agent_end":
@@ -21565,6 +21578,7 @@ class NativeActivationHost {
         break;
       case "agent_settled":
         snapshot.state = "settled";
+        this.save(snapshot);
         emit("activation_settled");
         this.releaseIfWriter(snapshot, "settled");
         break;
@@ -21592,6 +21606,7 @@ class NativeActivationHost {
       if (last && (last.stopReason === "error" || last.stopReason === "aborted")) {
         const detail = last.errorMessage ?? `turn ended with stopReason "${last.stopReason}"`;
         snapshot.state = "failed";
+        this.save(snapshot);
         emit("activation_failed", { error: detail, stop_reason: last.stopReason });
         return {
           activationId: snapshot.activationId,
@@ -21617,6 +21632,7 @@ class NativeActivationHost {
       const validation = { valid: true };
       emit("output_validation_passed");
       snapshot.state = "settled";
+      this.save(snapshot);
       emit("activation_completed", { pi_session_id: session.sessionId, output });
       this.releaseIfWriter(snapshot, "completed");
       return {
@@ -21639,6 +21655,7 @@ class NativeActivationHost {
       };
     } catch (error) {
       snapshot.state = "failed";
+      this.save(snapshot);
       const message = error instanceof Error ? error.message : String(error);
       emit("activation_failed", { error: message });
       return {
@@ -21717,6 +21734,7 @@ class NativeActivationHost {
       record2.snapshot.piSessionId = nextSession.sessionId;
       record2.snapshot.state = "starting";
       record2.snapshot.lastActivityAt = this.now();
+      this.save(record2.snapshot);
       record2.unsubscribe = nextSession.subscribe((event) => this.onSessionEvent(record2.snapshot, event, ctx.emit));
       ctx.emit("activation_started", { pi_session_id: nextSession.sessionId });
       index += 1;
@@ -21782,6 +21800,7 @@ class NativeActivationHost {
     record2.snapshot.attemptId = attemptId;
     record2.snapshot.state = "starting";
     record2.snapshot.lastActivityAt = this.now();
+    this.save(record2.snapshot);
     const emit = (name, payload) => this.forensics.emit({
       activationId,
       attemptId,
@@ -21842,6 +21861,16 @@ class NativeActivationHost {
       body,
       inReplyTo: messageId
     });
+  }
+  save(snapshot) {
+    try {
+      this.authority.record(snapshot);
+    } catch {}
+  }
+  forget(activationId) {
+    try {
+      this.authority.remove(activationId);
+    } catch {}
   }
   releaseIfWriter(snapshot, reason) {
     if (snapshot.access !== "write")
@@ -21940,6 +21969,7 @@ class NativeActivationHost {
       record2.unsubscribe();
       record2.session.dispose();
       record2.snapshot.state = "stopped";
+      this.forget(record2.snapshot.activationId);
       this.releaseIfWriter(record2.snapshot, reason);
       this.forensics.emit({
         activationId,
@@ -21999,6 +22029,7 @@ class NativeActivationHost {
     }
     record2.snapshot.attemptId = attemptId;
     record2.snapshot.state = "starting";
+    this.save(record2.snapshot);
     const emit = (name, payload) => this.forensics.emit({
       activationId,
       attemptId,
