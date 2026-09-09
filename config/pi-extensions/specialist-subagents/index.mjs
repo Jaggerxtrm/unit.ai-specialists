@@ -46,6 +46,7 @@ import {
   resolveObservabilityDbLocation,
   resolveRuntimeToolContract,
   SpecialistLoader,
+  THINKING_LEVELS,
   admitCoordinatorToolCall,
   leaseScopeFor,
   readBuildId,
@@ -812,6 +813,14 @@ export default function specialistSubagentsExtension(pi, options = {}) {
             'model is refused before the session is created, never silently replaced.',
         }),
       ),
+      thinking_override: Type.Optional(
+        Type.String({
+          description:
+            'Override the thinking level for THIS activation only ' +
+            `(${THINKING_LEVELS.join('|')}). An unknown level is refused before the ` +
+            'session is created, never silently replaced.',
+        }),
+      ),
       requested_by: Type.Optional(
         Type.String({
           description:
@@ -883,6 +892,7 @@ export default function specialistSubagentsExtension(pi, options = {}) {
           // Inline-contract dispatch creates a fresh bead with no parent: no lineage.
           ...(epicContextDepth !== undefined && !autoCreatedBeadId ? { epicContextDepth } : {}),
           ...(params.model_override ? { modelOverride: params.model_override } : {}),
+          ...(params.thinking_override ? { thinkingOverride: params.thinking_override } : {}),
           requestedByParticipantId: params.requested_by ?? DEFAULT_REQUESTED_BY,
           ...(params.coordinator_session_id ? { coordinatorSessionId: params.coordinator_session_id } : {}),
         });

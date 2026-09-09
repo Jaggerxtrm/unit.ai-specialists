@@ -7,7 +7,7 @@ export { resolveRuntimeToolContract } from './pi/session.js';
 export { validateBeforeRun } from './specialist/runner.js';
 export { NativeActivationHost } from './activation/native-host.js';
 export type { NativeActivationHostDeps, ActivationForensicSink, ActivationAttachment } from './activation/native-host.js';
-export { DispatchRejectedError } from './activation/types.js';
+export { DispatchRejectedError, THINKING_LEVELS } from './activation/types.js';
 export type { ActivationId, ActivationRequest, ActivationResult, ActivationSnapshot, ActivationState, ActivationHandle, AttemptId, ParticipantId, PiSessionId, WorkspaceAccess, WorkspaceIdentity, } from './activation/types.js';
 export type { DeliveryState, InteractionKind, InteractionMessage, MessageId, PendingAsk, } from './activation/interaction.js';
 export { toActivationView, toActivationResultView, toPendingAskView } from './tools/specialist/activation.tool.js';
