@@ -5,10 +5,13 @@
 // Claude Code could previously obtain a Specialist only by shelling out to `sp run` in a
 // terminal or an `xt` session. The native runtime already existed in-process, so the
 // coordinator best placed to use it was the one that could not. These tools close that
-// gap, and they close it by CALLING the host, never by spawning anything: a subprocess
+// gap, and they close it by CALLING the host, never by spawning `sp`: a subprocess
 // that runs `sp` would satisfy the letter of "expose the runtime over MCP" and defeat its
-// entire purpose. Nothing in this file constructs a child process, and the live evidence
-// for acceptance AV asserts that against the process table rather than against intent.
+// entire purpose. The one child process reachable from here is the `bd create` inside
+// `createBeadFromContract` for the inline-contract path — the same `bd` CLI the
+// runtime's own BeadsClient uses, never the legacy CLI — and it runs only after the
+// readiness gate passes. The live evidence for acceptance AV asserts the absence of
+// `sp` against the process table rather than against intent.
 //
 // The gates are not re-implemented here, and that is the load-bearing property. Bead
 // readiness, the StepContract compilation, the capability contract, the model gate and
@@ -37,6 +40,8 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { NativeActivationHost } from '../../activation/native-host.js';
 import { describeBuildIdentity, readBuildId } from '../../activation/build-identity.js';
+import { evaluateBeadReadiness } from '../../activation/bead-gate.js';
+import { createBeadFromContract } from '../../specialist/beads.js';
 import { renderRejection } from '../../activation/rejection.js';
 import { THINKING_LEVELS } from '../../activation/types.js';
 import type { ActivationSnapshot, ActivationTokenUsage } from '../../activation/types.js';
@@ -201,16 +206,42 @@ const LOADED_BUILD_ID = readBuildId(DIST_LIB_PATH);
 
 export const specialistDispatchSchema = z.object({
   specialist: z.string().describe('Specialist name, e.g. codebase-explorer'),
-  bead_id: z.string().describe(
-    "The Bead that is this activation's task contract — a COMPLETE 7-section contract " +
-    '(PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT) plus a SCRUTINY ' +
-    'level, which must be exactly one of LOW, MEDIUM, HIGH or CRITICAL. That is EIGHT ' +
-    'required parts, not seven; SCRUTINY is the one most often left out. Write each section ' +
-    'as a heading: either the section name on its own line with its body beneath, or ' +
-    '`PROBLEM: the body` on one line. Both forms are accepted. ' +
+  bead_id: z.string().optional().describe(
+    "The id of an EXISTING READY Bead — this activation's task contract, a COMPLETE " +
+    '7-section contract (PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, ' +
+    'OUTPUT) plus a SCRUTINY level, which must be exactly one of LOW, MEDIUM, HIGH or ' +
+    'CRITICAL. That is EIGHT required parts, not seven; SCRUTINY is the one most often ' +
+    'left out. Write each section as a heading: either the section name on its own line ' +
+    'with its body beneath, or `PROBLEM: the body` on one line. Both forms are accepted. ' +
     'A draft or incomplete Bead is refused before any model turn. No free-form task ' +
     'text is accepted: a task that needs more definition belongs in the Bead (see the ' +
-    'planning skill).',
+    'planning skill). Mutually exclusive with contract: provide exactly one of bead_id ' +
+    'or contract, never both.',
+  ),
+  contract: z.string().optional().describe(
+    'An INLINE task contract, used instead of bead_id: the SAME readiness gate ' +
+    'runs first, then a Bead is created from it and dispatched. The contract ' +
+    'must contain all seven sections — PROBLEM, SUCCESS, SCOPE, NON_GOALS, ' +
+    'CONSTRAINTS, VALIDATION, OUTPUT — plus a SCRUTINY level, which must be exactly ' +
+    'one of LOW, MEDIUM, HIGH or CRITICAL. Note that this is EIGHT required parts, ' +
+    'not seven; SCRUTINY is the one most often left out. Write each section as a ' +
+    'heading: either the section name on its own line with its body beneath, or ' +
+    '`PROBLEM: the body` on one line. Both forms are accepted. ' +
+    'A contract missing any section is refused and nothing is created.',
+  ),
+  title: z.string().optional().describe(
+    'Optional title for the Bead created from `contract` (default: derived from PROBLEM). ' +
+    'Ignored when bead_id is given.',
+  ),
+  // Deliberately a bare number, not min(1).max(2): out-of-range values must reach
+  // execute and come back as a structured refusal via the shared renderer, not as a
+  // zod throw that surfaces as an opaque MCP error (server.ts parses before execute).
+  epic_context_depth: z.number().optional().describe(
+    'Walk bead.parent UP this many hops (1 = immediate parent epic, 2 = epic + ' +
+    "grand-epic) and render each ancestor contract into the turn-1 prompt as an '" +
+    "'## Epic lineage' section. Must be 1 or 2; anything else is refused. Omit for " +
+    'single-bead dispatch with no lineage. Dropped for beads auto-created from an ' +
+    'inline contract (a fresh bead has no parent).',
   ),
   model_override: z.string().optional().describe(
     'Override the configured model for THIS activation only. An unavailable model is refused before the session is created, never silently replaced.',
@@ -240,20 +271,71 @@ export function createSpecialistDispatchTool(
     name: 'specialist_dispatch' as const,
     description:
       'Dispatch a Specialist on the native in-process runtime. No CLI process is spawned. ' +
-      'Returns once the activation is ADMITTED and started, not when it completes — poll ' +
-      'specialist_status for state and for any question it raises, and answer with ' +
-      'specialist_reply. The Bead is the prompt and MUST be a complete 7-section contract ' +
-      'plus a SCRUTINY level; a draft or incomplete Bead is refused here, before a model ' +
-      'turn is spent guessing at scope it does not carry — if the Bead is not dispatchable, ' +
-      'fix the Bead (planning skill), not the dispatch. Write-capable Specialists ' +
-      '(MEDIUM/HIGH tiers) activate only when they can acquire the workspace lease; ' +
-      'otherwise dispatch is refused with a structured reason.',
+      'Provide EITHER bead_id (an existing READY Bead) OR contract (an inline 7-section ' +
+      'contract: the same readiness gate runs first, then a Bead is created and dispatched). ' +
+      'Never both. Returns once the activation is ADMITTED and started, not when it ' +
+      'completes — poll specialist_status for state and for any question it raises, and ' +
+      'answer with specialist_reply. The Bead is the prompt and MUST be a complete 7-section ' +
+      'contract plus a SCRUTINY level; a draft or incomplete Bead is refused here, before a ' +
+      'model turn is spent guessing at scope it does not carry — if the Bead is not ' +
+      'dispatchable, fix the Bead (planning skill), not the dispatch. Write-capable ' +
+      'Specialists (MEDIUM/HIGH tiers) activate only when they can acquire the workspace ' +
+      'lease; otherwise dispatch is refused with a structured reason.',
     inputSchema: specialistDispatchSchema,
     async execute(input: z.infer<typeof specialistDispatchSchema>) {
+      const build = () => describeBuildIdentity(LOADED_BUILD_ID, readBuildId(DIST_LIB_PATH));
       try {
+        // EITHER an existing bead_id OR an inline contract — never both, and the
+        // readiness gate runs BEFORE any bead is created (same gate the host runs at
+        // admission, never a second one). Mirrors the Pi extension dispatch.
+        const beadId = (input.bead_id ?? '').trim();
+        const contract = (input.contract ?? '').trim();
+        if (beadId && contract) {
+          return renderRejection({
+            reason: 'both bead_id and contract were provided — provide exactly one; ' +
+              'silently preferring one would dispatch against a contract the coordinator did not mean',
+          }, build());
+        }
+        const epicContextDepth = input.epic_context_depth;
+        if (epicContextDepth !== undefined && epicContextDepth !== 1 && epicContextDepth !== 2) {
+          return renderRejection({
+            reason: 'epic_context_depth must be 1 or 2 — 1 walks to the immediate parent epic, ' +
+              '2 also includes the grand-epic',
+          }, build());
+        }
+        let effectiveBeadId = beadId;
+        let autoCreatedBeadId: string | undefined;
+        if (!effectiveBeadId) {
+          if (!contract) {
+            return renderRejection({
+              reason: 'neither bead_id nor contract was provided — dispatch requires a READY Bead ' +
+                '(7 sections + SCRUTINY) or an inline contract',
+            }, build());
+          }
+          // The SAME gate the host runs at admission, before anything is created: a
+          // refused dispatch leaves the board unchanged.
+          const gate = evaluateBeadReadiness({
+            id: '<inline>',
+            status: 'open',
+            title: input.title ?? 'specialist dispatch',
+            description: contract,
+          });
+          if (!gate.ok) {
+            return renderRejection({ reason: gate.reason, missing: gate.missing }, build());
+          }
+          const created = createBeadFromContract(contract, input.title);
+          if (!created) {
+            return { status: 'error' as const, error: 'bd create failed — bead not created, board unchanged' };
+          }
+          effectiveBeadId = created;
+          autoCreatedBeadId = created;
+        }
+
         const handle = await getHost().start({
           specialist: input.specialist,
-          beadId: input.bead_id,
+          beadId: effectiveBeadId,
+          // Inline-contract dispatch creates a fresh bead with no parent: no lineage.
+          ...(epicContextDepth !== undefined && !autoCreatedBeadId ? { epicContextDepth } : {}),
           ...(input.model_override ? { modelOverride: input.model_override } : {}),
           ...(input.thinking_override ? { thinkingOverride: input.thinking_override } : {}),
           requestedByParticipantId: input.requested_by ?? 'adapter::specialists-mcp',
@@ -289,6 +371,19 @@ export function createSpecialistDispatchTool(
         return {
           status: 'dispatched' as const,
           ...(snapshot ? toActivationView(snapshot) : { activation_id: handle.activationId }),
+          // An inline contract creates a durable board record. Saying so in the RESULT
+          // is the difference between a coordinator tracking it and an operator finding
+          // an orphan bead later — the caller cannot see the side effect otherwise.
+          // Pi wording, verbatim: one vocabulary for the same side effect.
+          ...(autoCreatedBeadId
+            ? {
+              created_bead_id: autoCreatedBeadId,
+              created_bead_note:
+                'This dispatch CREATED the bead above from your inline contract. It is a '
+                + 'durable board record and is yours to track: close it when the work is '
+                + 'done, or reassign it. It is not cleaned up automatically.',
+            }
+            : {}),
           step_contract: {
             root_work_ref: handle.stepContract.rootWorkRef,
             inputs: handle.stepContract.inputs.length,
