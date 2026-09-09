@@ -603,6 +603,43 @@ Notes:
 
 ---
 
+## `specialists retry`
+
+### Synopsis
+
+```bash
+specialists retry <job-id> [--model <model>] [--background]
+```
+
+### Flags
+
+- `--model <model>`: re-dispatch on a named model (manual switch after a quota window kills a run).
+- `--background`: detach like `run --background`.
+
+### Notes
+
+Re-dispatches an `error`/`cancelled` job reusing its bead and workspace lease via `sp run --job`, so no new lease is taken and partial workspace state is preserved. Without `--model` the configured model chain (including fallbacks) is reused — a transient 429 may have cleared. Only valid for terminal jobs: waiting jobs use `resume`, running jobs use `steer`.
+
+Typical recovery after a rate-limited dispatch with no fallback configured:
+
+```bash
+specialists retry a1b2c3 --model anthropic/claude-sonnet-4-5
+```
+
+### Examples
+
+```bash
+specialists retry a1b2c3
+specialists retry a1b2c3 --model qwen
+```
+
+### Exit codes
+
+- `0`: re-dispatch exited 0 (foreground) or was launched (background path exits with the child status).
+- `1`: Missing args, missing job, non-terminal status, job with no bead or workspace, or re-dispatch failure.
+
+---
+
 ## `specialists resume`
 
 ### Synopsis

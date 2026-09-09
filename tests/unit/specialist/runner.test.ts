@@ -1019,6 +1019,38 @@ describe('SpecialistRunner', () => {
     }));
   });
 
+  it('walks fallback_models after opencode FreeUsageLimitError (unitAI-xxjw2)', async () => {
+    const firstSession = makeMockSession();
+    const quotaError = new Error('Free usage limit exceeded for this model');
+    quotaError.name = 'FreeUsageLimitError';
+    firstSession.waitForDone.mockRejectedValue(quotaError);
+    const secondSession = makeMockSession();
+    secondSession.meta = { ...secondSession.meta, model: 'qwen' };
+    const sessionFactory = vi.fn()
+      .mockResolvedValueOnce(firstSession)
+      .mockResolvedValueOnce(secondSession);
+    const onEvent = vi.fn();
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ fallback_models: ['qwen'] }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace-freeusage.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    const result = await runner.run({ name: 'test-spec', prompt: 'test' }, undefined, onEvent);
+
+    expect(sessionFactory).toHaveBeenCalledTimes(2);
+    expect(sessionFactory.mock.calls[0][0].model).toBe('gemini');
+    expect(sessionFactory.mock.calls[1][0].model).toBe('qwen');
+    expect(result.model).toBe('qwen');
+    expect(firstSession.waitForDone).toHaveBeenCalledTimes(1); // no same-model retry
+    expect(onEvent).not.toHaveBeenCalledWith('auto_retry');
+    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({
+      model: 'qwen',
+      data: expect.objectContaining({ attempt_n: 2, model_tried: 'qwen', error_class: 'rate_limit', terminal: false }),
+    }));
+  });
+
   it('does not walk fallback_models after auth failure', async () => {
     const firstSession = makeMockSession();
     firstSession.waitForDone.mockRejectedValue(new Error('401 Unauthorized'));
