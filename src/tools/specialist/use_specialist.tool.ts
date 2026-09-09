@@ -26,8 +26,7 @@ export function createUseSpecialistTool(runner: SpecialistRunner) {
       'Response includes output, model, durationMs, and beadId (string | undefined). ' +
       'beadId is set when the specialist\'s beads_integration policy triggered bead creation ' +
       '(default: auto — creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). ' +
-      'If beadId is present, use `bd update <beadId> --append-notes` to attach findings or ' +
-      '`bd remember` to persist key discoveries for future sessions. ' +
+      'If beadId is present, use `bd update <beadId> --append-notes` to attach findings. ' +
       'When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. ' +
       'Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too). '+
       'A bead_id that specialist_dispatch would REFUSE (draft, closed, or missing a contract section) still runs here, but the result carries a readiness_warning naming what is missing. '+
