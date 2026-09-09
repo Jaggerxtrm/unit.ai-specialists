@@ -133,8 +133,7 @@ function assistantText(event: PiAgentSessionEvent): string | undefined {
 }
 
 /** Canonical reader for the nested message.usage short-key shape Pi session events carry. */
-export function nativeSessionTokenUsage(event: PiAgentSessionEvent): TimelineTokenUsage | undefined {
-  const usage = record(assistantMessage(event)?.usage);
+export function nativeSessionTokenUsage(event: PiAgentSessionEvent): TimelineTokenUsage | undefined {  const usage = record(assistantMessage(event)?.usage);
   if (!usage) return undefined;
   const projected: TimelineTokenUsage = {
     input_tokens: numberField(usage.input),
@@ -146,6 +145,58 @@ export function nativeSessionTokenUsage(event: PiAgentSessionEvent): TimelineTok
     usage_source: 'provider_usage',
   };
   return Object.values(projected).some(value => typeof value === 'number') ? projected : undefined;
+}
+
+/** Per-message usage counter keys. `usage_source` is provenance, never a counter. */
+const USAGE_COUNTER_KEYS = [
+  'input_tokens',
+  'output_tokens',
+  'cache_creation_tokens',
+  'cache_read_tokens',
+  'reasoning_tokens',
+  'tool_tokens',
+  'total_tokens',
+] as const;
+
+/**
+ * Merge one message's usage into a running session total (unitAI-beqby.15).
+ *
+ * Providers disagree on the shape: most emit per-message deltas (sum them), but at
+ * least one route emits cumulative-per-message counters (summing those explodes the
+ * total, replacing it flaps the row down). Decide per MESSAGE, not per key: the
+ * message is cumulative only when every carried counter with history grew — one
+ * reset counter proves fresh per-message counts and the whole message adds whole.
+ * Zero/absent values carry no information and touch neither the total nor lastSeen,
+ * so a zero-usage message can neither clear a total nor corrupt the next delta.
+ *
+ * The result is monotonic non-decreasing per key on both shapes. Known ceiling: a
+ * delta-shape message whose every counter happens to grow reads as cumulative and
+ * adds only the growth — undercounts slightly, never flaps or explodes.
+ */
+export function accumulateTokenUsage<T extends object>(
+  prev: T | undefined,
+  incoming: { [K in (typeof USAGE_COUNTER_KEYS)[number]]?: number } & { usage_source?: unknown },
+  lastSeen: Record<string, number>,
+): T {
+  const merged = { ...(prev ?? {}) } as Record<string, unknown>;
+  const carried = USAGE_COUNTER_KEYS.filter((key) => {
+    const value = incoming[key];
+    return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  });
+  // Vacuously true on a first message; harmless there because no key has history
+  // and every carried counter adds whole below.
+  const cumulative = carried.every((key) => lastSeen[key] === undefined || (incoming[key] as number) >= (lastSeen[key] as number));
+  for (const key of carried) {
+    const value = incoming[key] as number;
+    const last = lastSeen[key];
+    const delta = last !== undefined && cumulative ? value - last : value;
+    merged[key] = (typeof merged[key] === 'number' ? merged[key] : 0) + delta;
+    lastSeen[key] = value;
+  }
+  if (merged.usage_source === undefined && typeof incoming.usage_source === 'string') {
+    merged.usage_source = incoming.usage_source;
+  }
+  return merged as T;
 }
 
 function resultContent(result: unknown): string | undefined {

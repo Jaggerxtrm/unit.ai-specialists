@@ -50,7 +50,7 @@ import { acquire as acquireLease, admitToolCall, release as releaseLease } from 
 import { createGuardedTools } from './guarded-tools.js';
 import { createAskTools, ASK_TOOL, ESCALATE_TOOL } from './ask-tool.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
-import { nativeSessionTokenUsage } from '../specialist/native-activation-observability.js';
+import { nativeSessionTokenUsage, accumulateTokenUsage } from '../specialist/native-activation-observability.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
 import { FleetRegistry, RESUMABLE_STATES, nextAttemptId } from './registry.js';
 import {
@@ -222,6 +222,14 @@ export class NativeActivationHost {
   private readonly now: () => number;
 
   private readonly registry = new FleetRegistry();
+
+  /**
+   * Last per-message usage value seen per activation, keyed by live snapshot.
+   * Feeds accumulateTokenUsage so delta-shape and cumulative-shape providers both
+   * project monotonic totals. WeakMap: the entry dies with the snapshot, and resume
+   * keeps the same snapshot so counters continue across attempts by construction.
+   */
+  private readonly lastUsageSeen = new WeakMap<object, Record<string, number>>();
 
   /**
    * One transport for the whole host. Messages carry their own activationId, so a single
@@ -587,22 +595,17 @@ export class NativeActivationHost {
     emit: (name: string, payload?: Record<string, unknown>) => void,
   ): void {
     snapshot.lastActivityAt = this.now();
-    // Session spend is the SUM of per-message provider counts (pi's `addUsage`
-    // semantics): each message_end carries only its own request's tokens, so a
-    // spread-merge would replace the running total with one message's counts and
-    // the row would flap down or blank. Accumulate on message_end only — the one
-    // event per message carrying final usage — so streaming updates carrying
-    // partial or zero usage can never double-count or clear the total.
+    // Session spend merges one message's provider counts into the running total
+    // (unitAI-beqby.15): per-message deltas add whole, cumulative-per-message
+    // counters add only their growth, so neither shape flaps the row down nor
+    // explodes it. Accumulate on message_end only — the one event per message
+    // carrying final usage — so streaming partials can never double-count.
     if (event.type === 'message_end') {
       const usage = extractTokenUsage(event);
       if (usage) {
-        const prev = snapshot.tokenUsage ?? {};
-        const merged: typeof prev = { ...prev };
-        for (const [key, value] of Object.entries(usage) as Array<[keyof typeof prev, number]>) {
-          if (value === undefined) continue;
-          merged[key] = (prev[key] ?? 0) + value;
-        }
-        snapshot.tokenUsage = merged;
+        const seen = this.lastUsageSeen.get(snapshot) ?? {};
+        snapshot.tokenUsage = accumulateTokenUsage(snapshot.tokenUsage, usage, seen);
+        this.lastUsageSeen.set(snapshot, seen);
       }
     }
 

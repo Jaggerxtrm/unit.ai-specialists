@@ -16,6 +16,7 @@
 
 import type { ActivationForensicSink, NativeActivationSessionEventInput } from './native-host.js';
 import {
+  accumulateTokenUsage,
   mapNativeLifecycleEvent,
   mapNativeSessionEvent,
   nativeAttemptIdForNo,
@@ -46,6 +47,8 @@ interface ActivationProjectionState {
   resolvedModel?: string;
   latestOutput?: string;
   tokenUsage?: TimelineTokenUsage;
+  /** Last per-message usage values; see accumulateTokenUsage — same dual-shape rule as the host. */
+  lastUsageSeen: Record<string, number>;
   finishReason?: string;
   toolCalls: string[];
   turns: number;
@@ -138,6 +141,7 @@ function newProjectionState(input: {
     startedAtMs: input.startedAtMs,
     lastEventAtMs: input.startedAtMs,
     status: 'starting',
+    lastUsageSeen: {},
     toolCalls: [],
     turns: 0,
     autoRetries: 0,
@@ -277,7 +281,7 @@ export function createActivationForensicSink(
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.TEXT && typeof timelineEvent.content === 'string') {
             state.latestOutput = timelineEvent.content;
           }
-          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOKEN_USAGE) state.tokenUsage = timelineEvent.token_usage;
+          if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOKEN_USAGE) state.tokenUsage = accumulateTokenUsage(state.tokenUsage, timelineEvent.token_usage, state.lastUsageSeen);
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.FINISH_REASON) state.finishReason = timelineEvent.finish_reason;
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOOL && timelineEvent.phase === 'end') {
             state.toolCalls.push(timelineEvent.tool);
