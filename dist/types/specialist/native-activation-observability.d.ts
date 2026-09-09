@@ -72,6 +72,28 @@ export declare const NATIVE_SESSION_OBSERVABILITY_GAPS: Readonly<{
 }>;
 /** Canonical reader for the nested message.usage short-key shape Pi session events carry. */
 export declare function nativeSessionTokenUsage(event: PiAgentSessionEvent): TimelineTokenUsage | undefined;
+/** Per-message usage counter keys. `usage_source` is provenance, never a counter. */
+declare const USAGE_COUNTER_KEYS: readonly ["input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "reasoning_tokens", "tool_tokens", "total_tokens"];
+/**
+ * Merge one message's usage into a running session total (unitAI-beqby.15).
+ *
+ * Providers disagree on the shape: most emit per-message deltas (sum them), but at
+ * least one route emits cumulative-per-message counters (summing those explodes the
+ * total, replacing it flaps the row down). Decide per MESSAGE, not per key: the
+ * message is cumulative only when every carried counter with history grew — one
+ * reset counter proves fresh per-message counts and the whole message adds whole.
+ * Zero/absent values carry no information and touch neither the total nor lastSeen,
+ * so a zero-usage message can neither clear a total nor corrupt the next delta.
+ *
+ * The result is monotonic non-decreasing per key on both shapes. Known ceiling: a
+ * delta-shape message whose every counter happens to grow reads as cumulative and
+ * adds only the growth — undercounts slightly, never flaps or explodes.
+ */
+export declare function accumulateTokenUsage<T extends object>(prev: T | undefined, incoming: {
+    [K in (typeof USAGE_COUNTER_KEYS)[number]]?: number;
+} & {
+    usage_source?: unknown;
+}, lastSeen: Record<string, number>): T;
 /** Parse the stable trailing sequence from `att:<activation>:N`. */
 export declare function nativeAttemptNo(attemptId: string): number;
 /** Advance a runtime-owned attempt ID without replacing its identity namespace. */
@@ -83,4 +105,5 @@ export declare function mapNativeLifecycleEvent(event: NativeLifecycleEvent, con
  * One Pi message boundary can produce both the boundary row and the legacy text row.
  */
 export declare function mapNativeSessionEvent(event: PiAgentSessionEvent, t?: number, turnIndex?: number): TimelineEvent[];
+export {};
 //# sourceMappingURL=native-activation-observability.d.ts.map

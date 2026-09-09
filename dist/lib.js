@@ -13229,7 +13229,7 @@ function withRetry(operation, context) {
       if (lastError.message.includes("Cannot use a closed database")) {
         throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
       }
-      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
+      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy") || lastError.message.includes("UNIQUE constraint failed");
       if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
         break;
       }
@@ -14130,8 +14130,15 @@ class SqliteClient {
     const attemptNo = typeof row.attempt_no === "bigint" ? Number(row.attempt_no) : typeof row.attempt_no === "number" ? row.attempt_no : 0;
     return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === "string" ? row.attempt_id : null };
   }
+  isTimelineSeqUsed(jobId, seq) {
+    const inTimeline = this.db.query("SELECT 1 FROM specialist_events WHERE job_id = ? AND seq = ? LIMIT 1").get(jobId, seq);
+    if (inTimeline)
+      return true;
+    return Boolean(this.db.query("SELECT 1 FROM specialist_forensic_events WHERE job_id = ? AND seq = ? LIMIT 1").get(jobId, seq));
+  }
   writeEventRow(jobId, specialist, beadId, event, identity) {
-    const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
+    const requestedSeq = typeof event.seq === "number" && event.seq > 0 ? event.seq : NaN;
+    const seq = Number.isFinite(requestedSeq) && !this.isTimelineSeqUsed(jobId, requestedSeq) ? requestedSeq : Math.max(this.getNextSpecialistEventSeq(jobId), this.getNextForensicEventSeq(jobId));
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
     const current = this.readJobAttempt(jobId);
@@ -21071,6 +21078,34 @@ function nativeSessionTokenUsage(event) {
   };
   return Object.values(projected).some((value) => typeof value === "number") ? projected : undefined;
 }
+var USAGE_COUNTER_KEYS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_creation_tokens",
+  "cache_read_tokens",
+  "reasoning_tokens",
+  "tool_tokens",
+  "total_tokens"
+];
+function accumulateTokenUsage(prev, incoming, lastSeen) {
+  const merged = { ...prev ?? {} };
+  const carried = USAGE_COUNTER_KEYS.filter((key) => {
+    const value = incoming[key];
+    return typeof value === "number" && Number.isFinite(value) && value > 0;
+  });
+  const cumulative = carried.every((key) => lastSeen[key] === undefined || incoming[key] >= lastSeen[key]);
+  for (const key of carried) {
+    const value = incoming[key];
+    const last = lastSeen[key];
+    const delta = last !== undefined && cumulative ? value - last : value;
+    merged[key] = (typeof merged[key] === "number" ? merged[key] : 0) + delta;
+    lastSeen[key] = value;
+  }
+  if (merged.usage_source === undefined && typeof incoming.usage_source === "string") {
+    merged.usage_source = incoming.usage_source;
+  }
+  return merged;
+}
 function resultContent(result) {
   if (typeof result === "string")
     return result;
@@ -21391,6 +21426,7 @@ class NativeActivationHost {
   cwd;
   now;
   registry = new FleetRegistry;
+  lastUsageSeen = new WeakMap;
   interactions;
   constructor(deps = {}) {
     this.cwd = deps.cwd ?? process.cwd();
@@ -21643,14 +21679,9 @@ class NativeActivationHost {
     if (event.type === "message_end") {
       const usage = extractTokenUsage(event);
       if (usage) {
-        const prev = snapshot.tokenUsage ?? {};
-        const merged = { ...prev };
-        for (const [key, value] of Object.entries(usage)) {
-          if (value === undefined)
-            continue;
-          merged[key] = (prev[key] ?? 0) + value;
-        }
-        snapshot.tokenUsage = merged;
+        const seen = this.lastUsageSeen.get(snapshot) ?? {};
+        snapshot.tokenUsage = accumulateTokenUsage(snapshot.tokenUsage, usage, seen);
+        this.lastUsageSeen.set(snapshot, seen);
       }
     }
     this.forensics.sessionEvent?.({
@@ -22210,6 +22241,7 @@ function newProjectionState(input) {
     startedAtMs: input.startedAtMs,
     lastEventAtMs: input.startedAtMs,
     status: "starting",
+    lastUsageSeen: {},
     toolCalls: [],
     turns: 0,
     autoRetries: 0,
@@ -22307,7 +22339,7 @@ function createActivationForensicSink(observability) {
             state.latestOutput = timelineEvent.content;
           }
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOKEN_USAGE)
-            state.tokenUsage = timelineEvent.token_usage;
+            state.tokenUsage = accumulateTokenUsage(state.tokenUsage, timelineEvent.token_usage, state.lastUsageSeen);
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.FINISH_REASON)
             state.finishReason = timelineEvent.finish_reason;
           if (timelineEvent.type === TIMELINE_EVENT_TYPES.TOOL && timelineEvent.phase === "end") {
