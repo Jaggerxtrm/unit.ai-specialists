@@ -145,7 +145,11 @@ function withRetry<T>(operation: () => T, context: string): T {
         lastError.message.includes('SQLITE_BUSY') ||
         lastError.message.includes('SQLITE_LOCKED') ||
         lastError.message.includes('database is locked') ||
-        lastError.message.includes('database is busy');
+        lastError.message.includes('database is busy') ||
+        // UNIQUE constraint on (job_id, seq) means a concurrent writer won the
+        // MAX(seq)+1 race. The operation recomputes seq on each attempt, so a
+        // bounded retry converges instead of killing the run (unitAI-dd52z).
+        lastError.message.includes('UNIQUE constraint failed');
 
       if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
         break;
@@ -1661,6 +1665,12 @@ class SqliteClient implements ObservabilitySqliteClient {
     return { attempt_no: attemptNo, attempt_id: typeof row.attempt_id === 'string' ? row.attempt_id : null };
   }
 
+  private isTimelineSeqUsed(jobId: string, seq: number): boolean {
+    const inTimeline = this.db.query('SELECT 1 FROM specialist_events WHERE job_id = ? AND seq = ? LIMIT 1').get(jobId, seq);
+    if (inTimeline) return true;
+    return Boolean(this.db.query('SELECT 1 FROM specialist_forensic_events WHERE job_id = ? AND seq = ? LIMIT 1').get(jobId, seq));
+  }
+
   private writeEventRow(
     jobId: string,
     specialist: string,
@@ -1668,7 +1678,16 @@ class SqliteClient implements ObservabilitySqliteClient {
     event: TimelineEvent,
     identity?: ObservabilityIdentityProjection,
   ): void {
-    const seq = typeof event.seq === 'number' && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
+    // A caller-supplied seq is honored only when no row claims it yet. Otherwise the
+    // candidate must clear BOTH tables: specialist_events has no UNIQUE index (so a
+    // stale explicit seq would silently duplicate there) while the forensic mirror
+    // enforces UNIQUE(job_id, seq) and would fail the whole write. Retried jobs and
+    // second writers (tmux feed, dead-job audit, native sink) reuse seqs; renumbering
+    // preserves every event instead of looping on UNIQUE (unitAI-dd52z).
+    const requestedSeq = typeof event.seq === 'number' && event.seq > 0 ? event.seq : NaN;
+    const seq = Number.isFinite(requestedSeq) && !this.isTimelineSeqUsed(jobId, requestedSeq)
+      ? requestedSeq
+      : Math.max(this.getNextSpecialistEventSeq(jobId), this.getNextForensicEventSeq(jobId));
     const sequencedEvent = { ...event, seq };
     const eventJson = JSON.stringify(sequencedEvent);
     const current = this.readJobAttempt(jobId);
