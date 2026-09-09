@@ -38,6 +38,7 @@ import { type BeadGateOptions } from './bead-gate.js';
 import { type InteractionMessage, type PendingAsk } from './interaction.js';
 import { PeerAdapter, type TransportForensicEvent } from './transport/peer-adapter.js';
 import { type PiSdk, type PiAgentSessionEvent } from './pi-sdk.js';
+import { type AuthorityWriter } from './authority-store.js';
 import { type ActivationHandle, type ActivationRequest, type ActivationSnapshot, type LiveActivationStats } from './types.js';
 /**
  * Sink for activation forensics.
@@ -105,6 +106,13 @@ export interface NativeActivationHostDeps {
     cwd?: string;
     now?: () => number;
     /**
+     * Persists the Fleet projection to the one Substrate authority. Defaults to a
+     * no-op (unit tests); production servers inject `createFileAuthorityWriter()`.
+     * Best-effort by contract — the writer never throws, so lifecycle never depends
+     * on the store being present, writable, or even openable.
+     */
+    authority?: AuthorityWriter;
+    /**
      * Push asks to a live Claude coordinator over the peer channel.
      *
      * Omit it and the host is polling-only, which is the degraded path and is correct: the
@@ -142,6 +150,7 @@ export declare class NativeActivationHost {
     private readonly beadGate;
     private readonly cwd;
     private readonly now;
+    private readonly authority;
     private readonly registry;
     /**
      * Last per-message usage value seen per activation, keyed by live snapshot.
@@ -225,6 +234,17 @@ export declare class NativeActivationHost {
      * latest ask" convenience, because with two asks outstanding that is a coin flip.
      */
     answer(messageId: string, body: string): Promise<InteractionMessage | undefined>;
+    /**
+     * Mirror one snapshot to the Substrate authority. Best-effort twice over: the
+     * writer swallows its own errors, and this guards the call, because a store
+     * failure must never alter activation behaviour.
+     */
+    private save;
+    /**
+     * Mirror disposal to the authority: the row goes with the activation, so
+     * SessionStart never surfaces stopped work as live. Guarded like `save`.
+     */
+    private forget;
     /**
      * Release a writer's lease, converting an uncertain release into evidence.
      *
