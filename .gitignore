@@ -26,6 +26,7 @@ venv/
 .github/copilot/
 .github/codex/
 .mcp.json
+!plugins/substrate/.mcp.json
 .cursor/mcp.json
 .gitnexus
 .worktrees/
