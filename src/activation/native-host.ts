@@ -53,6 +53,7 @@ import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEven
 import { nativeSessionTokenUsage, accumulateTokenUsage } from '../specialist/native-activation-observability.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
 import { FleetRegistry, RESUMABLE_STATES, RETRYABLE_STATES, nextAttemptId, type ActivationRecord } from './registry.js';
+import { NULL_AUTHORITY_WRITER, type AuthorityWriter } from './authority-store.js';
 import {
   DispatchRejectedError,
   type ActivationHandle,
@@ -188,6 +189,13 @@ export interface NativeActivationHostDeps {
   cwd?: string;
   now?: () => number;
   /**
+   * Persists the Fleet projection to the one Substrate authority. Defaults to a
+   * no-op (unit tests); production servers inject `createFileAuthorityWriter()`.
+   * Best-effort by contract — the writer never throws, so lifecycle never depends
+   * on the store being present, writable, or even openable.
+   */
+  authority?: AuthorityWriter;
+  /**
    * Push asks to a live Claude coordinator over the peer channel.
    *
    * Omit it and the host is polling-only, which is the degraded path and is correct: the
@@ -228,6 +236,7 @@ export class NativeActivationHost {
   private readonly beadGate: BeadGateOptions;
   private readonly cwd: string;
   private readonly now: () => number;
+  private readonly authority: AuthorityWriter;
 
   private readonly registry = new FleetRegistry();
 
@@ -262,6 +271,7 @@ export class NativeActivationHost {
     this.loadSdk = deps.loadSdk ?? loadPiSdk;
     this.beadGate = deps.beadGate ?? {};
     this.now = deps.now ?? (() => Date.now());
+    this.authority = deps.authority ?? NULL_AUTHORITY_WRITER;
   }
 
   /**
@@ -509,11 +519,13 @@ export class NativeActivationHost {
       onAsk: (kind, body) => {
         const record = this.registry.get(activationId);
         if (record) record.snapshot.state = kind === 'escalation' ? 'escalated' : 'needs_reply';
+        if (record) this.save(record.snapshot);
         emit(kind === 'escalation' ? 'escalation_raised' : 'clarification_requested', { body });
       },
       onAnswered: (kind) => {
         const record = this.registry.get(activationId);
         if (record) record.snapshot.state = 'running';
+        if (record) this.save(record.snapshot);
         emit(kind === 'escalation' ? 'escalation_resolved' : 'clarification_answered');
       },
     });
@@ -624,6 +636,7 @@ export class NativeActivationHost {
     record.result = result;
 
     this.registry.register(record);
+    this.save(snapshot);
 
     return {
       activationId, participantId, attemptId,
@@ -679,6 +692,7 @@ export class NativeActivationHost {
     switch (event.type) {
       case 'agent_start':
         snapshot.state = 'running';
+        this.save(snapshot);
         emit('turn_started');
         break;
       case 'agent_end':
@@ -686,6 +700,7 @@ export class NativeActivationHost {
         break;
       case 'agent_settled':
         snapshot.state = 'settled';
+        this.save(snapshot);
         emit('activation_settled');
         this.releaseIfWriter(snapshot, 'settled');
         break;
@@ -725,6 +740,7 @@ export class NativeActivationHost {
       if (last && (last.stopReason === 'error' || last.stopReason === 'aborted')) {
         const detail = last.errorMessage ?? `turn ended with stopReason "${last.stopReason}"`;
         snapshot.state = 'failed';
+        this.save(snapshot);
         emit('activation_failed', { error: detail, stop_reason: last.stopReason });
         return {
           activationId: snapshot.activationId,
@@ -755,6 +771,7 @@ export class NativeActivationHost {
       emit('output_validation_passed');
 
       snapshot.state = 'settled';
+      this.save(snapshot);
       emit('activation_completed', { pi_session_id: session.sessionId, output });
       this.releaseIfWriter(snapshot, 'completed');
 
@@ -778,6 +795,7 @@ export class NativeActivationHost {
       };
     } catch (error) {
       snapshot.state = 'failed';
+      this.save(snapshot);
       const message = error instanceof Error ? error.message : String(error);
       emit('activation_failed', { error: message });
 
@@ -885,6 +903,7 @@ export class NativeActivationHost {
       record.snapshot.piSessionId = nextSession.sessionId;
       record.snapshot.state = 'starting';
       record.snapshot.lastActivityAt = this.now();
+      this.save(record.snapshot);
       record.unsubscribe = nextSession.subscribe((event) => this.onSessionEvent(record.snapshot, event, ctx.emit));
       ctx.emit('activation_started', { pi_session_id: nextSession.sessionId });
       index += 1;
@@ -970,6 +989,7 @@ export class NativeActivationHost {
     record.snapshot.attemptId = attemptId;
     record.snapshot.state = 'starting';
     record.snapshot.lastActivityAt = this.now();
+    this.save(record.snapshot);
 
     const emit = (name: string, payload?: Record<string, unknown>) =>
       this.forensics.emit({
@@ -1037,6 +1057,31 @@ export class NativeActivationHost {
       body,
       inReplyTo: messageId,
     });
+  }
+
+  /**
+   * Mirror one snapshot to the Substrate authority. Best-effort twice over: the
+   * writer swallows its own errors, and this guards the call, because a store
+   * failure must never alter activation behaviour.
+   */
+  private save(snapshot: ActivationSnapshot): void {
+    try {
+      this.authority.record(snapshot);
+    } catch {
+      // Authority writes never fail an activation.
+    }
+  }
+
+  /**
+   * Mirror disposal to the authority: the row goes with the activation, so
+   * SessionStart never surfaces stopped work as live. Guarded like `save`.
+   */
+  private forget(activationId: string): void {
+    try {
+      this.authority.remove(activationId);
+    } catch {
+      // Authority writes never fail an activation.
+    }
   }
 
   /**
@@ -1192,6 +1237,7 @@ export class NativeActivationHost {
       record.unsubscribe();
       record.session.dispose();
       record.snapshot.state = 'stopped';
+      this.forget(record.snapshot.activationId);
       this.releaseIfWriter(record.snapshot, reason);
       this.forensics.emit({
         activationId,
@@ -1267,6 +1313,7 @@ export class NativeActivationHost {
     }
     record.snapshot.attemptId = attemptId;
     record.snapshot.state = 'starting';
+    this.save(record.snapshot);
 
     const emit = (name: string, payload?: Record<string, unknown>) =>
       this.forensics.emit({

@@ -48,6 +48,7 @@ import {
 } from '../tools/specialist/activation.tool.js';
 import { createSpecialistResumeTool, specialistResumeSchema } from './resume-tool.js';
 import { NativeActivationHost } from '../activation/native-host.js';
+import { createFileAuthorityWriter } from '../activation/authority-store.js';
 import { RuntimeEventPusher } from '../activation/async-events.js';
 import { PeerAdapter } from '../activation/transport/peer-adapter.js';
 import { createActivationForensicSink } from '../activation/forensic-sink.js';
@@ -86,6 +87,8 @@ export function buildV2Server(): McpServer {
   const host = new NativeActivationHost({
     loader,
     beadsClient,
+    // One Substrate authority shared with sb/Pi; path from XTRM_STATE_DB or ~/.xtrm/state.db.
+    authority: createFileAuthorityWriter(),
     ...(observability ? { forensics: createActivationForensicSink(observability) } : {}),
   });
   const getHost = () => host;
