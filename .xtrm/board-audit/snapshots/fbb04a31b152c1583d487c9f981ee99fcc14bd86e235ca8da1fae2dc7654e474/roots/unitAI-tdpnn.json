@@ -1,0 +1,1 @@
+{"issue_ids":["unitAI-tdpnn"],"open_issue_count":1,"root_id":"unitAI-tdpnn","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"944f1ba73a0d240e3bf29d558d7e5cbef6c46babf25b92f9ac3c71d6a66bcbfc","title":"GlobalSpecialistOverrideSchema rejects sparse execution overrides with only fallback fields"}

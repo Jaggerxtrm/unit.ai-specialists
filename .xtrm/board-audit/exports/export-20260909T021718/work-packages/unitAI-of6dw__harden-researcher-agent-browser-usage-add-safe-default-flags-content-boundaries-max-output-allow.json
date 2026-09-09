@@ -1,0 +1,90 @@
+{
+  "content_sha256": "a9ace95b51b45aac739cbde5fc540fb06a5b814aa826a7eed56eb4dd07d792fb",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-29T15:30:03Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-544sf.2",
+        "issue_id": "unitAI-of6dw",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-of6dw",
+      "source_field": "dependencies",
+      "target": "unitAI-544sf.2",
+      "target_present_in_snapshot": true,
+      "target_title": "Research: agent-browser (Vercel) — browser automation tool for AI agents",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-29T17:32:31Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-10y07",
+        "issue_id": "unitAI-of6dw",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-of6dw",
+      "source_field": "dependencies",
+      "target": "unitAI-10y07",
+      "target_present_in_snapshot": true,
+      "target_title": "feat(supervisor): 3-state handoff persistence + notes_mode + output_file unification",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-of6dw"
+  },
+  "issues": {
+    "unitAI-of6dw": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-29T13:30:03Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-29T17:32:31Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-10y07",
+            "issue_id": "unitAI-of6dw",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-29T15:30:03Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-544sf.2",
+            "issue_id": "unitAI-of6dw",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: researcher Mode 4 (added in qgvld) documents 'agent-browser open <url> + get text' but omits the security defaults the agent-browser docs recommend. researcher is MEDIUM and agent-browser can run page JS (eval) + capture network/HAR (tokens). SUCCESS: Mode 4 in researcher prompt.system + research-tool-routing.md recommends --content-boundaries, --max-output, --allowed-domains, --action-policy by default, deny eval on untrusted domains, and HAR redaction note. SCOPE: config/specialists/researcher.specialist.json, config/mandatory-rules/research-tool-routing.md. NON_GOALS: no runtime/code change; no new specialist. VALIDATION: jq -e valid; specialists list shows researcher. Discovered-from unitAI-544sf.2.",
+        "id": "unitAI-of6dw",
+        "issue_type": "task",
+        "priority": 3,
+        "status": "deferred",
+        "title": "harden researcher agent-browser usage: add safe-default flags (--content-boundaries/--max-output/--allowed-domains/--action-policy)",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-of6dw",
+  "root_title": "harden researcher agent-browser usage: add safe-default flags (--content-boundaries/--max-output/--allowed-domains/--action-policy)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,1 @@
+{"issue_ids":["unitAI-yhb99"],"open_issue_count":1,"root_id":"unitAI-yhb99","schema_version":"xtrm.board-audit.pr-root.v1","source_sha256":"2cc7fbd8d048948d8aae1c31e822fd3e84a180dda5ae64ca2f61521ee9dec262","title":"bd auto-close hook fires on FAILED seconder/reviewer completion (no verdict gate)"}

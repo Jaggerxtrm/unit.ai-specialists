@@ -1,0 +1,66 @@
+{
+  "content_sha256": "9f4fd00482b35f0ebba90986a539272c1101c8ddc0a19af53f7462e4e3d82728",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-19T19:07:41Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-3ip52",
+        "issue_id": "unitAI-dp3lg",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-dp3lg",
+      "source_field": "dependencies",
+      "target": "unitAI-3ip52",
+      "target_present_in_snapshot": true,
+      "target_title": "Concurrent-write contention on shared dolt server post-0wz2p — design backpressure or serialization (mitigate xtrm-yb0u friction)",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-dp3lg"
+  },
+  "issues": {
+    "unitAI-dp3lg": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-09T06:13:07Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-19T19:07:41Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-3ip52",
+            "issue_id": "unitAI-dp3lg",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## Symptom\nAfter unitAI-0wz2p / xtrm-as7d v2 (symlink) shipped at ~04:33 today, three\nxtrm-tools worktrees created BETWEEN 05:21 and 05:42 STILL show real\n.beads/ directories with their own dolt sql-server processes:\n\n- xtrm-9xg2.1 (.git: 05:21:30, .beads: directory)\n- xtrm-f8z7   (.git: 05:21:36, .beads: directory)\n- xtrm-9xg2.2 (.git: 05:42:19, .beads: directory)\n\nBut fresh smokes after 06:00 (unitAI-bnsk7, xtrm-9ur8) correctly produce\n`.beads -> <commonRoot>/.beads` symlinks. So the v2 code path works for\nsome new dispatches but was bypassed for the 05:21-05:42 cohort.\n\n## Hypotheses (ranked)\n1. **Stale tmux/shell session running pre-fix specialists** — supervisors\n   started before 04:33 may have cached the old code in memory.\n2. **Different worktree-creation path** that bypasses\n   `provisionWorktree` (specialists) and `launchWorktreeSession` (xt).\n3. **Race condition** between rebuild + dispatch.\n\n## Investigation steps\n- Check tmux ls in xtrm-tools at session start vs session close.\n- grep all worktree-creation sites in specialists + xtrm-tools (already\n  done partially during fix; redo with broader scope).\n- Add a startup banner / meta event when provisionWorktree runs the\n  symlink branch, so future audits can confirm code-path coverage.\n- Repro: start a long-lived specialist before next code change, then ship\n  a worktree-related fix, then dispatch new specialists from the\n  pre-existing tmux — see if old worktrees still leak.\n\n## Out of scope\n- Reaping the 3 already-leaked worktrees (covered by sp clean reaper bead).\n\n## Cross-refs\n- unitAI-0wz2p, xtrm-as7d (the fixes)\n- .xtrm/reports/2026-05-09-7b45dac0.md (today's session report)\n",
+        "id": "unitAI-dp3lg",
+        "issue_type": "bug",
+        "priority": 3,
+        "status": "open",
+        "title": "Investigate xtrm-tools post-fix worktrees still spawning per-worktree dolt servers",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-dp3lg",
+  "root_title": "Investigate xtrm-tools post-fix worktrees still spawning per-worktree dolt servers",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

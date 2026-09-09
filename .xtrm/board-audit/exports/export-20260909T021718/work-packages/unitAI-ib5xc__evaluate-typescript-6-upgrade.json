@@ -1,0 +1,114 @@
+{
+  "content_sha256": "016e524b24fec3ae78756e00dae3d729ed82bfd346995fb085e2af5b874d3329",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-15T03:34:18Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-fxnei",
+        "issue_id": "unitAI-ib5xc",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-ib5xc",
+      "source_field": "dependencies",
+      "target": "unitAI-fxnei",
+      "target_present_in_snapshot": true,
+      "target_title": "Resolve npm Dependabot PR lockfile failures",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-20T17:52:56Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-a5ys3",
+        "issue_id": "unitAI-ib5xc",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-ib5xc",
+      "source_field": "dependencies",
+      "target": "unitAI-a5ys3",
+      "target_present_in_snapshot": true,
+      "target_title": "Migrate codebase to Zod 4",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-20T17:52:56Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-rlq48",
+        "issue_id": "unitAI-ib5xc",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-ib5xc",
+      "source_field": "dependencies",
+      "target": "unitAI-rlq48",
+      "target_present_in_snapshot": true,
+      "target_title": "Migrate test suite to Vitest 4 lockfile",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-ib5xc"
+  },
+  "issues": {
+    "unitAI-ib5xc": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-15T01:34:19Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-20T17:52:56Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-a5ys3",
+            "issue_id": "unitAI-ib5xc",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-15T03:34:18Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-fxnei",
+            "issue_id": "unitAI-ib5xc",
+            "metadata": "{}",
+            "type": "discovered-from"
+          },
+          {
+            "created_at": "2026-05-20T17:52:56Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-rlq48",
+            "issue_id": "unitAI-ib5xc",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Dependabot PR #88 (typescript ^6.0.3) fails tsc broadly: Node/Bun ambient types are not resolved under current tsconfig/types setup and stricter checks expose possibly-undefined values. Keep PR #88 closed/deferred until TS6 migration is scoped.",
+        "id": "unitAI-ib5xc",
+        "issue_type": "task",
+        "priority": 4,
+        "status": "open",
+        "title": "Evaluate TypeScript 6 upgrade",
+        "updated_at": "2026-07-30T14:34:50Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-ib5xc",
+  "root_title": "Evaluate TypeScript 6 upgrade",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

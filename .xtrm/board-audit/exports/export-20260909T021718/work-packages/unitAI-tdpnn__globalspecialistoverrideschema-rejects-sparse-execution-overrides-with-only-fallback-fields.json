@@ -1,0 +1,90 @@
+{
+  "content_sha256": "e1ee557366e08c257cdec73ff2cabf1b8738e2967287781af3db7858744d75c4",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-15T23:00:30Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-gp7nq.9",
+        "issue_id": "unitAI-tdpnn",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-tdpnn",
+      "source_field": "dependencies",
+      "target": "unitAI-gp7nq.9",
+      "target_present_in_snapshot": true,
+      "target_title": "Test: Phase 2 — fallback chains schema + runtime walk + fallback_step telemetry",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-15T23:00:31Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-gp7nq",
+        "issue_id": "unitAI-tdpnn",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-tdpnn",
+      "source_field": "dependencies",
+      "target": "unitAI-gp7nq",
+      "target_present_in_snapshot": true,
+      "target_title": "Expand global user config: broaden allowlist + model chains + preset references",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-tdpnn"
+  },
+  "issues": {
+    "unitAI-tdpnn": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-15T21:00:08Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-15T23:00:31Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-gp7nq",
+            "issue_id": "unitAI-tdpnn",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-15T23:00:30Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-gp7nq.9",
+            "issue_id": "unitAI-tdpnn",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: GlobalSpecialistOverrideSchema.safeParse({ execution: { model: 'x', fallback_model: 'y' }, skills: { paths: [] } }).success === false. The schema requires unrelated nullable execution fields to be present even when the operator only wants to override fallback fields. Breaks the documented sparse-overlay contract (overrides should be additive on the canonical layer; user.json should accept any sparse shape that names allowlisted paths).\n\nSUCCESS: GlobalSpecialistOverrideSchema accepts sparse execution objects that contain only fallback_model / fallback_models without requiring unrelated execution keys. Existing strict validation for unknown/blocked keys remains.\n\nSCRUTINY: medium (override schema controls what reaches the runtime; sloppy widening can leak blocked fields).\n\nSCOPE: src/specialist/global-config.ts (GlobalSpecialistOverrideSchema).\n\nNON_GOALS: do not change the loader merge precedence; do not add new allowlist entries.\n\nCONSTRAINTS: keep the blocked-field stripping path intact. Sparse acceptance applies only to allowlisted execution fields.\n\nVALIDATION: flip the describe.skip on tests/unit/specialist/schema.test.ts:119 (\"global override schema accepts singular and plural fallback shapes\") to describe; cases must pass. Run bun --bun vitest run tests/unit/specialist/schema.test.ts.\n\nOUTPUT: schema fix + green test + bd close referencing unitAI-gp7nq.9 and this bead.\n\nDISCOVERED FROM: unitAI-gp7nq.9 test-engineer chain (job b821af).",
+        "id": "unitAI-tdpnn",
+        "issue_type": "bug",
+        "priority": 3,
+        "status": "open",
+        "title": "GlobalSpecialistOverrideSchema rejects sparse execution overrides with only fallback fields",
+        "updated_at": "2026-06-15T21:00:08Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-tdpnn",
+  "root_title": "GlobalSpecialistOverrideSchema rejects sparse execution overrides with only fallback fields",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

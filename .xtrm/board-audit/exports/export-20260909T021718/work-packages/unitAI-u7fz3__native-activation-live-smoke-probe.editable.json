@@ -1,0 +1,68 @@
+{
+  "content_sha256": "6c87b35a49d6668419f0a8db71cd12ab3574395bfb68315d41723ec0197507b1",
+  "desired_issues": {
+    "unitAI-u7fz3": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-07T18:03:32Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM\nThe native activation host has no observed live run.\n\nSUCCESS\nOne short model turn completes in-process.\n\nSCOPE\nReply with one short sentence confirming you are running, then stop.\n\nNON_GOALS\nNo file edits. No commands. No further work.\n\nCONSTRAINTS\nRead-only. One sentence.\n\nVALIDATION\nA non-empty assistant reply.\n\nOUTPUT\nOne sentence.\n\nSCRUTINY\nLOW — throwaway smoke probe.",
+      "id": "unitAI-u7fz3",
+      "issue_type": "task",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 2,
+      "status": "open",
+      "title": "native activation live smoke probe",
+      "updated_at": "2026-09-07T18:03:32Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-u7fz3"
+  },
+  "issues": {
+    "unitAI-u7fz3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-07T18:03:32Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nThe native activation host has no observed live run.\n\nSUCCESS\nOne short model turn completes in-process.\n\nSCOPE\nReply with one short sentence confirming you are running, then stop.\n\nNON_GOALS\nNo file edits. No commands. No further work.\n\nCONSTRAINTS\nRead-only. One sentence.\n\nVALIDATION\nA non-empty assistant reply.\n\nOUTPUT\nOne sentence.\n\nSCRUTINY\nLOW — throwaway smoke probe.",
+        "id": "unitAI-u7fz3",
+        "issue_type": "task",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "native activation live smoke probe",
+        "updated_at": "2026-09-07T18:03:32Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-u7fz3",
+  "root_title": "native activation live smoke probe",
+  "roundtrip": {
+    "base_package_sha256": "6c87b35a49d6668419f0a8db71cd12ab3574395bfb68315d41723ec0197507b1",
+    "base_record_sha256": {
+      "unitAI-u7fz3": "076dac02f82d60dccb4ef52b4079eba2493e797e20a7d6b011a92634b13962f8"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-09T00:17:25Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

@@ -1,0 +1,91 @@
+{
+  "content_sha256": "416aaccfc432adc46d074a4fb54eda00403685ee134ba49cfab09eab85743c41",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-05T19:25:42Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-9z8dp",
+        "issue_id": "unitAI-e8eq2",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-e8eq2",
+      "source_field": "dependencies",
+      "target": "unitAI-9z8dp",
+      "target_present_in_snapshot": true,
+      "target_title": "Epic: chain lifecycle and sp merge/epic-merge redesign",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-05T00:14:42Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-lyh1b",
+        "issue_id": "unitAI-e8eq2",
+        "metadata": "{}",
+        "type": "tracks"
+      },
+      "source": "unitAI-e8eq2",
+      "source_field": "dependencies",
+      "target": "unitAI-lyh1b",
+      "target_present_in_snapshot": true,
+      "target_title": "sp merge / sp epic merge / sp finalize rework epic",
+      "type": "tracks"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-e8eq2"
+  },
+  "issues": {
+    "unitAI-e8eq2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-05T17:25:43Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-05-05T19:25:42Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-9z8dp",
+            "issue_id": "unitAI-e8eq2",
+            "metadata": "{}",
+            "type": "discovered-from"
+          },
+          {
+            "created_at": "2026-06-05T00:14:42Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-lyh1b",
+            "issue_id": "unitAI-e8eq2",
+            "metadata": "{}",
+            "type": "tracks"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Planner created '.23 depends on .1' (test depends on impl). Closing .1 should be unblocked, but operator hit 'py_backend-thm.3 blocked by [py_backend-thm.23]' when closing .3. There is an inverse 'implementation can't close while test is open' gate (test-planning convention?) that contradicts the dep direction. Solution today: bd close --force. Need: clear rule for whether tests gate impl close, and which direction the edge should be.",
+        "id": "unitAI-e8eq2",
+        "issue_type": "bug",
+        "owner": "you@example.com",
+        "priority": 3,
+        "status": "open",
+        "title": "Test-issue dependency direction blocks impl close (inverse gate)",
+        "updated_at": "2026-05-05T17:25:43Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-e8eq2",
+  "root_title": "Test-issue dependency direction blocks impl close (inverse gate)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

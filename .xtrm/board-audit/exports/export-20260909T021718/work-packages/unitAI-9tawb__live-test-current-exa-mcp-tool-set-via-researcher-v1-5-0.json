@@ -1,0 +1,58 @@
+{
+  "content_sha256": "ab631fc56a5390d9cb40ab893c42f7fa8e4735019e552e65fce8caa8b0778798",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-9tawb"
+  },
+  "issues": {
+    "unitAI-9tawb": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "researcher/f8ff9c",
+        "comment_count": 2,
+        "comments": [
+          {
+            "author": "jaggerxtrm",
+            "created_at": "2026-09-08T23:42:50Z",
+            "id": "e2fbbb28-6320-5507-afd5-d94f2fbc2b16",
+            "issue_id": "unitAI-9tawb",
+            "text": "Findings 2026-09-09 ~01:45 CEST: (1) Core #636 + Specialists #300 implementation VERIFIED — unit tests green locally (2/2 core, 3/3 specialists), full CI green on both. v1.5.0 researcher schema-valid and dispatchable via projectDir overlay. (2) Live run blocked: child pi dies at extension load — dev python-kernel (/home/dawid/dev/core/packages/pi-extensions) vs published copy (global node_modules/@jaggerxtrm/pi-extensions, real dir installed 23:17) both register tool python. Settings-independent (reproduced with dev package removed from settings). (3) Since ~01:40 jobs die instantly with forensic append UNIQUE(job_id,seq) failure — runner-level, possibly fallout from stop-on-starting-jobs or lane contention; table specialist_events intact, integrity ok. (4) ~/.pi/agent/settings.json modified 01:39 by unknown writer: dev pi-extensions entry gone (my test edit), npm:@jaggerxtrm/pi-extensions ADDED — needs stewardship check. Failed job ids for forensics: 8750a9, ab7477, 4eb619, e37dd7, 4be8f7, 0c04e8, 1e43f9."
+          },
+          {
+            "author": "jaggerxtrm",
+            "created_at": "2026-09-09T00:02:10Z",
+            "id": "ca4df84f-4145-53dc-9bd5-662235e2185b",
+            "issue_id": "unitAI-9tawb",
+            "text": "Final 2026-09-09 ~02:10 CEST. STOPPED live-test attempts: this checkout is MID-MERGE (UU: src/activation/*, dist/* with 15-17 conflict markers, config/pi-extensions/specialist-subagents) and dist/index.js is corrupt (SyntaxError <<<<<<< HEAD at 76633) so the CLI is unreliable. Do not run researcher jobs until the merge is finished and dist rebuilt. Ordered unblock: (1) finish merge + rebuild dist; (2) fix forensic dual-write race — observed duplicate seq rows (9432b1 specialist_events seq 2,2; forensic UNIQUE job_id,seq) from non-atomic writeEventRow+writeForensicEventRow, getNextForensicEventSeq unused on that path; wrap in one transaction or upsert; (3) retry live test, then address python-kernel dev-vs-published conflict only if it still manifests (settings currently dev-free). Core #636 green at db20d1be CI 8/8; #300 verified, untouched. unitAI-53t6m (spy bead) left open: close gate blocked by stale researcher/02729a claim."
+          }
+        ],
+        "created_at": "2026-09-08T23:24:57Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Live test of Exa researcher upgrade (researcher v1.5.0 + managed Exa MCP). BLOCKED by machine-state defects outside the Exa change (see findings). Research question (for rerun after unblock): What tools does the Exa MCP server currently expose for semantic web research, and what is each one for? Use live external research (Exa). Ground truth: web_search_exa, web_fetch_exa, web_search_advanced_exa, agent_run.",
+        "id": "unitAI-9tawb",
+        "issue_type": "task",
+        "notes": "\n\n### researcher · unknown · [turn 0 · WORKING]\n\npi process exited with code 1 before responding to RPC command; stderr:\na different dependency.\n\nRun `npm audit` for details.\nError: Failed to load extension \"/home/dawid/dev/core/packages/pi-extensions/extensions/python-kernel\": Tool \"python\" conflicts with /home/dawid/.nvm/versions/node/v24.15.0/lib/node_modules/@jaggerxtrm/pi-extensions/extensions/python-kernel/index.ts\nHint: Start without extensions using \"pi -ne\".\n\n_turn 0 · 2026-09-08 23:31 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\npi process exited with code 1 before responding to RPC command; stderr:\nError: Failed to load extension \"/home/dawid/dev/core/packages/pi-extensions/extensions/python-kernel\": Tool \"python\" conflicts with /home/dawid/.nvm/versions/node/v24.15.0/lib/node_modules/@jaggerxtrm/pi-extensions/extensions/python-kernel/index.ts\nHint: Start without extensions using \"pi -ne\".\n\n_turn 0 · 2026-09-08 23:32 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\npi process exited with code 1 before responding to RPC command; stderr:\nError: Failed to load extension \"/home/dawid/dev/core/packages/pi-extensions/extensions/python-kernel\": Tool \"python\" conflicts with /home/dawid/.nvm/versions/node/v24.15.0/lib/node_modules/@jaggerxtrm/pi-extensions/extensions/python-kernel/index.ts\nHint: Start without extensions using \"pi -ne\".\n\n_turn 0 · 2026-09-08 23:37 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\npi process exited with code 1 before responding to RPC command; stderr:\nError: Failed to load extension \"/home/dawid/dev/core/packages/pi-extensions/extensions/python-kernel\": Tool \"python\" conflicts with /home/dawid/.nvm/versions/node/v24.15.0/lib/node_modules/@jaggerxtrm/pi-extensions/extensions/python-kernel/index.ts\nHint: Start without extensions using \"pi -ne\".\n\n_turn 0 · 2026-09-08 23:38 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-08 23:38 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-08 23:40 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-08 23:41 · git 0487663b_\n\n\n### researcher · unknown · [turn 0 · WORKING]\n\nFailed after 5 attempts (appendEvent): UNIQUE constraint failed: specialist_forensic_events.job_id, specialist_forensic_events.seq\n\n_turn 0 · 2026-09-08 23:52 · git 0487663b_",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "Live test: current Exa MCP tool set via researcher v1.5.0",
+        "updated_at": "2026-09-08T23:52:11Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-9tawb",
+  "root_title": "Live test: current Exa MCP tool set via researcher v1.5.0",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

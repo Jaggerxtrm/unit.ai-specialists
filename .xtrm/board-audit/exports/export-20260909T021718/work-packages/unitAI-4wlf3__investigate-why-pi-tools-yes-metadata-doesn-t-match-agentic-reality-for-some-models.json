@@ -1,0 +1,90 @@
+{
+  "content_sha256": "65c43e131c608f5c0b913617506e841f0625d8dbeda87c5fd449616fae06970c",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-16T15:42:00Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-t86wh",
+        "issue_id": "unitAI-4wlf3",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-4wlf3",
+      "source_field": "dependencies",
+      "target": "unitAI-t86wh",
+      "target_present_in_snapshot": true,
+      "target_title": "[EPIC] Interactive setup-specialists v3.0: benchmark-driven model assignment",
+      "type": "discovered-from"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-16T16:07:44Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-1568x",
+        "issue_id": "unitAI-4wlf3",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-4wlf3",
+      "source_field": "dependencies",
+      "target": "unitAI-1568x",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-16: pick up next priorities",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-4wlf3"
+  },
+  "issues": {
+    "unitAI-4wlf3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-06-16T13:42:01Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-16T16:07:44Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-1568x",
+            "issue_id": "unitAI-4wlf3",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-16T15:42:00Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-t86wh",
+            "issue_id": "unitAI-4wlf3",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: pi-coding-agent's --list-models reports tools=yes for several models\nthat DON'T actually work in the agentic specialist pipeline. Documented today\n(session 2026-06-16):\n\n1. nvidia/nemotron-3-nano-omni-30b-a3b-reasoning\n   - pi metadata: tools=yes, reasoning=yes\n   - Actual behavior: emits tool calls as JSON-in-content with </think> tag,\n     NOT OpenAI tool_calls field. pi sees text, ignores intent.\n   - Source: probe with 'pi --print --model nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'\n     against simple \"use bash to echo TOOL_OK\" prompt → response is a JSON\n     description of the planned bash command, never executed.\n\n2. (Documented earlier in memory model-incompat-deepseek-v4-dsml-via-nano-gpt)\n   nano-gpt/deepseek/deepseek-v4-*:thinking\n   - Similar DSML-pattern failure: tool calls in custom <｜｜DSML｜｜tool_calls>\n     format, nano-gpt proxy doesn't translate to OpenAI tool_calls.\n\n3. RELATED: nvidia/nemotron-3-ultra-550b-a55b\n   - pi metadata: tools=no (correctly), reasoning=yes\n   - Different failure: pi --print times out 60s+ because pi cannot parse\n     NVIDIA NIM's separate `reasoning_content` delta-field in streaming.\n     Direct API curl confirms model emits {\"delta\": {\"reasoning\": \"...\",\n     \"reasoning_content\": \"...\"}} chunks BEFORE any \"content\" chunks; pi\n     appears to wait for content, never arrives within timeout.\n\nSUCCESS: Three concrete deliverables, any/all may land separately:\n\n  (a) Diagnose where pi's tools=yes metadata comes from for these models\n      (hardcoded list? heuristic from model name? declared by provider's\n      /v1/models endpoint?). Determine if upstream pi-coding-agent should\n      treat the metadata more conservatively.\n\n  (b) Investigate if pi has (or could have) per-provider format translation\n      to handle non-OpenAI tool_calls patterns (DSML, <think>+JSON,\n      reasoning_content streams). If pi has a translation hook, add one for\n      these known patterns. If not, file an upstream issue with pi-coding-agent.\n\n  (c) Document the safe-profile list of \"tools=yes per pi metadata but actually\n      broken\" models in setup-specialists v3.0 skill (epic unitAI-t86wh) so\n      operators are warned at setup time.\n\nSCRUTINY: low (research/audit task; no production diff required)\n\nSCOPE: Read-only investigation:\n  - /home/dawid/.nvm/versions/node/v24.15.0/lib/node_modules/@earendil-works/pi-coding-agent/dist/\n    (especially core/model-resolver.js, network/openai-completions/, network/stream/)\n  - https://docs.api.nvidia.com/nim/reference for NVIDIA NIM tool/reasoning format\n  - https://nano-gpt.com/docs for nano-gpt proxy behavior on tool_calls\n  - Verify findings with direct API probes (curl) + pi --print probes\n  - Update memory keys nemotron-via-nvidia-nim-pi-incompatible + model-incompat-deepseek-v4-dsml-via-nano-gpt\n\nNON_GOALS:\n- no source code changes in this repo\n- no specialist config changes\n- no model assignments\n- no probe automation (that's covered by epic unitAI-t86wh Phase C\n  agentic-followthrough probe suite)\n\nCONSTRAINTS:\n- Operator's NVIDIA NIM key remains in ~/.pi/agent/models.json (user-supplied,\n  not committed). Probes are free against NIM endpoint.\n- Investigation should not write to ~/.pi/agent/models.json, only read.\n- Findings get appended to existing bd memories — do not duplicate.\n\nVALIDATION:\n- A short investigation note with: source of pi metadata, concrete reproduction\n  steps for each failure mode, recommended upstream issue (or PR sketch) for\n  pi-coding-agent if applicable.\n- Memory updated with any new findings.\n\nOUTPUT: investigation summary (in bd notes); optional upstream issue or\ndiscussion link; optional update to epic unitAI-t86wh Phase A skill draft.\n\nDISCOVERED-FROM: orchestrator post-mortem of nemotron probe session 2026-06-16\nREFERENCES:\n  - unitAI-t86wh (epic — setup-specialists v3.0 + Phase C agentic-followthrough probe)\n  - memory: nemotron-via-nvidia-nim-pi-incompatible-2026-06\n  - memory: model-incompat-deepseek-v4-dsml-via-nano-gpt\n  - memory: kimi-via-nano-gpt-CORRECTED-2026-06-16 (counter-example — Kimi tools work fine when thinking_level=null)",
+        "id": "unitAI-4wlf3",
+        "issue_type": "task",
+        "priority": 4,
+        "status": "open",
+        "title": "Investigate why pi 'tools: yes' metadata doesn't match agentic reality for some models",
+        "updated_at": "2026-06-16T13:42:01Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-4wlf3",
+  "root_title": "Investigate why pi 'tools: yes' metadata doesn't match agentic reality for some models",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

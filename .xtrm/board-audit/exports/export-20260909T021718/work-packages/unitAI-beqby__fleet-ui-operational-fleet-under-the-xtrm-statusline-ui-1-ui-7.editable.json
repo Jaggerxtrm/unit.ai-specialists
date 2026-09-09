@@ -1,0 +1,613 @@
+{
+  "content_sha256": "6b08024805f66e66e7dd2346d86f7230b6e9cc21ae40247b4e18c373a7a94a7f",
+  "desired_issues": {
+    "unitAI-beqby": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T18:21:25Z",
+      "created_by": "jaggerxtrm",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: The Specialist Fleet UI is a debug projection, not an operational fleet, and violates the agreed hierarchy twice over. At specialists head it paints with ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'aboveEditor' }) plus a redundant ctx.ui.setStatus(...) line, rendering raw forensic fields (activation_id, access, bead_id, raw counts) above the editor. The agreed hierarchy puts the fleet immediately BELOW the XTRM statusline, owned as a footer section, with collapsed/expanded operational semantics copied from pi-subagents interaction (not its placement).\n\nSUCCESS: (1) Fleet renders as a composable section of the XTRM footer directly below the statusline; no aboveEditor widget, no setStatus line. (2) Collapsed line shows active/waiting/needs-reply + aggregate context/tokens + inspect hint, with needs-reply outranking idle state. (3) Expanded view shows one row per specialist (model/thinking, bead, meaningful state, elapsed, token/window, current activity when available), bounded with overflow, activation_id kept in the inspector only. (4) Keyboard: editor-empty Down/Left activates, Up/Down or j/k selects, Enter attaches the live Specialist AgentSession, Esc returns to coordinator. (5) Proven in a live TUI, not just unit tests.\n\nSCOPE: Specialists repo fleet surface (config/pi-extensions/specialist-subagents/index.mjs fleet widget block, src/tools/specialist/activation.tool.ts projections, src/activation telemetry exposure as needed) plus the footer composition seam in the core repo (core/packages/pi-extensions/extensions/custom-footer/index.ts, sole setFooter owner, currently no section API). Decomposed into child beads; this epic tracks the whole.\n\nNON_GOALS: Claude-side fleet (no Claude TUI surface exists), auto-dispose/TTL policy, changes to pi-subagents itself, docs site updates.\n\nCONSTRAINTS: Footer ownership stays singular -- custom-footer remains the only setFooter caller; the fleet registers a section, never a second footer. Fleet view stays a projection (no cached state between ticks). Operator instruction: every dispatch under this epic passes model_override opencode-go/muse-spark-1.3-contributor. Cross-frontend parity rule applies to any wording both frontends share.\n\nVALIDATION: Live TUI demonstration: fleet visible below the statusline with collapsed line; keyboard nav to expanded rows; Enter attach opens the live child session; needs-reply state outranks idle; unit tests cover row formatting, overflow bound, and section registration fallback. Each child states its own evidence.\n\nOUTPUT: Merged implementation across core seam + specialists fleet, live demo evidence recorded on the implementation bead(s), this epic closed when UI-1..UI-7 all hold live.\n\nSCRUTINY: medium\n\nREFERENCES:\n- Current fleet: specialists config/pi-extensions/specialist-subagents/index.mjs (FLEET_WIDGET_KEY, renderFleetLines, paintFleet).\n- Footer owner: core packages/pi-extensions/extensions/custom-footer/index.ts (setFooter, render(width)).\n- Interaction model: pi-subagents src/ui/agent-widget.ts (setWidget callback form) and src/ui/session-navigator.ts (ui.custom non-overlay mount, keyboard nav).\n- Telemetry: specialists src/activation/forensic-sink.ts (startedAtMs, tokenUsage, elapsed), src/tools/specialist/activation.tool.ts (toActivationView fields).\n- pi SDK widget/custom API: ExtensionAPI types in the pi install (dist/core/extensions/types.d.ts).\n\nAGREED HIERARCHY (target):\nconversation\n────────────────────────────────────────\n› coordinator prompt/editor\n~/mercury/platform(main)  61%/200k  gpt-5.6-sol high  o:18 p:3\nSPECIALISTS · 2 active · 1 waiting · ↓/← inspect\n\nUI-1  Move Fleet into a composable XTRM footer section below statusline. Remove aboveEditor placement.\nUI-2  Remove the redundant ctx.ui.setStatus Fleet indicator.\nUI-3  Adopt pi-subagents collapsed Fleet semantics: active/waiting/needs-reply + aggregate context/tokens + inspect hint.\nUI-4  Adopt its keyboard behavior: Down/Left activate, Up/Down or j/k select, Enter attach, Esc coordinator.\nUI-5  Replace debug-oriented rows with: Specialist, model/thinking, Bead, meaningful state, elapsed, token/window usage, current activity when available.\nUI-6  Keep activation_id, participant_id, attempt_id, access, full result and forensic details in inspector/status, not permanent UI.\nUI-7  Bound the expanded Fleet and use overflow rather than allowing it to consume the terminal.\nNOTE: copy pi-subagents presentation and interaction, NOT its belowEditor placement -- XTRM has the custom footer it lacks, hence the footer-section seam.\n",
+      "id": "unitAI-beqby",
+      "issue_type": "epic",
+      "notes": "OPERATOR LIVE OBSERVATION 2026-09-08: Down/Left do nothing; only the collapsed specialist-active line + arrows render. Root-caused: keys handled only inside ui.custom inspector; no global key API for passive extensions in pi 0.85.1; pi-subagents also opens via slash command only. Split to ready bug unitAI-4n9of (fix the hint, not the keys). WORKAROUND for operator: /fleet inspect opens the keyboard navigator.\nOPERATOR LIVE OBSERVATION 2026-09-08 (severity: session-killing): /fleet inspect causes heavy TUI flicker; operator killed the window and reopened. Suspect 1s paintFleet poll fighting the ui.custom inspector. Split to P1 ready bug unitAI-z49s2. Inspector unusable until fixed; /fleet, /fleet:reply, /fleet:stop (non-custom surfaces) unaffected.\nOPERATOR LIVE OBSERVATION 2026-09-08: collapsed line renders one char per row (~40 rows) above statusline after restart/resume. Both render paths verified type-correct in source; units mock ui so never catch renderer behavior. Hypotheses: resumed-session layout width (H1), stale widget (H2), double-load (H3). Split to P1 ready bug unitAI-dygdq. Awaiting operator discriminating test (fresh session + resize).\nOPERATOR DECISION 2026-09-08: /fleet inspect hard-locks the TUI (fresh session, post string[] fix). Interactive inspector (UI-4 keyboard/attach) deliberately DEFERRED -- ui.custom path itself at fault in this pi version. Replacement: expanded rows by default with full one-row details (ready bead unitAI-nmxhg). unitAI-dygdq fix stands as correct but its surface is removed. Live attach deferred with UI-4; /fleet:reply and /fleet:stop remain the action paths.\nOPERATOR LIVE OBSERVATION 2026-09-08: elapsed works on rows, tokens never display. Root-caused to extractor/shape mismatch (nested message.usage short keys vs top-level snake candidates); forensic event proves 13,852 tokens flowed while snapshot stayed empty. Split to P1 ready bug unitAI-crjh7.\nOPERATOR END-STATE CONFIRMATION 2026-09-08 (master 263b8709 + core seam live, fresh session): 1 placement below statusline PASS, 2 expanded rows PASS, 3 seconds climbing PASS, 4 tool cards PASS, 5 ask flow PASS, 6 inspect text PASS, 7 resume with results PASS (closes unitAI-q02sz). Remaining open: lane .6 operator check + reviewer, .9, .10, .13 rail, .14 view-keys trace, core OSV bump.\nOPERATOR REPORT: row spend reads stuck ~49k and blinks on .13 run. Poll-pair confirms non-monotonic snapshot (input 293->206, output 739->204) = .12 fix bypassed on Spark route. Filed .15 (P1). Rail eyeball still valid; data path independent of render.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "started_at": "2026-09-08T21:26:26Z",
+      "status": "open",
+      "title": "Fleet UI: operational fleet under the XTRM statusline (UI-1..UI-7)",
+      "updated_at": "2026-09-09T00:07:23Z"
+    },
+    "unitAI-beqby.10": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T21:09:38Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T21:09:38Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-beqby",
+          "issue_id": "unitAI-beqby.10",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: Amendment section 5 and acceptance 8-9 want a command-driven Specialist inspector that opens a native transcript or feed overlay reusing the sp-terminal-overlay UX over the native AgentSession, with no legacy sp feed subprocess for native sessions. The operator deliberately deferred this: the ui.custom path hard-locks the TUI in this pi version even after the flicker fix (unitAI-z49s2) and the string-row fix (unitAI-dygdq), so unitAI-nmxhg removed the inspector mount and /fleet inspect prints a text report instead.\n\nSCOPE (rough): TBD after pi ui.custom reliability is proven. Likely the openFleetInspector path in config/pi-extensions/specialist-subagents/index.mjs plus an overlay component consuming host inspect transcript and events, plus tests. Needs exploration before promotion.\n\nNON_GOALS: Everything until the ui.custom path is trustworthy; keyboard attach stays with xtrm-tui per the amendment.\n\nCONSTRAINTS: TBD at promotion. Promotion requires re-reading current pi extension API behavior and the amendment.\n\nVALIDATION: TBD at promotion; at minimum a flicker-free live inspector session plus unit coverage.\n\nOUTPUT: TBD at promotion.\n\nSCRUTINY: low",
+      "id": "unitAI-beqby.10",
+      "issue_type": "task",
+      "labels": [
+        "contract:draft"
+      ],
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 4,
+      "status": "open",
+      "title": "Deferred: native Specialist transcript-feed overlay for the stock Pi extension (amendment section 5)",
+      "updated_at": "2026-09-08T21:09:38Z"
+    },
+    "unitAI-beqby.13": {
+      "_type": "issue",
+      "assignee": "jaggerxtrm",
+      "comment_count": 0,
+      "created_at": "2026-09-08T22:35:29Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T22:35:29Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-beqby",
+          "issue_id": "unitAI-beqby.13",
+          "metadata": "{}",
+          "type": "parent-child"
+        },
+        {
+          "created_at": "2026-09-08T22:35:35Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-beqby.12",
+          "issue_id": "unitAI-beqby.13",
+          "metadata": "{}",
+          "type": "blocks"
+        }
+      ],
+      "dependency_count": 1,
+      "dependent_count": 0,
+      "description": "PROBLEM: Operator wants specialist event surfaces prettier and aligned with the fleet chrome, restrained: a magenta rail on the far left of specialist events (tool-result cards and fleet rows), consistent with the existing accent family.\n\nSUCCESS: Specialist event text carries a far-left magenta rail (│-style gutter in the XTRM accent) with aligned keys/values; readable in both collapsed and expanded contexts; operator eyeball-confirms restrained (pretty, not noisy).\n\nSCOPE: Specialists repo render builders only (renderResult summaries, fleet row/collapsed strings in index.mjs) + unit tests asserting rail presence and alignment. ANSI via existing theme helpers only.\n\nNON_GOALS: Content/wording changes (other beads own rows, hint, purpose); layout/placement changes; inspector (deferred); any behavior change.\n\nCONSTRAINTS: Restrained: one rail, alignment, no emoji, no extra chrome. Suite green, tsc clean. No src/dist changes.\n\nVALIDATION: Unit tests (rail prefix on every rendered line, alignment); operator live eyeball in bead notes.\n\nOUTPUT: Commit on a specialists branch, operator confirmation in notes.\n\nSCRUTINY: low\n",
+      "id": "unitAI-beqby.13",
+      "issue_type": "task",
+      "labels": [
+        "contract:ready"
+      ],
+      "notes": "Rail shipped on feature/unitAI-beqby.13-magenta-rail. RAIL=\\x1b[35m│\\x1b[0m (XTRM magenta, same family as src/cli/format-helpers magenta) via withRail() in config/pi-extensions/specialist-subagents/index.mjs. Applied to renderCollapsedLine, renderFleetRowLine (both markers), section overflow line, and every humanResultOf render line incl. expanded JSON. Content/wording untouched. tests/unit/pi: 232 green; tsc clean. Awaiting operator live eyeball for restrained confirmation.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 3,
+      "started_at": "2026-09-08T23:32:19Z",
+      "status": "open",
+      "title": "Magenta rail + restrained polish for specialist event cards",
+      "updated_at": "2026-09-08T23:37:29Z"
+    },
+    "unitAI-beqby.14": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T23:23:38Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T23:23:38Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-beqby",
+          "issue_id": "unitAI-beqby.14",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: Live specialist_status views omit purpose and thinking_override although the serving code (verified loaded==disk, dist contains both, source lines confirmed) unconditionally projects thinking_override and conditionally projects purpose, and the extractor returns the excerpt verbatim against the real bead description. Forensics ruled out (legacy SupervisorStatus shape by design). In-extension shaping ruled out (arrow-form maps, no pick-lists, withResult spreads). Prime suspects remaining: (a) inline-path capture reads the bead before description exists (race between createBeadFromContract spawnSync and readBead, or creation stores contract elsewhere first); (b) the harness/adapter layer strips undeclared fields between extension JSON and coordinator receipt. Note thinking_override is request-derived (no bead involved), so a single bead-race theory cannot explain both absences -- check the receipt path too.\n\nSUCCESS: Live status view carries purpose (when bead readable) and thinking_override; cause of absence identified with evidence.\n\nSCOPE: Trace-only investigation first (no code changes until the layer is identified): inline creation ordering, readBead timing/content at dispatch, harness receipt shaping.\n\nNON_GOALS: Row rendering (works); any other projection fields.\n\nCONSTRAINTS: Do not change dispatch flow to fix observability (no added latency on the dispatch path).\n\nVALIDATION: Live view shows both keys with correct values; cause documented.\n\nOUTPUT: Findings + fix or documented cause in bead notes.\n\nSCRUTINY: low\n",
+      "id": "unitAI-beqby.14",
+      "issue_type": "bug",
+      "labels": [
+        "contract:ready"
+      ],
+      "notes": "FIX IMPLEMENTED on fix/unitAI-beqby.14-thinking-override-param: thinking_override param + forward, THINKING_LEVELS export, passthrough test. Live proof deferred to fresh session post-merge (this session pins pre-fix dist 409bd00c). .14 stays open for that verification.",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 3,
+      "started_at": "2026-09-08T23:55:55Z",
+      "status": "open",
+      "title": "Newest projection keys absent from status view despite present code",
+      "updated_at": "2026-09-08T23:58:12Z"
+    },
+    "unitAI-beqby.15": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-09-08T23:36:44Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T23:36:44Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-beqby",
+          "issue_id": "unitAI-beqby.15",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: The .12 accumulation fix is bypassed on the opencode-go/muse-spark-1.3-contributor route. Two specialist_status polls 65s apart on live run act:7e5baa87-c42 show snapshot token_usage DECREASING: input_tokens 293->206, output_tokens 739->204, reasoning_tokens 496->0, while cache_read grew 49649->51313. Monotonic accumulation can never decrease, so the snapshot is being spread-merged with latest per-message values on this run's event path. Operator-visible symptom: row spend stuck/jumping (reported as \"49k\" + blinking) -- each message visibly replaces the total instead of adding to it.\n\nSUCCESS: Successive polls on any provider route show non-decreasing input/output/reasoning/cache totals; row spend climbs monotonically and never jumps down.\n\nSCOPE: Snapshot usage write path in native-host.ts for event shapes this route emits. Suspect: usage arrives on an event type other than the message_end branch .12 fixed (or a second writer -- liveStats/forensic merge -- still spread-merges and the view reads it). Compare against the .12 accumulation test's synthetic events vs this provider's real event stream (capture event types seen during the run).\n\nNON_GOALS: Row rendering; formatSpendShort; legacy short-key shapes (crjh7 done).\n\nCONSTRAINTS: No added latency on the dispatch path; accumulation stays message_end-or-equivalent, never per-tick bd.\n\nVALIDATION: Live multi-message run polls monotonic; unit test with the real event shape from this route.\n\nOUTPUT: Fix + regression test in bead notes.\n\nSCRUTINY: low\n",
+      "id": "unitAI-beqby.15",
+      "issue_type": "bug",
+      "labels": [
+        "contract:ready"
+      ],
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "status": "open",
+      "title": "Spend flap returns on Spark route: snapshot usage decreases between polls",
+      "updated_at": "2026-09-08T23:36:44Z"
+    },
+    "unitAI-mtldq": {
+      "_type": "issue",
+      "assignee": "jaggerxtrm",
+      "comment_count": 0,
+      "created_at": "2026-09-08T19:14:42Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T21:05:00Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-beqby",
+          "issue_id": "unitAI-mtldq",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: The operator needs a second live activation to try /fleet inspect (keyboard navigator, Enter-attach) after arrow activation proved dead.\n\nSUCCESS: An explorer activation runs for one to three minutes while the operator opens the inspector with /fleet inspect and reports what works.\n\nSCOPE: One read-only explorer run: list the five largest files under src/ with one line each on what it does, under 120 words. No edits.\n\nNON_GOALS: No implementation, no fixes -- observations become follow-ups.\n\nCONSTRAINTS: READ_ONLY. Short run only.\n\nVALIDATION: Activation settles PASS; operator reports inspector behavior.\n\nOUTPUT: Micro-report plus operator observation in bead notes.\n\nSCRUTINY: low\n",
+      "heartbeat_at": "2026-09-08T19:14:47Z",
+      "id": "unitAI-mtldq",
+      "issue_type": "task",
+      "labels": [
+        "contract:ready"
+      ],
+      "lease_expires_at": "2026-09-08T19:19:47Z",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "started_at": "2026-09-08T19:14:47Z",
+      "status": "in_progress",
+      "title": "Live-TUI probe 2: inspector check via /fleet inspect",
+      "updated_at": "2026-09-08T19:14:47Z"
+    },
+    "unitAI-s15zn": {
+      "_type": "issue",
+      "assignee": "jaggerxtrm",
+      "comment_count": 0,
+      "created_at": "2026-09-08T19:38:23Z",
+      "created_by": "jaggerxtrm",
+      "dependencies": [
+        {
+          "created_at": "2026-09-08T21:05:04Z",
+          "created_by": "jaggerxtrm",
+          "depends_on_id": "unitAI-beqby",
+          "issue_id": "unitAI-s15zn",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "PROBLEM: The operator needs a live activation to re-check /fleet inspect after the unitAI-dygdq fix (pane render returns string[]).\n\nSUCCESS: An explorer activation runs for one to three minutes while the operator opens /fleet inspect and confirms one-normal-row-per-line rendering (or reports otherwise).\n\nSCOPE: One read-only explorer run: count test files under tests/unit and report the three largest with one line each, under 120 words. No edits.\n\nNON_GOALS: No implementation, no fixes -- observations become follow-ups.\n\nCONSTRAINTS: READ_ONLY. Short run only.\n\nVALIDATION: Activation settles PASS; operator reports inspector rendering.\n\nOUTPUT: Micro-report plus operator observation in bead notes.\n\nSCRUTINY: low\n",
+      "heartbeat_at": "2026-09-08T19:38:29Z",
+      "id": "unitAI-s15zn",
+      "issue_type": "task",
+      "labels": [
+        "contract:ready"
+      ],
+      "lease_expires_at": "2026-09-08T19:43:29Z",
+      "owner": "jagger.xtrm@gmail.com",
+      "priority": 1,
+      "started_at": "2026-09-08T19:38:29Z",
+      "status": "in_progress",
+      "title": "Live-TUI probe 3: inspector rows re-check after char-per-row fix",
+      "updated_at": "2026-09-08T19:38:29Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-08T22:35:35Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby.12",
+        "issue_id": "unitAI-beqby.13",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-beqby.13",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby.12",
+      "target_present_in_snapshot": true,
+      "target_title": "Fleet spend flickers: disappears and reappears on live rows",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-beqby.10"
+      },
+      {
+        "children": [],
+        "id": "unitAI-beqby.13"
+      },
+      {
+        "children": [],
+        "id": "unitAI-beqby.14"
+      },
+      {
+        "children": [],
+        "id": "unitAI-beqby.15"
+      },
+      {
+        "children": [],
+        "id": "unitAI-mtldq"
+      },
+      {
+        "children": [],
+        "id": "unitAI-s15zn"
+      }
+    ],
+    "id": "unitAI-beqby"
+  },
+  "issues": {
+    "unitAI-beqby": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T18:21:25Z",
+        "created_by": "jaggerxtrm",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The Specialist Fleet UI is a debug projection, not an operational fleet, and violates the agreed hierarchy twice over. At specialists head it paints with ctx.ui.setWidget(FLEET_WIDGET_KEY, content, { placement: 'aboveEditor' }) plus a redundant ctx.ui.setStatus(...) line, rendering raw forensic fields (activation_id, access, bead_id, raw counts) above the editor. The agreed hierarchy puts the fleet immediately BELOW the XTRM statusline, owned as a footer section, with collapsed/expanded operational semantics copied from pi-subagents interaction (not its placement).\n\nSUCCESS: (1) Fleet renders as a composable section of the XTRM footer directly below the statusline; no aboveEditor widget, no setStatus line. (2) Collapsed line shows active/waiting/needs-reply + aggregate context/tokens + inspect hint, with needs-reply outranking idle state. (3) Expanded view shows one row per specialist (model/thinking, bead, meaningful state, elapsed, token/window, current activity when available), bounded with overflow, activation_id kept in the inspector only. (4) Keyboard: editor-empty Down/Left activates, Up/Down or j/k selects, Enter attaches the live Specialist AgentSession, Esc returns to coordinator. (5) Proven in a live TUI, not just unit tests.\n\nSCOPE: Specialists repo fleet surface (config/pi-extensions/specialist-subagents/index.mjs fleet widget block, src/tools/specialist/activation.tool.ts projections, src/activation telemetry exposure as needed) plus the footer composition seam in the core repo (core/packages/pi-extensions/extensions/custom-footer/index.ts, sole setFooter owner, currently no section API). Decomposed into child beads; this epic tracks the whole.\n\nNON_GOALS: Claude-side fleet (no Claude TUI surface exists), auto-dispose/TTL policy, changes to pi-subagents itself, docs site updates.\n\nCONSTRAINTS: Footer ownership stays singular -- custom-footer remains the only setFooter caller; the fleet registers a section, never a second footer. Fleet view stays a projection (no cached state between ticks). Operator instruction: every dispatch under this epic passes model_override opencode-go/muse-spark-1.3-contributor. Cross-frontend parity rule applies to any wording both frontends share.\n\nVALIDATION: Live TUI demonstration: fleet visible below the statusline with collapsed line; keyboard nav to expanded rows; Enter attach opens the live child session; needs-reply state outranks idle; unit tests cover row formatting, overflow bound, and section registration fallback. Each child states its own evidence.\n\nOUTPUT: Merged implementation across core seam + specialists fleet, live demo evidence recorded on the implementation bead(s), this epic closed when UI-1..UI-7 all hold live.\n\nSCRUTINY: medium\n\nREFERENCES:\n- Current fleet: specialists config/pi-extensions/specialist-subagents/index.mjs (FLEET_WIDGET_KEY, renderFleetLines, paintFleet).\n- Footer owner: core packages/pi-extensions/extensions/custom-footer/index.ts (setFooter, render(width)).\n- Interaction model: pi-subagents src/ui/agent-widget.ts (setWidget callback form) and src/ui/session-navigator.ts (ui.custom non-overlay mount, keyboard nav).\n- Telemetry: specialists src/activation/forensic-sink.ts (startedAtMs, tokenUsage, elapsed), src/tools/specialist/activation.tool.ts (toActivationView fields).\n- pi SDK widget/custom API: ExtensionAPI types in the pi install (dist/core/extensions/types.d.ts).\n\nAGREED HIERARCHY (target):\nconversation\n────────────────────────────────────────\n› coordinator prompt/editor\n~/mercury/platform(main)  61%/200k  gpt-5.6-sol high  o:18 p:3\nSPECIALISTS · 2 active · 1 waiting · ↓/← inspect\n\nUI-1  Move Fleet into a composable XTRM footer section below statusline. Remove aboveEditor placement.\nUI-2  Remove the redundant ctx.ui.setStatus Fleet indicator.\nUI-3  Adopt pi-subagents collapsed Fleet semantics: active/waiting/needs-reply + aggregate context/tokens + inspect hint.\nUI-4  Adopt its keyboard behavior: Down/Left activate, Up/Down or j/k select, Enter attach, Esc coordinator.\nUI-5  Replace debug-oriented rows with: Specialist, model/thinking, Bead, meaningful state, elapsed, token/window usage, current activity when available.\nUI-6  Keep activation_id, participant_id, attempt_id, access, full result and forensic details in inspector/status, not permanent UI.\nUI-7  Bound the expanded Fleet and use overflow rather than allowing it to consume the terminal.\nNOTE: copy pi-subagents presentation and interaction, NOT its belowEditor placement -- XTRM has the custom footer it lacks, hence the footer-section seam.\n",
+        "id": "unitAI-beqby",
+        "issue_type": "epic",
+        "notes": "OPERATOR LIVE OBSERVATION 2026-09-08: Down/Left do nothing; only the collapsed specialist-active line + arrows render. Root-caused: keys handled only inside ui.custom inspector; no global key API for passive extensions in pi 0.85.1; pi-subagents also opens via slash command only. Split to ready bug unitAI-4n9of (fix the hint, not the keys). WORKAROUND for operator: /fleet inspect opens the keyboard navigator.\nOPERATOR LIVE OBSERVATION 2026-09-08 (severity: session-killing): /fleet inspect causes heavy TUI flicker; operator killed the window and reopened. Suspect 1s paintFleet poll fighting the ui.custom inspector. Split to P1 ready bug unitAI-z49s2. Inspector unusable until fixed; /fleet, /fleet:reply, /fleet:stop (non-custom surfaces) unaffected.\nOPERATOR LIVE OBSERVATION 2026-09-08: collapsed line renders one char per row (~40 rows) above statusline after restart/resume. Both render paths verified type-correct in source; units mock ui so never catch renderer behavior. Hypotheses: resumed-session layout width (H1), stale widget (H2), double-load (H3). Split to P1 ready bug unitAI-dygdq. Awaiting operator discriminating test (fresh session + resize).\nOPERATOR DECISION 2026-09-08: /fleet inspect hard-locks the TUI (fresh session, post string[] fix). Interactive inspector (UI-4 keyboard/attach) deliberately DEFERRED -- ui.custom path itself at fault in this pi version. Replacement: expanded rows by default with full one-row details (ready bead unitAI-nmxhg). unitAI-dygdq fix stands as correct but its surface is removed. Live attach deferred with UI-4; /fleet:reply and /fleet:stop remain the action paths.\nOPERATOR LIVE OBSERVATION 2026-09-08: elapsed works on rows, tokens never display. Root-caused to extractor/shape mismatch (nested message.usage short keys vs top-level snake candidates); forensic event proves 13,852 tokens flowed while snapshot stayed empty. Split to P1 ready bug unitAI-crjh7.\nOPERATOR END-STATE CONFIRMATION 2026-09-08 (master 263b8709 + core seam live, fresh session): 1 placement below statusline PASS, 2 expanded rows PASS, 3 seconds climbing PASS, 4 tool cards PASS, 5 ask flow PASS, 6 inspect text PASS, 7 resume with results PASS (closes unitAI-q02sz). Remaining open: lane .6 operator check + reviewer, .9, .10, .13 rail, .14 view-keys trace, core OSV bump.\nOPERATOR REPORT: row spend reads stuck ~49k and blinks on .13 run. Poll-pair confirms non-monotonic snapshot (input 293->206, output 739->204) = .12 fix bypassed on Spark route. Filed .15 (P1). Rail eyeball still valid; data path independent of render.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-08T21:26:26Z",
+        "status": "open",
+        "title": "Fleet UI: operational fleet under the XTRM statusline (UI-1..UI-7)",
+        "updated_at": "2026-09-09T00:07:23Z"
+      }
+    },
+    "unitAI-beqby.10": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T21:09:38Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T21:09:38Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby",
+            "issue_id": "unitAI-beqby.10",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Amendment section 5 and acceptance 8-9 want a command-driven Specialist inspector that opens a native transcript or feed overlay reusing the sp-terminal-overlay UX over the native AgentSession, with no legacy sp feed subprocess for native sessions. The operator deliberately deferred this: the ui.custom path hard-locks the TUI in this pi version even after the flicker fix (unitAI-z49s2) and the string-row fix (unitAI-dygdq), so unitAI-nmxhg removed the inspector mount and /fleet inspect prints a text report instead.\n\nSCOPE (rough): TBD after pi ui.custom reliability is proven. Likely the openFleetInspector path in config/pi-extensions/specialist-subagents/index.mjs plus an overlay component consuming host inspect transcript and events, plus tests. Needs exploration before promotion.\n\nNON_GOALS: Everything until the ui.custom path is trustworthy; keyboard attach stays with xtrm-tui per the amendment.\n\nCONSTRAINTS: TBD at promotion. Promotion requires re-reading current pi extension API behavior and the amendment.\n\nVALIDATION: TBD at promotion; at minimum a flicker-free live inspector session plus unit coverage.\n\nOUTPUT: TBD at promotion.\n\nSCRUTINY: low",
+        "id": "unitAI-beqby.10",
+        "issue_type": "task",
+        "labels": [
+          "contract:draft"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 4,
+        "status": "open",
+        "title": "Deferred: native Specialist transcript-feed overlay for the stock Pi extension (amendment section 5)",
+        "updated_at": "2026-09-08T21:09:38Z"
+      }
+    },
+    "unitAI-beqby.13": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-08T22:35:29Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T22:35:29Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby",
+            "issue_id": "unitAI-beqby.13",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-09-08T22:35:35Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby.12",
+            "issue_id": "unitAI-beqby.13",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "description": "PROBLEM: Operator wants specialist event surfaces prettier and aligned with the fleet chrome, restrained: a magenta rail on the far left of specialist events (tool-result cards and fleet rows), consistent with the existing accent family.\n\nSUCCESS: Specialist event text carries a far-left magenta rail (│-style gutter in the XTRM accent) with aligned keys/values; readable in both collapsed and expanded contexts; operator eyeball-confirms restrained (pretty, not noisy).\n\nSCOPE: Specialists repo render builders only (renderResult summaries, fleet row/collapsed strings in index.mjs) + unit tests asserting rail presence and alignment. ANSI via existing theme helpers only.\n\nNON_GOALS: Content/wording changes (other beads own rows, hint, purpose); layout/placement changes; inspector (deferred); any behavior change.\n\nCONSTRAINTS: Restrained: one rail, alignment, no emoji, no extra chrome. Suite green, tsc clean. No src/dist changes.\n\nVALIDATION: Unit tests (rail prefix on every rendered line, alignment); operator live eyeball in bead notes.\n\nOUTPUT: Commit on a specialists branch, operator confirmation in notes.\n\nSCRUTINY: low\n",
+        "id": "unitAI-beqby.13",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "Rail shipped on feature/unitAI-beqby.13-magenta-rail. RAIL=\\x1b[35m│\\x1b[0m (XTRM magenta, same family as src/cli/format-helpers magenta) via withRail() in config/pi-extensions/specialist-subagents/index.mjs. Applied to renderCollapsedLine, renderFleetRowLine (both markers), section overflow line, and every humanResultOf render line incl. expanded JSON. Content/wording untouched. tests/unit/pi: 232 green; tsc clean. Awaiting operator live eyeball for restrained confirmation.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 3,
+        "started_at": "2026-09-08T23:32:19Z",
+        "status": "open",
+        "title": "Magenta rail + restrained polish for specialist event cards",
+        "updated_at": "2026-09-08T23:37:29Z"
+      }
+    },
+    "unitAI-beqby.14": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T23:23:38Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T23:23:38Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby",
+            "issue_id": "unitAI-beqby.14",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: Live specialist_status views omit purpose and thinking_override although the serving code (verified loaded==disk, dist contains both, source lines confirmed) unconditionally projects thinking_override and conditionally projects purpose, and the extractor returns the excerpt verbatim against the real bead description. Forensics ruled out (legacy SupervisorStatus shape by design). In-extension shaping ruled out (arrow-form maps, no pick-lists, withResult spreads). Prime suspects remaining: (a) inline-path capture reads the bead before description exists (race between createBeadFromContract spawnSync and readBead, or creation stores contract elsewhere first); (b) the harness/adapter layer strips undeclared fields between extension JSON and coordinator receipt. Note thinking_override is request-derived (no bead involved), so a single bead-race theory cannot explain both absences -- check the receipt path too.\n\nSUCCESS: Live status view carries purpose (when bead readable) and thinking_override; cause of absence identified with evidence.\n\nSCOPE: Trace-only investigation first (no code changes until the layer is identified): inline creation ordering, readBead timing/content at dispatch, harness receipt shaping.\n\nNON_GOALS: Row rendering (works); any other projection fields.\n\nCONSTRAINTS: Do not change dispatch flow to fix observability (no added latency on the dispatch path).\n\nVALIDATION: Live view shows both keys with correct values; cause documented.\n\nOUTPUT: Findings + fix or documented cause in bead notes.\n\nSCRUTINY: low\n",
+        "id": "unitAI-beqby.14",
+        "issue_type": "bug",
+        "labels": [
+          "contract:ready"
+        ],
+        "notes": "FIX IMPLEMENTED on fix/unitAI-beqby.14-thinking-override-param: thinking_override param + forward, THINKING_LEVELS export, passthrough test. Live proof deferred to fresh session post-merge (this session pins pre-fix dist 409bd00c). .14 stays open for that verification.",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 3,
+        "started_at": "2026-09-08T23:55:55Z",
+        "status": "open",
+        "title": "Newest projection keys absent from status view despite present code",
+        "updated_at": "2026-09-08T23:58:12Z"
+      }
+    },
+    "unitAI-beqby.15": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-08T23:36:44Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T23:36:44Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby",
+            "issue_id": "unitAI-beqby.15",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The .12 accumulation fix is bypassed on the opencode-go/muse-spark-1.3-contributor route. Two specialist_status polls 65s apart on live run act:7e5baa87-c42 show snapshot token_usage DECREASING: input_tokens 293->206, output_tokens 739->204, reasoning_tokens 496->0, while cache_read grew 49649->51313. Monotonic accumulation can never decrease, so the snapshot is being spread-merged with latest per-message values on this run's event path. Operator-visible symptom: row spend stuck/jumping (reported as \"49k\" + blinking) -- each message visibly replaces the total instead of adding to it.\n\nSUCCESS: Successive polls on any provider route show non-decreasing input/output/reasoning/cache totals; row spend climbs monotonically and never jumps down.\n\nSCOPE: Snapshot usage write path in native-host.ts for event shapes this route emits. Suspect: usage arrives on an event type other than the message_end branch .12 fixed (or a second writer -- liveStats/forensic merge -- still spread-merges and the view reads it). Compare against the .12 accumulation test's synthetic events vs this provider's real event stream (capture event types seen during the run).\n\nNON_GOALS: Row rendering; formatSpendShort; legacy short-key shapes (crjh7 done).\n\nCONSTRAINTS: No added latency on the dispatch path; accumulation stays message_end-or-equivalent, never per-tick bd.\n\nVALIDATION: Live multi-message run polls monotonic; unit test with the real event shape from this route.\n\nOUTPUT: Fix + regression test in bead notes.\n\nSCRUTINY: low\n",
+        "id": "unitAI-beqby.15",
+        "issue_type": "bug",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "status": "open",
+        "title": "Spend flap returns on Spark route: snapshot usage decreases between polls",
+        "updated_at": "2026-09-08T23:36:44Z"
+      }
+    },
+    "unitAI-mtldq": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-08T19:14:42Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T21:05:00Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby",
+            "issue_id": "unitAI-mtldq",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The operator needs a second live activation to try /fleet inspect (keyboard navigator, Enter-attach) after arrow activation proved dead.\n\nSUCCESS: An explorer activation runs for one to three minutes while the operator opens the inspector with /fleet inspect and reports what works.\n\nSCOPE: One read-only explorer run: list the five largest files under src/ with one line each on what it does, under 120 words. No edits.\n\nNON_GOALS: No implementation, no fixes -- observations become follow-ups.\n\nCONSTRAINTS: READ_ONLY. Short run only.\n\nVALIDATION: Activation settles PASS; operator reports inspector behavior.\n\nOUTPUT: Micro-report plus operator observation in bead notes.\n\nSCRUTINY: low\n",
+        "heartbeat_at": "2026-09-08T19:14:47Z",
+        "id": "unitAI-mtldq",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "lease_expires_at": "2026-09-08T19:19:47Z",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-08T19:14:47Z",
+        "status": "in_progress",
+        "title": "Live-TUI probe 2: inspector check via /fleet inspect",
+        "updated_at": "2026-09-08T19:14:47Z"
+      }
+    },
+    "unitAI-s15zn": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "assignee": "jaggerxtrm",
+        "comment_count": 0,
+        "created_at": "2026-09-08T19:38:23Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-08T21:05:04Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-beqby",
+            "issue_id": "unitAI-s15zn",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM: The operator needs a live activation to re-check /fleet inspect after the unitAI-dygdq fix (pane render returns string[]).\n\nSUCCESS: An explorer activation runs for one to three minutes while the operator opens /fleet inspect and confirms one-normal-row-per-line rendering (or reports otherwise).\n\nSCOPE: One read-only explorer run: count test files under tests/unit and report the three largest with one line each, under 120 words. No edits.\n\nNON_GOALS: No implementation, no fixes -- observations become follow-ups.\n\nCONSTRAINTS: READ_ONLY. Short run only.\n\nVALIDATION: Activation settles PASS; operator reports inspector rendering.\n\nOUTPUT: Micro-report plus operator observation in bead notes.\n\nSCRUTINY: low\n",
+        "heartbeat_at": "2026-09-08T19:38:29Z",
+        "id": "unitAI-s15zn",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "lease_expires_at": "2026-09-08T19:43:29Z",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 1,
+        "started_at": "2026-09-08T19:38:29Z",
+        "status": "in_progress",
+        "title": "Live-TUI probe 3: inspector rows re-check after char-per-row fix",
+        "updated_at": "2026-09-08T19:38:29Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-08T21:09:38Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby",
+        "issue_id": "unitAI-beqby.10",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-beqby.10",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T22:35:29Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby",
+        "issue_id": "unitAI-beqby.13",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-beqby.13",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T23:23:38Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby",
+        "issue_id": "unitAI-beqby.14",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-beqby.14",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T23:36:44Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby",
+        "issue_id": "unitAI-beqby.15",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-beqby.15",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T21:05:00Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby",
+        "issue_id": "unitAI-mtldq",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-mtldq",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-09-08T21:05:04Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-beqby",
+        "issue_id": "unitAI-s15zn",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-s15zn",
+      "source_field": "dependencies",
+      "target": "unitAI-beqby",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-beqby",
+  "root_title": "Fleet UI: operational fleet under the XTRM statusline (UI-1..UI-7)",
+  "roundtrip": {
+    "base_package_sha256": "6b08024805f66e66e7dd2346d86f7230b6e9cc21ae40247b4e18c373a7a94a7f",
+    "base_record_sha256": {
+      "unitAI-beqby": "8ba1b0a55770f5cea8418e001f0ece9d5964d9298544f750119fdfe375efdab3",
+      "unitAI-beqby.10": "b18180f5b10d6e49fe484e1fc0ceef0b8b83ff2412dce8dec5fc7c23e4287a66",
+      "unitAI-beqby.13": "a173dcf8712589aa21093f251ff93a29bf1bb24bf045628ba33e7d38d257ff8b",
+      "unitAI-beqby.14": "dfe0f9bdb447d3bc95ee7166591d1887689723cd67e91ff3ce5a7936a30ba770",
+      "unitAI-beqby.15": "eaebf826da68a99e6c68bbccd70e7952fe33b51469d31c796dfe2015ef4b982b",
+      "unitAI-mtldq": "5374f7e73a8882f270600cb56f8d8abce769c8241715adb420170ed843d5c6ba",
+      "unitAI-s15zn": "4cff0b78badf47bc585dc836bccdf20f1c05578bb7e28fd3e14efe71d5e45db4"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-09-09T00:17:22Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

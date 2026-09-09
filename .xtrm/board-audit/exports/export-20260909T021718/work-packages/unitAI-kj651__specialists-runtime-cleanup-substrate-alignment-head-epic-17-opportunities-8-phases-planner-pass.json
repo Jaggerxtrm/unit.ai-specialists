@@ -1,0 +1,573 @@
+{
+  "content_sha256": "861fc18e3f08059dcc7e2e0668064b33fac44ee5452d68aae5ded90ca8203934",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-06-01T03:28:34Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-47sid",
+        "issue_id": "unitAI-1p0s5",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-1p0s5",
+      "source_field": "dependencies",
+      "target": "unitAI-47sid",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-01: pick up next priorities",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-23T22:33:18Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-efkjn",
+        "issue_id": "unitAI-1p0s5",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-1p0s5",
+      "source_field": "dependencies",
+      "target": "unitAI-efkjn",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-23: pick up next priorities",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-01T02:51:13Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-47sid",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-47sid",
+      "target_present_in_snapshot": true,
+      "target_title": "Session handoff 2026-06-01: pick up next priorities",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T01:33:41Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-4e194",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-4e194",
+      "target_present_in_snapshot": true,
+      "target_title": "Opp 15 implementation: seconder fusion (code-sanity + reviewer phase-1 → single dual-verdict step) + reviewer phase-2-only refactor",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-29T02:32:22Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-544sf",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-544sf",
+      "target_present_in_snapshot": true,
+      "target_title": "Research epic — post-AWS-summit external systems + patterns (Bedrock, dynamic workflows, AutoScientists, agent-browser, SkillOpt, HexStrike, monitoring)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-01T19:27:26Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-60w93",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-60w93",
+      "target_present_in_snapshot": true,
+      "target_title": "HEAD epic: Professional AgentOps telemetry contract for specialists",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T14:00:19Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-87e21",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-87e21",
+      "target_present_in_snapshot": true,
+      "target_title": "DOC: realign substrate-it.md with substrate.md rev11 (translation drift fix)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-30T19:13:39Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-9rd27",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-9rd27",
+      "target_present_in_snapshot": true,
+      "target_title": "DESIGN: write canonical docs/design/chain-templates.{md,html} absorbing iron-review docs",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-30T21:33:28Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-dloot",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-dloot",
+      "target_present_in_snapshot": true,
+      "target_title": "DESIGN: restructure chain-templates.md to drop 'overlay' framing (Iron + QA are canonical)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-06-01T19:27:27Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-eoqxp",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-eoqxp",
+      "target_present_in_snapshot": true,
+      "target_title": "Draft epic: DevOps/platform specialist substrate and AgentOps telemetry",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T14:00:19Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-f9kku",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-f9kku",
+      "target_present_in_snapshot": true,
+      "target_title": "DevOps QA: align chain_templates with test-engineer step (.formula.json + canonical doc)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-30T14:54:11Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-heukb",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-heukb",
+      "target_present_in_snapshot": true,
+      "target_title": "sp stop --all + sp chain stop --<chain-id>: chain-scoped job termination",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T03:08:13Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-k6u7d",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-k6u7d",
+      "target_present_in_snapshot": true,
+      "target_title": "DESIGN substrate rev11: apply D3 (SCRUTINY chain-property full enforcement) + D4 (sequential-writers multi-planned + reviewer attribution per writer)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T02:56:49Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-lr82o",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-lr82o",
+      "target_present_in_snapshot": true,
+      "target_title": "DESIGN: absorb D1 (seconder fusion) + D2 (code-with-tests + test-only) + Opp 16 (SCRUTINY enforcement)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T01:26:33Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-oizlz",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-oizlz",
+      "target_present_in_snapshot": true,
+      "target_title": "DESIGN: contract-coverage gate — canonical doc updates (chain-templates.md §2 + substrate.md §6.6/§6.9 simultaneously)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T03:06:23Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-rkwpp",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-rkwpp",
+      "target_present_in_snapshot": true,
+      "target_title": "Opp 16 implementation: SCRUTINY enforcement (bd create hook + runner pre-script + mandatory rule)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T14:00:11Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-sfwe1",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-sfwe1",
+      "target_present_in_snapshot": true,
+      "target_title": "DevOps QA chain: implement test-engineer and upgrade test-runner from Iron QA design",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-31T00:51:35Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-wf834",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-wf834",
+      "target_present_in_snapshot": true,
+      "target_title": "OVERTHINK: chain pipeline order — late-binding reviewer scope-validation problem (million-token waste risk)",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-28T02:07:33Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-wxi9e",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-wxi9e",
+      "target_present_in_snapshot": true,
+      "target_title": "HANDOFF: specialists-runtime cleanup + substrate-alignment — fresh-session validation → planning → specialists-auto execution",
+      "type": "relates-to"
+    },
+    {
+      "raw": {
+        "created_at": "2026-05-28T02:13:26Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-xqg76",
+        "issue_id": "unitAI-kj651",
+        "metadata": "{}",
+        "type": "relates-to"
+      },
+      "source": "unitAI-kj651",
+      "source_field": "dependencies",
+      "target": "unitAI-xqg76",
+      "target_present_in_snapshot": true,
+      "target_title": "HANDOFF to substrate-consistency-review agent: XML decisions (D29/D30/Opp 12) propagation to substrate.md",
+      "type": "relates-to"
+    }
+  ],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-1p0s5"
+      }
+    ],
+    "id": "unitAI-kj651"
+  },
+  "issues": {
+    "unitAI-1p0s5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-31T16:30:27Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-01T03:28:34Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-47sid",
+            "issue_id": "unitAI-1p0s5",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-23T22:33:18Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-efkjn",
+            "issue_id": "unitAI-1p0s5",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T18:31:03Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-kj651",
+            "issue_id": "unitAI-1p0s5",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "PROBLEM\nAt chain completion the operator has N waiting/done specialist jobs (keep-alive executors, reviewers, advisors) that must be torn down one-by-one via 'sp stop <job-id>'. No verb targets jobs of a specific chain — manual filter/copy/paste.\n\nSUCCESS\n- 'sp chain stop <chain-id>' terminates all jobs (running, waiting, starting) for one chain; default safe verb\n- 'sp stop --all [--dry-run] [--yes]' blast-radius verb with sole-orchestrator refusal (refuses if any 'running' or if jobs span other chain_id) + structured refusal envelope teaching the right verb\n- both reuse existing stopJob() (terminal-status-before-SIGTERM, flush handoff)\n- using-specialists-v4 SKILL teardown-discipline section\n- Claude PreToolUse hook on 'sp stop --all' computes sole-orchestrator predicate, blocks with hint when violated\n\nSCOPE\nsrc/cli/stop.ts (new flag handling), src/specialist/control.ts (shared filter helper), .xtrm/hooks/ (PreToolUse hook), config/skills/using-specialists-v4/SKILL.md (new section), tests.\n\nNON_GOALS\n- chain-as-container model (substrate-side)\n- modifying per-job sp stop semantics\n\nCONSTRAINTS\n- 'sp stop --all' must NEVER touch 'running' jobs\n- refusal envelope must structurally point at 'sp chain stop <chain-id>' alternative\n- --yes does NOT bypass refusal rule (only skips confirm)\n\nVALIDATION\n- sp chain stop on a multi-job chain terminates all its jobs, leaves other chains untouched\n- sp stop --all with another chain running → structured refusal + suggested command\n- sp stop --all with only waiting/done jobs of one chain → terminates correctly\n- PreToolUse hook fires before CLI when --all + other chain present\n\nOUTPUT\n2 new CLI verbs + shared predicate + v4 SKILL section + hook + tests + docs\n\nSCRUTINY: medium\n\nPARENT: unitAI-kj651\nROADMAP REF: Opp 13, specialists-roadmap.md §3.2 (Phase 7 polish)\n\nREPLACES: unitAI-heukb (closed wrong-orphan — same scope, mis-filed as standalone feature instead of kj651 child)",
+        "id": "unitAI-1p0s5",
+        "issue_type": "feature",
+        "priority": 2,
+        "status": "open",
+        "title": "Opp 13: sp stop --all + sp chain stop <chain-id>",
+        "updated_at": "2026-06-04T02:58:11Z"
+      }
+    },
+    "unitAI-kj651": {
+      "selection_state": "context-only",
+      "source": {
+        "_type": "issue",
+        "close_reason": "superseded by v3.2/v3.3 DO0 roadmap; child unitAI-1p0s5 remains live and will relate to new DO0 epic",
+        "closed_at": "2026-07-30T15:05:59Z",
+        "comment_count": 0,
+        "created_at": "2026-05-28T00:07:18Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-06-01T02:51:13Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-47sid",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T01:33:41Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-4e194",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-29T02:32:22Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-544sf",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-01T19:27:26Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-60w93",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T14:00:19Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-87e21",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-30T19:13:39Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-9rd27",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-30T21:33:28Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-dloot",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-06-01T19:27:27Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-eoqxp",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T14:00:19Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-f9kku",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-30T14:54:11Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-heukb",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T03:08:13Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-k6u7d",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T02:56:49Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-lr82o",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T01:26:33Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-oizlz",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T03:06:23Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-rkwpp",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T14:00:11Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-sfwe1",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-31T00:51:35Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-wf834",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-28T02:07:33Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-wxi9e",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          },
+          {
+            "created_at": "2026-05-28T02:13:26Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-xqg76",
+            "issue_id": "unitAI-kj651",
+            "metadata": "{}",
+            "type": "relates-to"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "HEAD EPIC for the specialists-runtime cleanup + substrate-alignment effort. This is the parent/root for all work the planner Pass-1 will decompose into child beads per roadmap phase + opportunity.\n\n═══════════════════════════════════════════════════════════════════════════════\n🗺 DOCUMENTS — what to read when\n═══════════════════════════════════════════════════════════════════════════════\n\n| When                           | Document                                                          |\n|--------------------------------|-------------------------------------------------------------------|\n| Entry point                    | docs/design/README.md (navigation index)                          |\n| THE plan                       | docs/design/roadmap/specialists-roadmap.md (CANONICAL — 17 opps incl. 13/14[shipped]/15[shipped]/16+sp-merge-rework, 8 phases 0-7, D1-D30, parallelization map) |\n| Chain templates CANON          | docs/design/chain-templates.md (NEW 2026-05-31 — canonical pipeline §2, catalog §3.1-§3.15 incl. code-with-tests/test-only, SCRUTINY §2.2, ambidextrous-roles §3.16, DevOps gap §4) + chain-templates.html (editorial mirror) |\n| Roadmap navigation             | docs/design/roadmap/README.md                                     |\n| Chain templates                | docs/design/roadmap/chain-templates/README.md + 15 .formula.json  |\n| Substrate target (future)      | docs/design/substrate/substrate.md (rev11, chain-coordinator §4.3, memory-as-capability §10.2, SCRUTINY chain-property §6.6, multi-writer §6.9.2/§6.9.6) |\n| Channel primitive (future)     | docs/design/substrate/channels.md (v0→v3, v0 subsumes Opp 8)      |\n| Context history                | docs/design/roadmap/history/{substrate-reconciliation,handoff-from-substrate-design}.md (already-applied, read for context only) |\n| Operational handoff            | bd bead unitAI-wxi9e (CLOSED 2026-05-31; historical — 3-meta-phase plan + per-phase smoke checkpoints; superseded by NOTES state-update below) |\n| Operator discipline            | CLAUDE.md (hard rules, gates, gotchas)                            |\n| CLI reference                  | docs/cli-reference.md, docs/features.md, docs/ARCHITECTURE.md     |\n\n═══════════════════════════════════════════════════════════════════════════════\n🧱 SPECIALISTS CATALOG (config canonical)\n═══════════════════════════════════════════════════════════════════════════════\n\nconfig/specialists/*.specialist.json — 22 package-tier ready to dispatch (was 19; added 2026-05-31: seconder, test-engineer, service-skills-sync, transcriber):\n\n  Production diff:  executor, seconder, test-engineer, test-runner, obligations-scanner, reviewer  (canonical QA pipeline; code-sanity DELETED, replaced by seconder fusion)\n  Investigation:    explorer, researcher, debugger\n  Strategic:        planner, overthinker, security-auditor\n  Maintenance:      memory-processor, sync-docs, changelog-{drafter,keeper}, service-skills-sync, transcriber\n  Orchestration:    node-coordinator\n  Meta:             specialists-creator\n  Bare/template:    bare\n  Special:          xt-merge\n\nTier resolution runtime: .specialists/user/ > .specialists/default/ (mirror) > config/specialists/ (fallback). Edit package-tier ONLY via direct JSON (CLAUDE.md gotcha — sp edit is user-tier only).\n\n═══════════════════════════════════════════════════════════════════════════════\n📋 MANDATORY RULES (template_sets injection)\n═══════════════════════════════════════════════════════════════════════════════\n\nconfig/mandatory-rules/ — 20 rule files indexed in index.json. Roadmap-relevant:\n  - executor-delivery.md           Iron-pipeline obligations\n  - gitnexus-required.md           impact analysis before edits\n  - serena-cheatsheet.md           Serena LSP discipline\n  - reviewer-verdict-format.md     reviewer JSON output schema\n  - diagnose-loop.md               debugger fast feedback\n  - overthinker-4phase.md          devil's advocate phases\n  - per-turn-handoff-schema.md     auto-append output to bead notes\n  - sync-docs-scope-discipline.md  single-doc invariant\n  - core-session-boundary.md       cwd discipline + worktree boundary\n  - code-quality-defaults.md       code-sanity verdict\n  - git-workflow-safe.md           manual git per CLAUDE.md rule #9\n\nNEW to create during execution:\n  - Phase 1 (D27): memory-recall.md           pull-not-push memory discipline (XML structure)\n  - Phase 3 (D29): contract-discipline.md     CoT + multishot + critique-before-commit for contract creators\n\n═══════════════════════════════════════════════════════════════════════════════\n🛠 SKILLS\n═══════════════════════════════════════════════════════════════════════════════\n\nconfig/skills/ (canonical) → .xtrm/skills/default/ (mirror) → .xtrm/skills/active/{claude,pi}/ (symlinks)\n\nRoadmap-relevant:\n  - using-specialists-v3/    canonical current; Phase 6 FREEZES (status:legacy banner)\n  - using-specialists-auto/  current auto-mode; Phase 6 REFRESHES to mirror v4\n  - update-specialists/, releasing/, using-nodes/, using-script-specialists/  unchanged\n  - using-specialists-v2/, using-specialists/  legacy, untouched\n\nTO CREATE during execution:\n  - Phase 0 (D26): config/skills/planning/SKILL.md (canonical — today only .xtrm/skills/default/planning/SKILL.md mirror exists)\n  - Phase 6 (D28): config/skills/using-specialists-v4/SKILL.md from scratch (new canonical, XML-structured per D27 standard)\n\n═══════════════════════════════════════════════════════════════════════════════\n⛓ CHAIN TEMPLATES\n═══════════════════════════════════════════════════════════════════════════════\n\ndocs/design/roadmap/chain-templates/ — 15 .formula.json files verified vs bd binary (was 13; +code-with-tests +test-only via f9kku 2026-05-31). Eight archetypes (substrate §6.9.10 floor — code-with-tests + test-only added) + seven deliberative/maintenance:\n\n  Archetypes:        code-quick, code-standard, code-with-advisors, code-with-tests, debug, restitch, security-deep, test-only\n  Deliberative:      planning, premortem, research-only, triage, doc-sync, memory-hygiene, release-prep\n\nPhase 0.a installs → ~/.beads/formulas/ so bd formula list sees them. Post-pour: sp chain wire-edges <molecule-id> helper applies semantic edges from labels.\n\n═══════════════════════════════════════════════════════════════════════════════\n💻 CODE RUNTIME — where edits land per opportunity\n═══════════════════════════════════════════════════════════════════════════════\n\nsrc/specialist/\n  ├ chain-identity.ts        Asymmetry 1+3+5; touched by Opp 1/3/6/10\n  ├ supervisor.ts            agent_end hook (Opp 1+8), keep-alive, run_complete\n  ├ runner.ts                prompt builder — Opp 11 removes bd-prime + .xtrm/memory.md injection here\n  ├ worktree.ts              provisionWorktree — Opp 6 naming, Opp 10 --chain\n  ├ control.ts:155           finalizeJob — Opp 1+2 reduce urgency; substrate §6.10 removes\n  ├ mandatory-rules.ts       template_sets injection — wires Opp 11 memory-recall.md + D29 contract-discipline.md\n  ├ loader.ts                tier resolution\n  ├ epic-{lifecycle,readiness,reconciler}.ts   Phase 4: REMOVE (~500 LOC)\n  ├ beads.ts, bead-notes.ts  bd integration\n  └ memory-retrieval.ts      Opp 11 refactor for pull-not-push\n\nsrc/cli/\n  ├ run.ts                   today --bead/--worktree/--job; Phase 2 adds --chain (Opp 10)\n  ├ chain.ts                 TO CREATE (Opp 4: review/approve/insert)\n  ├ finalize.ts              Opp 2 reduces; substrate §6.10 removes\n  ├ merge.ts                 §5.5 dirty-index diagnostic (Phase 5)\n  ├ epic.ts                  Phase 4: drop merge/abandon/sync, keep list/status as thin readers\n  ├ log.ts                   Phase 1+2+3: new event kind formatters per D24 (no event ships dark)\n  ├ ps.ts                    Phase 1: --hygiene flag (§5.6)\n  ├ run.ts:273               assertNoStaleBaseSiblings (Opp 7 rename to --accept-stale-base --reason)\n  └ doctor.ts                drift checks\n\nsrc/pi/, src/tools/          rare touch in this roadmap\n\n═══════════════════════════════════════════════════════════════════════════════\n🧪 TESTS\n═══════════════════════════════════════════════════════════════════════════════\n\ntests/unit/specialist/    runner, supervisor (HANG-excluded), chain-identity, worktree, etc.\ntests/unit/cli/           run.test.ts, merge.test.ts, ps.test.ts, etc.\ntests/integration/        cross-module flows\ntests/smoke/              e2e CLI\ntests/utils/              observabilityFixtures.ts (shared fixtures)\n\nGOTCHA: tests/unit/specialist/supervisor.test.ts hangs in batch (vitest pool race). Excluded in vitest.config.ts. Per memory supervisor-test-ts-keep-alive-test-has-a-pre-existing-hang.\n\n═══════════════════════════════════════════════════════════════════════════════\n🗄 PERSISTENCE + STATE\n═══════════════════════════════════════════════════════════════════════════════\n\n.beads/issues.jsonl                 bd issue store (auto-exported on every bd op)\n.beads/dolt/                        Dolt sql-server backing bd\n.specialists/db/observability.db    SQLite (jobs/events/results/status)\n.specialists/jobs/<id>/             per-job files (gated by SPECIALISTS_JOB_FILE_OUTPUT)\n.xtrm/hooks/                        PreToolUse/PostToolUse/Stop gates\n.xtrm/reports/                      xt session reports (changelog-drafter input)\n.xtrm/memory.md                     legacy memory dump — Opp 11/D27 ELIMINATES this\n.wolf/                              openwolf state (anatomy.md, buglog.json, cerebrum.md)\n~/.beads/formulas/                  chain template install target (Phase 0.a)\n~/.config/specialists/              future selection-config (Opp 9), contract-examples dir (D29)\n\n═══════════════════════════════════════════════════════════════════════════════\n⚙ TOOLCHAIN CLIs\n═══════════════════════════════════════════════════════════════════════════════\n\n  sp       Specialists runtime — run, ps, log, feed, result, doctor, validate, edit (user-tier), [chain (futuro)]\n  bd       Issue store — create, update, close, dep add, mol pour, formula list, memories, remember, recall\n  bv       Graph triage — --robot-triage, --robot-plan, --robot-next, --robot-insights (NEVER bare bv — TUI blocks session)\n  xt       Workflow orchestration — init, update, claude, pi, end, report\n  gitnexus Code intelligence (MCP + CLI) — impact, context, query, detect_changes, analyze\n  Serena   LSP code navigation (MCP) — find_symbol, replace_symbol_body, get_symbols_overview, find_referencing_symbols\n\n═══════════════════════════════════════════════════════════════════════════════\n📊 BD STATE (snapshot 2026-05-31 post-cleanup)\n═══════════════════════════════════════════════════════════════════════════════\n\n84 open / 2314 closed / 8 blocked / 76 ready. Active children of kj651: 4 (3l0ac/1p0s5/19hqi/lyh1b — planner Pass-1 to file Phase 1-4 children in next session). Memory store: 615+ persistent memories via bd memories/recall.\n\n═══════════════════════════════════════════════════════════════════════════════\n🚦 CURRENT WORKFLOW (bridge discipline until Opp 4+10 land in Phase 2)\n═══════════════════════════════════════════════════════════════════════════════\n\n# session start\nbd prime\nbv --robot-triage --format toon\nbd update <id> --claim\n\n# dispatch (current shape — pre-Opp 10; --chain replaces --worktree/--job from Phase 2)\nsp run executor --bead X --worktree --keep-alive --background\nsp run reviewer --bead Y --job <exec-job-id> --keep-alive --background\n\n# monitor\nsp ps && sp log <job>\nbd show <bead>   # auto-appended specialist output\n\n# close (memory gate per CLAUDE.md)\nbd remember \"insight\"\nbd kv set \"memory-acked:<bead>\" \"saved:<key>\"\nbd close <bead> --reason \"...\"\n\n# git (MANUAL per CLAUDE.md rule #9 — sp merge / sp epic merge PROHIBITED)\ngit merge --no-ff feature/<bead>\ngit push\nxt end\n\n═══════════════════════════════════════════════════════════════════════════════\n🎯 DECOMPOSITION PLAN\n═══════════════════════════════════════════════════════════════════════════════\n\nThis head epic gets decomposed by the planner Pass-1 (per state-update NOTES block — wxi9e closed 2026-05-31). Precondition: Phase 0 bootstrap must ship FIRST (otherwise planner Pass-2 cannot annotate recommended_template).\n\nExpected decomposition shape:\n  - 1 child epic per roadmap phase (0-7) under this head epic\n  - root beads per opportunity under each phase epic (with recommended_template annotation per D23 Pass-2)\n  - step beads NOT materialized at planning time — that's sp chain review's job (Opp 4)\n\nSubstrate alignment: contracts written in XML (D30) per Stage-1 validator-friendly shape; contract-creation discipline (D29) reduces dispatcher_refusal_rate measurably.\n\n═══════════════════════════════════════════════════════════════════════════════\n✅ SUCCESS CRITERIA FOR CLOSING THIS EPIC\n═══════════════════════════════════════════════════════════════════════════════\n\n  - All 8 phases (0-7) shipped and smoke-checkpointed (Phases 5 partial: Opp 14/15 already shipped 2026-05-31; Opp 13/16 + sp merge rework in flight as kj651 children)\n  - All 17 opportunities implemented or explicitly deferred (12 original Opps 1-12 + Opp 13 + Opp 14[shipped] + Opp 15[shipped] + Opp 16 + sp merge rework)\n  - using-specialists-v4 canonical (Phase 6 / D28); v3 frozen with status:legacy banner\n  - New mandatory rules live in template_sets: memory-recall.md (Phase 1), contract-discipline.md (Phase 3)\n  - Chain templates active in ~/.beads/formulas/ (Phase 0.a)\n  - Substrate-aligned A/B metrics improved: token usage per spawn (Opp 11), dispatcher refusal/revision rates (Opp 12 + D29 measurable when substrate Stage-1 lands)\n  - Final integration smoke green: full chain review → approve → execute → reviewer PASS → close end-to-end\n\n═══════════════════════════════════════════════════════════════════════════════\n🔒 OUT OF SCOPE (per roadmap §10.7)\n═══════════════════════════════════════════════════════════════════════════════\n\n  - Seed/planning container (substrate §5)\n  - Chain coordinator (substrate §4.3) — substrate concept, lands months out\n  - Channels v1-v3 (only v0 absorbs Opp 8, and only after Phase 1-3 ships)\n  - containers table (substrate §15 Stage 4)\n  - bd retirement (substrate §13.7 migration is later than substrate landing)\n  - Modification of intra-job keep-alive semantics (D3: KEEP UNCHANGED — preserves 20-30k token resume value)\n  - Epic-level worktrees (substrate §6.9.7 future)\n  - using-specialists-v5 (gated on channels v0 ship; v4 ships now)\n  - Retrofit of existing markdown contracts to XML (Opp 12 is forward-only — new beads XML, existing stay markdown)\n\n═══════════════════════════════════════════════════════════════════════════════\nDO NOT\n═══════════════════════════════════════════════════════════════════════════════\n\n  - Re-derive decisions D1-D30 (§0 of the roadmap)\n  - Edit archived docs (docs/archive/) — redirect headers in place\n  - Use sp merge / sp epic merge (CLAUDE.md rule #9 PROHIBITED)\n  - Skip Phase 0 — Meta-Phase 2 planner Pass-2 cannot run without it\n  - Release using-specialists-v5 (gated on channels v0)\n  - Implement chain-coordinator / seed / containers-table (substrate scope, out of roadmap)",
+        "id": "unitAI-kj651",
+        "issue_type": "epic",
+        "notes": "DOC RELOCATION 2026-06-01 (orchestrator session) — alcune voci del doc-map in questa description sono ora STALE:\n\n- SUBSTRATE spec: CANONICO ora a vault ~/second-mind/1-projects/xtrm/substrate/substrate_design_it.md (IT). Le copie repo docs/design/substrate/{substrate.md, substrate-it.md, substrate-it-rev11.md} sono state ELIMINATE. La copia EN substrate_design_en.md e marcata STALE.\n- CHANNELS: spostato a vault ~/second-mind/1-projects/xtrm/channels/channels.md (canonico). (La copia repo docs/design/substrate/channels.md e ancora presente ma il vault e canonico.)\n- CHAIN-TEMPLATES: INVARIATO per ora — repo docs/design/chain-templates.md + roadmap/chain-templates/*.formula.json restano canonici per kj651. Esiste una copia vault substrate/chain_templates.md ma lo split canonico e IRRISOLTO: NON switchare ancora.\n- DEVOPS design riconciliato a vault devops/devops-system.md. Telemetry forensic contract = bead 60w93.1 (envelope ecosistema-wide + shared emitter, 4 fix annotati).\n- Map of content completa: vault 1-projects/xtrm/xtrm-MOC.md (struttura a cartelle substrate/ channels/ devops/ research/ archive/).\n\nChain-identity esplicita: in carico ad altro agente in questa epic; vedi doc di pensiero vault chains.md.",
+        "priority": 1,
+        "status": "closed",
+        "title": "Specialists runtime cleanup + substrate alignment — HEAD EPIC (17 opportunities, 8 phases, planner Pass-1 to decompose Phase 1-4)",
+        "updated_at": "2026-07-30T15:05:59Z"
+      }
+    }
+  },
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-31T18:31:03Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-kj651",
+        "issue_id": "unitAI-1p0s5",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-1p0s5",
+      "source_field": "dependencies",
+      "target": "unitAI-kj651",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-kj651",
+  "root_title": "Specialists runtime cleanup + substrate alignment — HEAD EPIC (17 opportunities, 8 phases, planner Pass-1 to decompose Phase 1-4)",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

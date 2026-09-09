@@ -1,0 +1,67 @@
+{
+  "content_sha256": "5fbb70150a6af6d4d2133b9bb54de5327875e4a4f3979bb2edcf2e37e25d171b",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-07-30T16:25:10Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-u2smm",
+        "issue_id": "unitAI-5tk56",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-5tk56",
+      "source_field": "dependencies",
+      "target": "unitAI-u2smm",
+      "target_present_in_snapshot": true,
+      "target_title": "Board hygiene: apply 2026-07-30 audit mechanical cleanup",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-5tk56"
+  },
+  "issues": {
+    "unitAI-5tk56": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-07-30T14:25:09Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-07-30T16:25:10Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-u2smm",
+            "issue_id": "unitAI-5tk56",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\n\nconfig/specialists/node-coordinator.specialist.json has no 'prompt' block at all, so it cannot declare an output_schema. This was surfaced as a residual defect in PR #230's quarantine log and confirmed live during 2026-07-30 audit (bead unitAI-u2smm).\n\nVerification:\n  $ python3 -c \"import json; d=json.load(open('config/specialists/node-coordinator.specialist.json')); print('has prompt:', 'prompt' in d); print('has output_schema:', d.get('prompt',{}).get('output_schema') is not None)\"\n  has prompt: False\n  has output_schema: False\n\n## SUCCESS\n\n- config/specialists/node-coordinator.specialist.json declares a prompt.output_schema that matches what runtime consumers actually parse from the coordinator's structured output.\n- sp validate node-coordinator passes.\n- One unit or integration test asserts the schema is present and (if runtime uses it) that a canned coordinator response validates against it.\n\n## SCOPE\n\nOnly config/specialists/node-coordinator.specialist.json plus its consuming schema (if defined elsewhere) and one test.\n\n## NON_GOALS\n\n- Refactoring the coordinator prompt.\n- Changing runtime consumer behavior beyond adding schema validation.\n\n## CONSTRAINTS\n\n- Do not raise permission tier.\n- Preserve existing top-level fields.\n\n## VALIDATION\n\n- sp validate node-coordinator\n- Grep for consumers of coordinator output to confirm the schema shape.\n\n## OUTPUT\n\n- One edit to node-coordinator.specialist.json.\n- One test file or extension of an existing suite.",
+        "id": "unitAI-5tk56",
+        "issue_type": "bug",
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "BUG: node-coordinator.specialist.json lacks prompt.output_schema",
+        "updated_at": "2026-07-30T14:25:09Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-5tk56",
+  "root_title": "BUG: node-coordinator.specialist.json lacks prompt.output_schema",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

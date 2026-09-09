@@ -1,0 +1,66 @@
+{
+  "content_sha256": "50a197bd23aabef0256b8261fd775bbe7380aadb12fd6e3373804c885048b485",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-05-15T02:46:23Z",
+        "created_by": "dawid",
+        "depends_on_id": "unitAI-i4sz0",
+        "issue_id": "unitAI-ng52n",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-ng52n",
+      "source_field": "dependencies",
+      "target": "unitAI-i4sz0",
+      "target_present_in_snapshot": true,
+      "target_title": "Set up security pipeline",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-ng52n"
+  },
+  "issues": {
+    "unitAI-ng52n": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-05-15T00:46:24Z",
+        "created_by": "dawid",
+        "dependencies": [
+          {
+            "created_at": "2026-05-15T02:46:23Z",
+            "created_by": "dawid",
+            "depends_on_id": "unitAI-i4sz0",
+            "issue_id": "unitAI-ng52n",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "Security pipeline bootstrap found 32 existing Semgrep audit findings during ./scripts/security-scan.sh, including path traversal / dynamic regexp / unsafe format string / local HTTP test warnings. Diff-only pre-push Semgrep passes for the bootstrap branch; triage full-scan findings before relying on scheduled Semgrep as a clean baseline.",
+        "id": "unitAI-ng52n",
+        "issue_type": "task",
+        "priority": 2,
+        "status": "open",
+        "title": "Triage Semgrep findings from security baseline",
+        "updated_at": "2026-05-15T00:46:24Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-ng52n",
+  "root_title": "Triage Semgrep findings from security baseline",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}

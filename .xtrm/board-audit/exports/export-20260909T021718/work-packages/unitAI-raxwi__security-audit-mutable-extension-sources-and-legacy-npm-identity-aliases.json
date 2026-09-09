@@ -1,0 +1,70 @@
+{
+  "content_sha256": "f6613f5c4828a6fe8ecf318fe629fe1ff760b728c331f1634ea76c038df53269",
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [
+    {
+      "raw": {
+        "created_at": "2026-09-02T22:23:47Z",
+        "created_by": "jaggerxtrm",
+        "depends_on_id": "unitAI-o1fs4",
+        "issue_id": "unitAI-raxwi",
+        "metadata": "{}",
+        "type": "discovered-from"
+      },
+      "source": "unitAI-raxwi",
+      "source_field": "dependencies",
+      "target": "unitAI-o1fs4",
+      "target_present_in_snapshot": true,
+      "target_title": "security: pin executable pi-service-knowledge extension source",
+      "type": "discovered-from"
+    }
+  ],
+  "hierarchy": {
+    "children": [],
+    "id": "unitAI-raxwi"
+  },
+  "issues": {
+    "unitAI-raxwi": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-09-02T22:23:47Z",
+        "created_by": "jaggerxtrm",
+        "dependencies": [
+          {
+            "created_at": "2026-09-02T22:23:47Z",
+            "created_by": "jaggerxtrm",
+            "depends_on_id": "unitAI-o1fs4",
+            "issue_id": "unitAI-raxwi",
+            "metadata": "{}",
+            "type": "discovered-from"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nFinal unitAI-o1fs4 security audit found residual mutable extension sources in operator-managed Specialists config (for example npm:pi-ast-grep, npm:pi-intercom, npm:@gotgenes/pi-subagents, and a git source) plus informational mixed-case legacy npm identity ambiguity. These are outside the canonical pi-service-knowledge pin but retain CWE-1104 exposure where enabled.\n\n## SUCCESS\nInventory shipped and operator/bootstrap extension sources, classify ownership and mutability, define exact-pin or immutable-commit policy where appropriate, and add migration diagnostics without silently mutating user config. Decide with evidence whether legacy mixed-case npm names require normalized collision handling.\n\n## SCOPE\nExtension-source policy, config/bootstrap examples, migration warnings, focused tests, docs. Operator-managed current config is evidence only unless explicit approval authorizes mutation.\n\n## NON_GOALS\nNo npm publication, no automatic global config rewrite, no weakening of unitAI-o1fs4 fail-closed behavior.\n\n## VALIDATION\nSource inventory, registry/git identity evidence, compatibility matrix, tests for any policy change, security/reviewer gates.\n\n## OUTPUT\nRisk-ranked inventory, chosen immutability rules, migration plan, and exact test evidence.",
+        "id": "unitAI-raxwi",
+        "issue_type": "task",
+        "labels": [
+          "contract:ready"
+        ],
+        "owner": "jagger.xtrm@gmail.com",
+        "priority": 2,
+        "status": "open",
+        "title": "security: audit mutable extension sources and legacy npm identity aliases",
+        "updated_at": "2026-09-02T22:23:47Z"
+      }
+    }
+  },
+  "relations": [],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-raxwi",
+  "root_title": "security: audit mutable extension sources and legacy npm identity aliases",
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "open"
+}
