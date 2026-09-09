@@ -161,20 +161,6 @@ describe('system prompt assembly (golden, byte-identical)', () => {
         ---
 
 
-        ---
-        ## Beads Workflow Quick Rules
-        - Claim work: \`bd update <id> --claim\`
-        - Append progress notes: \`bd update <id> --append-notes "..."\`
-        - Store reusable insight: \`bd remember "insight"\`
-        - Close completed issue: \`bd close <id> --reason "done"\`
-
-        ## Session close checklist
-        1. \`git add <files>\`
-        2. \`git commit -m "..."\`
-        3. \`git push\`
-        ---
-
-
         ## Output Contract
         Respond using markdown with canonical sections (include when applicable):
         - \`## Summary\`
@@ -250,20 +236,6 @@ describe('system prompt assembly (golden, byte-identical)', () => {
         - No hedging. Fragments fine. Short synonyms.
         - Technical terms stay exact. Code blocks unchanged.
         - Pattern: [thing] [action] [reason]. [next step].
-        ---
-
-
-        ---
-        ## Beads Workflow Quick Rules
-        - Claim work: \`bd update <id> --claim\`
-        - Append progress notes: \`bd update <id> --append-notes "..."\`
-        - Store reusable insight: \`bd remember "insight"\`
-        - Close completed issue: \`bd close <id> --reason "done"\`
-
-        ## Session close checklist
-        1. \`git add <files>\`
-        2. \`git commit -m "..."\`
-        3. \`git push\`
         ---
 
 
