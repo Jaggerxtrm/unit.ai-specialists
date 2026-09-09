@@ -22,9 +22,19 @@ function resolveStorePath() {
   return join(homedir(), '.xtrm', 'state.db');
 }
 
-async function readActiveRows(storePath) {
+async function openStore(storePath) {
+  try {
+    const { Database } = await import('bun:sqlite');
+    return new Database(storePath, { readonly: true });
+  } catch {
+    // Not under bun: node:sqlite serves the same prepare/close surface.
+  }
   const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(storePath, { readOnly: true });
+  return new DatabaseSync(storePath, { readOnly: true });
+}
+
+async function readActiveRows(storePath) {
+  const db = await openStore(storePath);
   try {
     return db
       .prepare(
