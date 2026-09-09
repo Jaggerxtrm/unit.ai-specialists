@@ -6,7 +6,8 @@
  * capabilities) and is validated independently — there is no `initialize`
  * handshake, no `Mcp-Session-Id`, no connection-remembered capabilities (§G/H).
  * `server/discover`, `resultType: complete` and serverInfo stamping are owned
- * by the SDK; this module only admits the six t2kol tools.
+ * by the SDK; this module admits the six t2kol tools plus `specialist_resume`
+ * (Wave E4 Resume-only: the same session continues, id kept, attempt advances).
  *
  * t2kol parity is structural, not re-implemented: the SAME tool factories, the
  * SAME zod schemas (kept as the parse authority), the SAME SpecialistLoader
@@ -45,6 +46,7 @@ import {
   specialistReplySchema,
   specialistStopSchema,
 } from '../tools/specialist/activation.tool.js';
+import { createSpecialistResumeTool, specialistResumeSchema } from './resume-tool.js';
 import { NativeActivationHost } from '../activation/native-host.js';
 import { RuntimeEventPusher } from '../activation/async-events.js';
 import { PeerAdapter } from '../activation/transport/peer-adapter.js';
@@ -105,6 +107,7 @@ export function buildV2Server(): McpServer {
     createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher),
     createSpecialistDispatchTool(getHost, getPusher),
     createSpecialistReplyTool(getHost),
+    createSpecialistResumeTool(getHost, getPusher),
     createSpecialistStopActivationTool(getHost),
     createSpecialistListTool(loader),
   ];
@@ -113,6 +116,7 @@ export function buildV2Server(): McpServer {
     use_specialist: useSpecialistSchema,
     specialist_dispatch: specialistDispatchSchema,
     specialist_reply: specialistReplySchema,
+    specialist_resume: specialistResumeSchema,
     specialist_stop_activation: specialistStopSchema,
     specialist_list: specialistListSchema,
     // specialist_status takes no arguments; the empty-object default applies.
@@ -178,7 +182,7 @@ export function serveV2Stdio(): StdioServerHandle {
     onerror: (error) => logger.error('MCP v2 transport error', error),
   });
   logger.info(
-    `Specialists MCP Server v2 (2026-07-28, strict) started — 6 tools registered`,
+    `Specialists MCP Server v2 (2026-07-28, strict) started — 7 tools registered`,
   );
   process.on('SIGTERM', () => {
     logger.info('SIGTERM received — shutting down');
