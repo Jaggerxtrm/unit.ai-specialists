@@ -247,10 +247,14 @@ try {
     capabilities: {},
     clientInfo: { name: 'e5-probe', version: '0' },
   });
-  say(`--- initialize (legacy, must be rejected) ---`);
+  // NOT "we refuse legacy clients" — since unitAI-aiwva.7 the server serves them. The SDK
+  // pins each connection to its OPENING request's era, and this connection opened modern,
+  // so a 2025-11-25 initialize on it is correctly refused. A legacy client opening its own
+  // connection is served: that is what the client-connected gate below proves.
+  say(`--- initialize at 2025-11-25 on an already-modern connection (must be rejected) ---`);
   say(JSON.stringify(legacy.error ?? legacy.result));
   link(
-    'initialize-rejected',
+    'initialize-rejected-on-modern-connection',
     legacy.error?.code === -32022 && JSON.stringify(legacy.error).includes(PROTOCOL),
     `code=${legacy.error?.code}`,
   );
