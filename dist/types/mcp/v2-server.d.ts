@@ -9,6 +9,9 @@ import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
  * protocol revision are re-read from every request's own envelope.
  */
 export declare function buildV2Server(): McpServer;
-/** Modern stdio entry (§J). Legacy `initialize`-era openings are rejected with -32022, not served. */
+/**
+ * Official SDK v2 stdio entry. The SDK serves both supported eras from this
+ * factory and rejects unsupported protocol revisions.
+ */
 export declare function serveV2Stdio(): StdioServerHandle;
 //# sourceMappingURL=v2-server.d.ts.map

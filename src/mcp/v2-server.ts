@@ -1,10 +1,13 @@
 /**
- * Specialists MCP server on the official SDK v2, strict protocol 2026-07-28.
+ * Specialists MCP server on the official SDK v2, serving protocol revisions
+ * 2025-11-25 and 2026-07-28 through one stdio entrypoint.
  *
- * Served via `serveStdio(() => buildV2Server(), { legacy: 'reject' })` (§J):
- * every request carries its own `_meta` envelope (protocol revision + client
- * capabilities) and is validated independently — there is no `initialize`
- * handshake, no `Mcp-Session-Id`, no connection-remembered capabilities (§G/H).
+ * Served via `serveStdio(() => buildV2Server(), { legacy: 'serve' })` (§J):
+ * the SDK pins each connection to the opening request's era. Legacy clients
+ * use the 2025-11-25 `initialize` handshake; modern clients use the
+ * 2026-07-28 per-request `_meta` envelope (protocol revision + client
+ * capabilities), validated independently without an `initialize` handshake,
+ * `Mcp-Session-Id`, or connection-remembered capabilities (§G/H).
  * `server/discover`, `resultType: complete` and serverInfo stamping are owned
  * by the SDK; this module admits the six t2kol tools plus `specialist_resume`
  * (Wave E4 Resume-only: the same session continues, id kept, attempt advances).
@@ -178,14 +181,17 @@ export function buildV2Server(): McpServer {
   return server;
 }
 
-/** Modern stdio entry (§J). Legacy `initialize`-era openings are rejected with -32022, not served. */
+/**
+ * Official SDK v2 stdio entry. The SDK serves both supported eras from this
+ * factory and rejects unsupported protocol revisions.
+ */
 export function serveV2Stdio(): StdioServerHandle {
   const handle = serveStdio(() => buildV2Server(), {
-    legacy: 'reject',
+    legacy: 'serve',
     onerror: (error) => logger.error('MCP v2 transport error', error),
   });
   logger.info(
-    `Specialists MCP Server v2 (2026-07-28, strict) started — 7 tools registered`,
+    `Specialists MCP Server v2 (2025-11-25 + 2026-07-28, dual-revision) started — 7 tools registered`,
   );
   process.on('SIGTERM', () => {
     logger.info('SIGTERM received — shutting down');
