@@ -92041,36 +92041,10 @@ var init_activation_tool = __esm(() => {
 function createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher) {
   return {
     name: "specialist_status",
-    description: "System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from DB-backed runtime state (.specialists/jobs/ is legacy/operator-only), and native in-process activations with any question they are waiting on \u2014 answer those with specialist_reply.",
+    description: "System health: backend circuit breaker states, loaded specialist count, and native in-process activations with any question they are waiting on \u2014 answer those with specialist_reply.",
     inputSchema: objectType({}),
     async execute(_) {
       const list2 = await loader.list();
-      const stalenessResults = await Promise.all(list2.map((s) => checkStaleness(s)));
-      const sqliteClient = createObservabilitySqliteClient();
-      let jobs = [];
-      try {
-        const dbStatuses = sqliteClient?.listStatuses() ?? [];
-        if (dbStatuses.length > 0) {
-          jobs = dbStatuses;
-        } else if (detectJobOutputMode() === "on") {
-          const { existsSync: existsSync52, readdirSync: readdirSync26, readFileSync: readFileSync45 } = await import("fs");
-          const { join: join55 } = await import("path");
-          const jobsDir = join55(process.cwd(), ".specialists", "jobs");
-          if (existsSync52(jobsDir)) {
-            for (const entry of readdirSync26(jobsDir)) {
-              const statusPath = join55(jobsDir, entry, "status.json");
-              if (!existsSync52(statusPath))
-                continue;
-              try {
-                jobs.push(JSON.parse(readFileSync45(statusPath, "utf-8")));
-              } catch {}
-            }
-          }
-        }
-      } finally {
-        sqliteClient?.close();
-      }
-      jobs.sort((a, b) => (b.started_at_ms ?? 0) - (a.started_at_ms ?? 0));
       let pending_interactions = [];
       try {
         pending_interactions = projectOutstandingAsks(process.cwd());
@@ -92094,25 +92068,7 @@ function createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher) 
         activation_results,
         pending_interactions,
         uncertain_workspaces,
-        backends_health: Object.fromEntries(BACKENDS2.map((b) => [b, circuitBreaker.getState(b)])),
-        specialists: list2.map((s, i) => ({
-          name: s.name,
-          scope: s.scope,
-          category: s.category,
-          version: s.version,
-          staleness: stalenessResults[i]
-        })),
-        background_jobs: jobs.map((j) => ({
-          id: j.id,
-          specialist: j.specialist,
-          status: j.status,
-          is_dead: isJobDead({ status: j.status, pid: j.pid, tmux_session: j.tmux_session }),
-          elapsed_s: j.elapsed_s,
-          current_event: j.current_event,
-          bead_id: j.bead_id,
-          metrics: j.metrics,
-          error: j.error
-        }))
+        backends_health: Object.fromEntries(BACKENDS2.map((b) => [b, circuitBreaker.getState(b)]))
       };
     }
   };
@@ -92120,10 +92076,6 @@ function createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher) 
 var BACKENDS2;
 var init_specialist_status_tool = __esm(() => {
   init_zod();
-  init_loader();
-  init_observability_sqlite();
-  init_supervisor();
-  init_status2();
   init_polling();
   init_workspace_reconcile();
   init_activation_tool();

@@ -212,6 +212,27 @@ describe('v2 tool surface (t2kol parity)', () => {
     expect(() => JSON.parse(result.content[0].text)).not.toThrow();
   });
 
+  it('specialist_status exposes the compact shared projection without registry or job dumps', async () => {
+    const res = await client.call('tools/call', {
+      name: 'specialist_status',
+      arguments: {},
+      _meta: META,
+    });
+    expect(res.error).toBeUndefined();
+    const result = res.result as {
+      content: Array<{ type: string; text: string }>;
+      resultType: string;
+    };
+    expect(result.resultType).toBe('complete');
+
+    const payload = JSON.parse(result.content[0].text) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('specialists');
+    expect(payload).not.toHaveProperty('background_jobs');
+    expect(JSON.stringify(payload).length).toBeLessThan(5_000);
+    expect(payload.activations).toEqual([]);
+    expect(payload.pending_asks).toEqual([]);
+  });
+
   it('refusals surface as returned payloads through the modern envelope', async () => {
     // both bead_id and contract: refused before any gate or side effect.
     const res = await client.call('tools/call', {
