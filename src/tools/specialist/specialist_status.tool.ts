@@ -1,11 +1,7 @@
 // src/tools/specialist/specialist_status.tool.ts
 import * as z from 'zod';
 import type { SpecialistLoader } from '../../specialist/loader.js';
-import { checkStaleness } from '../../specialist/loader.js';
 import type { CircuitBreaker } from '../../utils/circuitBreaker.js';
-import { createObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
-import { isJobDead } from '../../specialist/supervisor.js';
-import { detectJobOutputMode } from '../../cli/status.js';
 import { projectOutstandingAsks, type PendingInteractionProjection } from '../../activation/transport/polling.js';
 import { leaseScopeFor, projectUncertainWorkspaces, type UncertainWorkspaceProjection } from '../../activation/workspace-reconcile.js';
 import type { NativeActivationHost } from '../../activation/native-host.js';
@@ -30,37 +26,10 @@ export function createSpecialistStatusTool(
 ) {
   return {
     name: 'specialist_status' as const,
-    description: 'System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from DB-backed runtime state (.specialists/jobs/ is legacy/operator-only), and native in-process activations with any question they are waiting on — answer those with specialist_reply.',
+    description: 'System health: backend circuit breaker states, loaded specialist count, and native in-process activations with any question they are waiting on — answer those with specialist_reply.',
     inputSchema: z.object({}),
     async execute(_: object) {
       const list = await loader.list();
-
-      // Check staleness for each specialist concurrently
-      const stalenessResults = await Promise.all(list.map(s => checkStaleness(s)));
-
-      // Include active background jobs — DB-first, file fallback only when file output is on.
-      const sqliteClient = createObservabilitySqliteClient();
-      let jobs: any[] = [];
-      try {
-        const dbStatuses = sqliteClient?.listStatuses() ?? [];
-        if (dbStatuses.length > 0) {
-          jobs = dbStatuses;
-        } else if (detectJobOutputMode() === 'on') {
-          const { existsSync, readdirSync, readFileSync } = await import('node:fs');
-          const { join } = await import('node:path');
-          const jobsDir = join(process.cwd(), '.specialists', 'jobs');
-          if (existsSync(jobsDir)) {
-            for (const entry of readdirSync(jobsDir)) {
-              const statusPath = join(jobsDir, entry, 'status.json');
-              if (!existsSync(statusPath)) continue;
-              try { jobs.push(JSON.parse(readFileSync(statusPath, 'utf-8'))); } catch { /* skip */ }
-            }
-          }
-        }
-      } finally {
-        sqliteClient?.close();
-      }
-      jobs.sort((a, b) => (b.started_at_ms ?? 0) - (a.started_at_ms ?? 0));
 
       // The degraded path from the Claude transport decision: outstanding clarifications
       // must be readable WITHOUT the peer channel working. Projection only — never a
@@ -86,11 +55,9 @@ export function createSpecialistStatusTool(
         uncertain_workspaces = [];
       }
 
-      // The native Fleet. Separate from `background_jobs` because they are different
-      // things and merging them would hide it: a background job is a `sp run` child
-      // process with a pid, an activation is an in-process AgentSession with none. The
-      // projection is the host's own `ActivationSnapshot`, so this reads the same whether
-      // the activation was dispatched over MCP or by the Pi extension.
+      // The native Fleet is an in-process AgentSession projection. It reads the host's own
+      // `ActivationSnapshot`, so this is the same whether the activation was dispatched over
+      // MCP or by the Pi extension.
       const host = getHost?.();
       const activations: ActivationView[] = host ? host.list().map(s => toActivationView(s)) : [];
       const pending_asks: PendingAskView[] = host ? host.pendingAsks().map(toPendingAskView) : [];
@@ -111,24 +78,6 @@ export function createSpecialistStatusTool(
         pending_interactions,
         uncertain_workspaces,
         backends_health: Object.fromEntries(BACKENDS.map(b => [b, circuitBreaker.getState(b)])),
-        specialists: list.map((s, i) => ({
-          name: s.name,
-          scope: s.scope,
-          category: s.category,
-          version: s.version,
-          staleness: stalenessResults[i],
-        })),
-        background_jobs: jobs.map(j => ({
-          id: j.id,
-          specialist: j.specialist,
-          status: j.status,
-          is_dead: isJobDead({ status: j.status, pid: j.pid, tmux_session: j.tmux_session }),
-          elapsed_s: j.elapsed_s,
-          current_event: j.current_event,
-          bead_id: j.bead_id,
-          metrics: j.metrics,
-          error: j.error,
-        })),
       };
     },
   };
