@@ -1241,15 +1241,50 @@ PreCompact works
 PostCompact works
 SessionStart(compact) resume works
 MCP uses official TypeScript SDK v2
-MCP negotiates exactly 2026-07-28
+MCP serves 2026-07-28, and serves the revision the installed client opens with
 server/discover works
-legacy initialize-era mode is rejected
+unsupported protocol revisions are rejected
 tools capability is advertised
 tools/list works
 tools/call works
 full ProvenanceService trace is exposed
 no exec("sb") bridge exists
 ```
+
+## AJ.1 Protocol-revision criterion — amended 2026-09-11
+
+The two criteria above replace the original "MCP negotiates exactly 2026-07-28" and "legacy
+initialize-era mode is rejected". Both original lines are superseded, not relaxed.
+
+Reason, captured on the wire on 2026-09-10:
+
+```text
+>>> {"method":"initialize","params":{"protocolVersion":"2025-11-25",
+     "clientInfo":{"name":"claude-code","version":"2.1.267"}},"id":0}
+<<< {"error":{"code":-32022,"message":"Unsupported protocol version: 2025-11-25",
+     "data":{"supported":["2026-07-28"],"requested":"2025-11-25"}}}
+```
+
+Claude Code 2.1.267 — the current release — opens with a legacy `initialize` at 2025-11-25 and
+never attempts `server/discover`. A server that rejects that revision is unusable by every
+shipping Claude Code client: no connection, zero tools. Serving 2026-07-28 alone therefore
+made the integration impossible to complete, not strict.
+
+The shipped server (`src/mcp/v2-server.ts`, `legacy: 'serve'`) serves both revisions through
+one SDK v2 stdio path. The SDK pins each connection to its opening request's era, so a modern
+client still gets the per-request `_meta` envelope with no `initialize` handshake, while a
+legacy client gets the handshake it opened with. Revisions the server does not support are
+still rejected with `-32022`.
+
+**`legacy: 'serve'` is required, not a regression.** Anyone reading this section and reverting
+it to `legacy: 'reject'` will silently break every Claude Code client. The
+`client-connected` and `client-tools` gates in `scripts/e5-packaged-plugin-e2e.mjs` are what
+prove either state, and they fail loudly when the client cannot connect or cannot see the
+tools.
+
+This criterion may return to strict-only when a Claude Code release negotiates 2026-07-28.
+The evidence for that change is the same gate passing with `legacy: 'reject'` restored — not a
+documentation claim.
 
 Where wake/event support is implemented, additionally prove the selected native primitive.
 
