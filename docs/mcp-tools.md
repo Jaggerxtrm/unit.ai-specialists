@@ -298,10 +298,13 @@ export function renderRejection(input: RejectionInput, build?: string) {
 - Push-as-projection: a pushed completion serialises the SAME validated
   `ActivationResult` that `specialist_status.activation_results` projects. A
   coordinator that never received the push reads the identical object here; the
-  notification is a projection, never the authority.
+  notification is a projection, never the authority. Provider limits on this
+  transport (preview status, platform availability, untrusted inbound, no-ack
+  delivery) are stated in [claude-channel-constraints.md](claude-channel-constraints.md).
 
 ## See also
 
 - [cli-reference.md](cli-reference.md)
 - [workflow.md](workflow.md)
 - [background-jobs.md](background-jobs.md)
+- [claude-channel-constraints.md](claude-channel-constraints.md)
