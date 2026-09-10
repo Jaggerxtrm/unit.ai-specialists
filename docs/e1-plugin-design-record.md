@@ -698,3 +698,360 @@ My first harness run failed on a missing `@modelcontextprotocol/server`. That is
 environment staleness in `~/dev/specialists/node_modules`, not a branch problem: master's
 `bun.lock` carries the package (added in `2105ad1a`), and `bun install --frozen-lockfile`
 resolved it. Retracted as a finding.
+
+## 14. E5 fully green on current master — 2026-09-10
+
+`feature/unitAI-aiwva.4-e5` (PR #322, commits `7fb1fc0e` + `7fbedc76`) merged locally with
+`origin/master` and re-run: **14 PASS, 0 UNPROVEN, RESULT: PASS.**
+
+The §13 UNPROVEN row `sessionstart-bun-rows` now passes — "pinned runtime projects rows" —
+because E2 (#316) merged the `bun:sqlite`-first `openStore()` into `session-start.mjs:27`.
+The harness proves the shipped path under the pinned bun runtime, not only the node
+invocation, so the §13 scope caveat on `same-store` is discharged.
+
+Nothing in the harness or the plugin changed to achieve this; only the base moved. #322
+should be rebased or merged onto current master before landing so CI observes the same
+14/14.
+
+## 15. Live-session usability check — 2026-09-10 — TWO DEFECTS
+
+Question asked: how far are we from a real Claude Code session actually using the plugin?
+Answer: **not there yet.** Two defects, the first of them mine.
+
+### RESOLVED FIRST — §11 finding 1 is discharged
+
+`~/.xtrm/state.db` now exists (1.1M) and its `activations` table has exactly the five columns
+session-start queries: `activation_id, specialist, state, bead_id, last_activity_at`. The
+schema assumption I flagged twice as unverified is now verified against the real store.
+
+### DEFECT 1 (mine, blocking) — `plugin.json` must declare `mcpServers`
+
+My design omitted `mcpServers` from the manifest on the assumption that a plugin's `.mcp.json`
+is auto-discovered by convention. **That assumption is false and was never tested.**
+
+As shipped on master:
+```
+$ claude --plugin-dir ~/dev/specialists/plugins/substrate -p "name every MCP tool containing 'specialist'"
+NONE
+```
+The plugin loads, `claude plugin validate --strict` passes, and no substrate tool exists in
+the session. The MCP server is never wired.
+
+Adding one field to `.claude-plugin/plugin.json`:
+```json
+"mcpServers": "./.mcp.json"
+```
+changes it to:
+```
+$ claude --plugin-dir <copy> mcp list | grep substrate
+plugin:substrate:substrate: bun <root>/scripts/mcp-server.mjs - ✔ Connected
+```
+`claude plugin validate --strict` still passes with the field present.
+
+This is the same class as the `command: "node"` defect: an unverified design assumption that
+only a live check exposes. Note the §2 rationale table explicitly justified omitting
+`mcpServers` as "auto-discovered; an explicit list is a second source of truth". That
+reasoning was wrong.
+
+### DEFECT 2 (unknown owner, blocking) — only 1 of 7 tools reaches the session
+
+With the server connected, the session sees exactly one tool:
+```
+mcp__plugin_substrate_substrate__use_specialist
+```
+The six activation tools — `specialist_dispatch`, `specialist_status`, `specialist_reply`,
+`specialist_resume`, `specialist_stop_activation`, `specialist_list` — do not appear.
+Confirmed not a deferred-tool artifact: an in-session `ToolSearch` for
+`select:mcp__plugin_substrate_substrate__specialist_status` returned "No matching deferred
+tools found", and a search for "specialist" returned exactly one match.
+
+The server itself is not at fault — raw JSON-RPC `tools/list` against the same launcher
+returns all seven (§12). So the drop happens between the v2 server and Claude Code's MCP
+client. Root cause not determined here. One hypothesis worth testing first: `use_specialist`
+is the only tool whose schema does not go through the v2 `fromJsonSchema(zodToJsonSchema(...))`
+path, so a schema construct Claude's client rejects would drop exactly the other six.
+
+Owner: Wave E / E3-E4, not E1 packaging.
+
+### Why E5's 14/14 did not catch either
+
+`claude-live-load` asserts only that `claude --plugin-dir <plugin> -p "Reply with exactly:
+E5-LOAD-OK"` exits 0 and echoes the marker. It proves the CLI starts with the plugin
+directory present. It never asserts the plugin was enabled, the MCP server connected, or any
+tool was exposed. Every other MCP proof in the harness speaks JSON-RPC to the server
+directly, bypassing Claude Code's own client entirely.
+
+**Recommended harness addition:** one step that asserts, through Claude Code itself, that the
+expected tool names are present — the only check that would have caught both defects.
+
+## 16. Root cause of the live-session failures — 2026-09-10
+
+Investigated live. **My §15 Defect 2 diagnosis was wrong.** It is not a client-side schema
+drop. There are two independent causes, and one of them is a hard blocker.
+
+### RETRACTED: the schema hypothesis
+
+§15 speculated that Claude's client rejects the six activation tools' schemas because
+`use_specialist` is the only one bypassing `fromJsonSchema(zodToJsonSchema(...))`. False.
+That evidence came from a `/var/tmp` copy of the plugin whose launcher resolved to a
+different runtime, which invalidated the observation.
+
+### CAUSE A (blocking, spec-vs-reality) — Claude Code speaks 2025-11-25
+
+```
+$ claude --plugin-dir <worktree>/plugins/substrate mcp list
+plugin:substrate:substrate: ✘ Failed to connect — -32022: Unsupported protocol version: 2025-11-25
+```
+
+Claude Code 2.1.267 negotiates MCP **2025-11-25**. The v2 server is strict 2026-07-28 served
+with `{ legacy: 'reject' }` (§J). It therefore refuses Claude Code outright. **The v2 server
+cannot be used by the shipping Claude Code client at all** — zero tools, no connection.
+
+Spec §F/§J mandated 2026-07-28 strict as "verified against live Claude Code documentation on
+2026-09-09". The live CLI disagrees with that. This needs an owner decision, not a patch from
+me: either the plugin serves a client-compatible revision until Claude Code ships 2026-07-28,
+or the plugin is knowingly non-functional on current Claude Code.
+
+**Verified correction (experiment only, not written):** forcing the legacy server via
+`env: { "SPECIALISTS_MCP_SERVER": "legacy" }` in `.mcp.json` connects and exposes all seven
+tools through Claude Code:
+```
+specialist_dispatch, specialist_list, specialist_reply, specialist_retry,
+specialist_status, specialist_stop_activation, use_specialist
+```
+Note the legacy surface has `specialist_retry`, NOT `specialist_resume` — so this workaround
+costs the E4 parity item. That is the trade to decide.
+
+This also reverses my §5 "ship no env block" ruling for as long as the workaround stands.
+
+### CAUSE B (blocking, mine) — the launcher resolves to a stale global cache
+
+Under bun, `require.resolve('@jaggerxtrm/specialists')` from a plugin directory with no local
+`node_modules` resolves into bun's global install cache:
+```
+~/.bun/install/cache/@jaggerxtrm/specialists@3.21.6@@@1/dist/index.js
+```
+That published copy contains no v2 server (`grep -c 2026-07-28` → 0) and serves exactly
+`['use_specialist']` — which is precisely what the earlier session saw. My launcher silently
+prefers a stale published runtime over the plugin's own build.
+
+This is the exact failure I named when rejecting the `npx` option in §5 — "floats the runtime
+version away from the installed plugin version" — reintroduced by branch 1 of my own
+launcher under bun's resolution rules.
+
+**Correction:** resolve the plugin's own runtime first and treat the package name as the
+fallback, not the reverse; or verify the resolved artifact carries the expected build before
+importing it.
+
+### CAUSE C (needs an owner, not blocking) — `specialist_status` returns 2.19 MB
+
+Called live through Claude Code, `specialist_status` returned **2,193,692 bytes / 95,440
+lines** — the full specialist registry plus ~3,228 job records (`specialist`, `status`,
+`is_dead`, `elapsed_s`, `metrics`, `turns`, `tool_calls`). The session refused to paste it and
+spilled it to a file.
+
+PRD §13.1 specifies a compact projection: live activation rows only, forensic IDs excluded.
+A 2 MB payload would consume a large fraction of a session's context on one call. Whether the
+v2 `specialist_status` has the same shape is untested — this was the legacy tool under the
+Cause A workaround.
+
+### Harness step that would have caught all of this
+
+The E5 gap is that every MCP assertion speaks JSON-RPC directly to the server, and the only
+Claude-Code-level check asserts process startup. Required addition:
+
+1. `claude --plugin-dir <plugin> mcp list` → assert the server line reads **Connected**.
+   This alone catches Cause A and Cause B, and would have failed today.
+2. `claude --plugin-dir <plugin> -p "<list tool names>"` → assert every expected tool name is
+   present, by exact name.
+3. One real tool call through Claude Code, asserting a bounded response size.
+
+Step 1 is one command and is the highest-value check in the whole plan.
+
+## 17. Durable fix for Cause A, and the Cause C correction — 2026-09-10
+
+### Cause A — SOLVED by one word, no downgrade, no parity loss
+
+The SDK's `serveStdio` `legacy` option takes three values, not two:
+`'reject' | 'serve' | 'stateless'` — and `'serve'` is the SDK default. We chose `'reject'`
+(§J), which is what refuses Claude Code.
+
+Verified live on a worktree of master with `legacy: 'serve'` and a rebuilt `dist`:
+
+```
+$ claude --plugin-dir <w>/plugins/substrate mcp list
+plugin:substrate:substrate: bun <w>/plugins/substrate/scripts/mcp-server.mjs - ✔ Connected
+
+$ claude ... -p "list tools starting with mcp__plugin_substrate"
+specialist_dispatch, specialist_list, specialist_reply, specialist_resume,
+specialist_status, specialist_stop_activation, use_specialist
+```
+
+All seven, including `specialist_resume` — NOT the legacy `specialist_retry`. And the modern
+path is unaffected: a raw 2026-07-28 `tools/list` still returns 7 tools, while a legacy
+`initialize` now answers `protocolVersion: 2025-11-25` instead of `-32022`.
+
+One server, both revisions. This supersedes the §16 `SPECIALISTS_MCP_SERVER=legacy`
+workaround, which cost the E4 parity item, and it keeps the §5 "no env block" ruling intact.
+It also needs no change when Claude Code ships a 2026-07-28 client.
+
+**Exact correction:** `src/mcp/v2-server.ts:184`, `legacy: 'reject'` → `legacy: 'serve'`,
+plus the file-header comment on line 4 and the "strict" wording in the startup log, which
+would otherwise assert something untrue. Owner: E3.
+
+### On "is stdio the wrong transport"
+
+No. The protocol revision is chosen by the client, not the transport: Claude Code sends
+`initialize` at 2025-11-25 over stdio and never attempts `server/discover`. Moving to HTTP
+would still be the same client choosing the same revision.
+
+More importantly, **fire-and-wake was never an MCP capability**. Statelessness in 2026-07-28
+means the server holds no connection-scoped state (§G) — it does not mean the server can push
+into an idle session. MCP remains client-initiated request/response in both revisions. The
+spec's own decision matrix (§AF) assigns wake to different primitives entirely:
+
+```
+local continuous stream        → plugin monitor            (§Y)
+one condition wakes idle Claude → asyncRewake hook          (§Z)
+push into an OPEN session      → Claude Channel            (§U)
+Claude → Claude                → SendMessage               (§AD)
+durable work authority         → NONE OF THESE → Substrate Issue
+```
+
+So the durable architecture decouples the two concerns, and neither depends on the MCP
+revision:
+
+- **MCP = command surface.** dispatch / status / reply / resume / stop / list. Must speak
+  whatever revision the installed client speaks — hence `legacy: 'serve'`.
+- **Wake = plugin monitor or asyncRewake hook** reading Substrate directly. This is wave E6
+  (already merged, #318) and is where fire-and-wake actually lives.
+
+The plugin already holds a SessionStart hook that reads `~/.xtrm/state.db`. An `asyncRewake`
+hook over the same store is the fire-and-wake path, and it is independent of MCP entirely.
+
+### Cause C — cleanest fix is deletion, and it closes a parity gap
+
+The Pi extension does NOT have this defect. Its `specialist_status` states plainly: "No CLI
+background jobs are shown — this surface only hosts in-process activations", and it projects
+`host.list()` only.
+
+The MCP tool diverges by adding two unbounded sections:
+- `background_jobs` — fed by `listStatuses()`, which is
+  `SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC` with **no LIMIT**.
+  3,228 rows here, each with `metrics`, `turns`, `tool_calls`. This is ~all of the 2.19 MB.
+- `specialists` — the full registry with per-specialist staleness, which is what
+  `specialist_list` already exists to return.
+
+**Correction: remove both from `specialist_status`, converging the MCP projection onto the Pi
+shape.** That is PRD §13.1's specified projection — activations, pending asks, results,
+backends health — and it fixes the token problem by deleting duplication rather than by
+adding a cap that later drifts. `specialist_list` keeps the registry; job listing stays CLI
+territory (`sp ps`), or earns a separate bounded tool if MCP genuinely needs it.
+
+Do **not** add a LIMIT inside `listStatuses()`: ten CLI callers (`clean`, `console/runtime`,
+`db`, `doctor`, `end`, `list`) legitimately want every row.
+
+Owner: E4 / whoever owns `src/tools/specialist/specialist_status.tool.ts`. Affects the v2
+server too — `v2-server.ts:110` imports the same factory, so this is not a legacy-only bug.
+
+## 18. Completion status — 2026-09-11 (coordinator)
+
+### §AJ criteria, verified
+
+| Criterion | Verdict |
+|---|---|
+| real plugin package exists | SATISFIED — plugins/substrate, 8 files |
+| claude plugin validate --strict passes | SATISFIED — harness `load`, exit 0 on the INSTALLED copy |
+| plugin loads from outside xtrm source checkout | SATISFIED — tarball into scratch repo; also isolated marketplace install |
+| plugin paths use CLAUDE_PLUGIN_ROOT correctly | SATISFIED — lint test + harness |
+| one ~/.xtrm/state.db authority is used | SATISFIED — no alternate path in any plugin script; only canonical + explicit XTRM_STATE_DB |
+| Substrate skill is discoverable | SATISFIED — live: resolves as `substrate:using-substrate` |
+| hooks load | SATISFIED |
+| PreCompact works | SATISFIED — `precompact-pointer` |
+| PostCompact works | SATISFIED as of .23 — was ABSENT; pointer was written and never read |
+| SessionStart(compact) resume works | SATISFIED — `postcompact-rederive` |
+| MCP uses official TypeScript SDK v2 | SATISFIED |
+| **MCP negotiates exactly 2026-07-28** | **VIOLATED ON PURPOSE (.7). Needs a §AJ amendment.** |
+| **legacy initialize-era mode is rejected** | **VIOLATED ON PURPOSE (.7). Same amendment.** |
+| server/discover works | SATISFIED — `discover`, supportedVersions ["2026-07-28"] |
+| tools capability is advertised | SATISFIED |
+| tools/list works | SATISFIED — 7 tools, deterministic order |
+| tools/call works | SATISFIED — live through Claude Code, not only raw JSON-RPC |
+| **full ProvenanceService trace is exposed** | **NOT SATISFIED — .11, blocked on Substrate IssueService, no owner** |
+| no exec("sb") bridge exists | SATISFIED — grep clean across src/ and plugins/ |
+
+### PRD §13.1 parity — checked, and NOT the gap I expected
+
+I expected `thinking_level`, `purpose` and `token_usage` to be missing from the MCP
+projection. They are present, with the exact §13.1 semantics — conditional spreads at
+`activation.tool.ts:106-108`, so each is omitted when unset rather than fabricated. Dispatch
+carries `epic_context_depth`, `coordinator_session_id`, `requested_by`, `model_override`,
+`thinking_override`. Build identity is rendered (4 call sites). Workspace lease admission
+lives in the shared host.
+
+Remaining §13.1 divergences, both understood:
+- **Wake notifications** (`specialist_ask` / `specialist_settled` follow-ups): no MCP
+  equivalent. This is .21, unbuilt. On Claude the coordinator polls `specialist_status`.
+- **Fleet UI footer seam** (`registerFooterSection`): Pi-runtime-specific. Claude Code has no
+  equivalent seam, so this is not a portable requirement.
+
+### What "complete" is actually gated on
+
+1. A §AJ amendment for the protocol criterion, or the shipped server permanently violates the
+   spec and someone eventually reverts it.
+2. Substrate IssueService, for .9/.10/.11 — and §AJ names ProvenanceService by itself.
+3. .21, if fire-and-wake is in scope for "concluded".
+
+Everything else in §AJ is satisfied with live evidence.
+
+## 19. Corrections log — claims I made that did not survive checking
+
+Recorded because the recurring failure in this programme is an assertion that reads as
+proof of something it does not prove. Three of those were mine.
+
+### 19.1 `command: "node"` in `.mcp.json` (design §5, caught at §11)
+
+Asserted the launcher should run under node. `dist/index.js` is built `--target=bun` and
+`src/index.ts:19` hard-guards the runtime, so the server could never start. Survived design
+approval, an executor, and the lane's own L1/L2/L4 evidence — four checkpoints — because
+every one of them read the artifact instead of running it.
+
+### 19.2 `mcpServers` omitted from the manifest (design §2, caught at §15)
+
+The §2 rationale table justified the omission: "auto-discovered; an explicit list is a second
+source of truth that drifts". The premise was invented and never tested. A plugin's
+`.mcp.json` is not auto-discovered, so the server was never wired and the session saw zero
+tools. Same class as 19.1: a confident reason for a decision that no check covered.
+
+### 19.3 "Substrate skill is discoverable" counted as satisfied (caught by the auditor)
+
+Verified it live once, saw `substrate:using-substrate` resolve, and called the criterion met.
+A one-off manual check is not coverage — nothing would have caught its regression. It was the
+only §AJ line with no automated assertion of any kind. Now gated (`client-skill`).
+
+### 19.4 PRD §19.2 chain work — wrong twice, in opposite directions
+
+First: "zero code, zero beads, unstarted, nobody has scoped it." False. PRD §22 states on the
+same page I was quoting that the milestone is "owned by the XTRM runtime plan rather than this
+PRD"; I quoted the page and did not follow the pointer.
+
+Then, correcting it: "built and closed in xtrm." Also wrong — overstated in the other
+direction.
+
+True: all chain-runtime source lives under
+`~/dev/xtrm/experiments/agentsession-sre-chain-vertical-slice/src/`, and no shipped package in
+either repo imports it (`grep -rl 'newResolvedChain\|compileChain'` outside `experiments/` and
+`docs/` returns nothing). Six of eight §19.2 criteria are satisfied inside that experiment;
+19.2c is open on an unbuilt materializer; 19.2h is partially open because the data-authored
+`sre-team.chain.json` is proven fingerprint-equivalent yet `cli/main.ts` still calls the
+hard-coded `newResolvedChain`. Open bead `xtrm-q99` names that wiring.
+
+The shared root cause of both halves: conflating **presence** with **shipped**. A grep hit is
+not a deployment and a closed epic is not a wired runtime.
+
+### What the pattern says
+
+Every one of these was found by executing the thing rather than reading it, or by a second
+party checking scope. None was found by more careful reading of the same artifact. That is the
+argument for the client gate existing at all, and for stating repo scope and deployment status
+on every cross-repo claim.
