@@ -44,6 +44,7 @@ const PLUGIN_FILES = [
   'package/plugins/substrate/scripts/mcp-server.mjs',
   'package/plugins/substrate/scripts/session-start.mjs',
   'package/plugins/substrate/scripts/precompact.mjs',
+  'package/plugins/substrate/scripts/postcompact.mjs',
   'package/plugins/substrate/skills/using-substrate/SKILL.md',
 ];
 
@@ -111,7 +112,7 @@ link(
   'pack',
   missing.length === 0 && tarList.includes('package/dist/index.js'),
   missing.length === 0
-    ? '7 plugin files + dist/index.js in tarball'
+    ? `${PLUGIN_FILES.length} plugin files + dist/index.js in tarball`
     : `missing from tarball: ${missing.join(', ')}`,
 );
 
@@ -369,6 +370,33 @@ const pointerOk =
   pointer?.store === STORE &&
   JSON.stringify(pointer?.active_activation_ids) === JSON.stringify(['act:e5-live1', 'act:e5-live2']);
 link('precompact-pointer', pointerOk, pointerOk ? pointerPath : `exit=${pre.status}`);
+
+// The other half of the lifecycle (unitAI-aiwva.23, spec §AJ "PostCompact works"). Until
+// this existed the pointer above was written and never read by anything. Asserting the
+// PostCompact hook consumes it is what keeps the write from silently becoming dead again.
+const postHookRegistered = JSON.parse(
+  readFileSync(join(PLUGIN, 'hooks/hooks.json'), 'utf-8'),
+).hooks?.PostCompact;
+const post = run('bun', [join(PLUGIN, 'scripts/postcompact.mjs')], {
+  cwd: REPO_DIR,
+  env: { ...process.env, CLAUDE_PLUGIN_DATA: PLUGINDATA, XTRM_STATE_DB: STORE },
+  input: JSON.stringify({ session_id: 'e5-sess' }),
+  timeout: 60000,
+});
+const postOk =
+  Boolean(postHookRegistered) &&
+  post.status === 0 &&
+  post.stdout.includes('Substrate continuity') &&
+  post.stdout.includes('specialist_status');
+say('--- installed postcompact.mjs ---');
+say((post.stdout || '').trim() || '(silent)');
+link(
+  'postcompact-hook',
+  postOk,
+  postOk
+    ? 'PostCompact registered and consumes the PreCompact pointer'
+    : `registered=${Boolean(postHookRegistered)} exit=${post.status}`,
+);
 // Post-compaction re-derivation runs under node on a master base (bun path is
 // the recorded sessionstart-bun-rows divergence, E2-owned). The claim under
 // test — state re-derived from the store, not summary prose — is

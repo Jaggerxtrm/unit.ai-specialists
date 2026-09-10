@@ -26,6 +26,7 @@ const SCRIPT_FILES = [
   'scripts/mcp-server.mjs',
   'scripts/session-start.mjs',
   'scripts/precompact.mjs',
+  'scripts/postcompact.mjs',
 ];
 
 describe('substrate plugin path discipline', () => {
@@ -33,6 +34,7 @@ describe('substrate plugin path discipline', () => {
     const hooks = read('hooks/hooks.json');
     expect(hooks).toContain('${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs');
     expect(hooks).toContain('${CLAUDE_PLUGIN_ROOT}/scripts/precompact.mjs');
+    expect(hooks).toContain('${CLAUDE_PLUGIN_ROOT}/scripts/postcompact.mjs');
     expect(read('.mcp.json')).toContain('${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs');
   });
 
