@@ -92,4 +92,26 @@ describe('substrate plugin path discipline', () => {
       expect(command.startsWith('bun '), `hook command pins bun: ${command}`).toBe(true);
     }
   });
+
+  it('declares its MCP server in the manifest so Claude wires .mcp.json', () => {
+    // Without this field Claude Code loads the plugin, validates it, and never
+    // connects the server: the session sees zero substrate tools (unitAI-aiwva.2).
+    const manifest = JSON.parse(read('.claude-plugin/plugin.json')) as Record<string, unknown>;
+    expect(manifest.mcpServers).toBe('./.mcp.json');
+  });
+
+  it('resolves the plugin-local runtime before the package name', () => {
+    // Package-name-first lets bun resolve into its global install cache and serve a
+    // stale published runtime with an older tool surface (unitAI-aiwva.2).
+    // Comment prose names both, so compare the code only.
+    const launcher = read('scripts/mcp-server.mjs')
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n');
+    const localAt = launcher.indexOf("'../../../dist/index.js'");
+    const packageAt = launcher.indexOf("require.resolve('@jaggerxtrm/specialists')");
+    expect(localAt).toBeGreaterThan(-1);
+    expect(packageAt).toBeGreaterThan(-1);
+    expect(localAt).toBeLessThan(packageAt);
+  });
 });
