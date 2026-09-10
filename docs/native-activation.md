@@ -356,7 +356,10 @@ for the result object, or query `observability.db`.
 The same rule holds one level down, in delivery. A successful send is transport acceptance,
 not delivery; only a receipt means delivered. A message that cannot be delivered becomes
 readable `pending` state rather than disappearing, and the Specialist stays in `needs_reply`
-rather than failing or silently proceeding.
+rather than failing or silently proceeding. The provider constraints behind this — Channels
+preview status, unsupported platforms, untrusted inbound, no-acknowledgement delivery with a
+polling-authoritative fallback — are stated in
+[claude-channel-constraints.md](claude-channel-constraints.md).
 
 ## Fallbacks and retry
 
