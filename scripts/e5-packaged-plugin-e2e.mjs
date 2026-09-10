@@ -44,6 +44,7 @@ const PLUGIN_FILES = [
   'package/plugins/substrate/scripts/mcp-server.mjs',
   'package/plugins/substrate/scripts/session-start.mjs',
   'package/plugins/substrate/scripts/precompact.mjs',
+  'package/plugins/substrate/scripts/postcompact.mjs',
   'package/plugins/substrate/skills/using-substrate/SKILL.md',
 ];
 
@@ -111,7 +112,7 @@ link(
   'pack',
   missing.length === 0 && tarList.includes('package/dist/index.js'),
   missing.length === 0
-    ? '7 plugin files + dist/index.js in tarball'
+    ? `${PLUGIN_FILES.length} plugin files + dist/index.js in tarball`
     : `missing from tarball: ${missing.join(', ')}`,
 );
 
@@ -247,10 +248,14 @@ try {
     capabilities: {},
     clientInfo: { name: 'e5-probe', version: '0' },
   });
-  say(`--- initialize (legacy, must be rejected) ---`);
+  // NOT "we refuse legacy clients" — since unitAI-aiwva.7 the server serves them. The SDK
+  // pins each connection to its OPENING request's era, and this connection opened modern,
+  // so a 2025-11-25 initialize on it is correctly refused. A legacy client opening its own
+  // connection is served: that is what the client-connected gate below proves.
+  say(`--- initialize at 2025-11-25 on an already-modern connection (must be rejected) ---`);
   say(JSON.stringify(legacy.error ?? legacy.result));
   link(
-    'initialize-rejected',
+    'initialize-rejected-on-modern-connection',
     legacy.error?.code === -32022 && JSON.stringify(legacy.error).includes(PROTOCOL),
     `code=${legacy.error?.code}`,
   );
@@ -365,6 +370,33 @@ const pointerOk =
   pointer?.store === STORE &&
   JSON.stringify(pointer?.active_activation_ids) === JSON.stringify(['act:e5-live1', 'act:e5-live2']);
 link('precompact-pointer', pointerOk, pointerOk ? pointerPath : `exit=${pre.status}`);
+
+// The other half of the lifecycle (unitAI-aiwva.23, spec §AJ "PostCompact works"). Until
+// this existed the pointer above was written and never read by anything. Asserting the
+// PostCompact hook consumes it is what keeps the write from silently becoming dead again.
+const postHookRegistered = JSON.parse(
+  readFileSync(join(PLUGIN, 'hooks/hooks.json'), 'utf-8'),
+).hooks?.PostCompact;
+const post = run('bun', [join(PLUGIN, 'scripts/postcompact.mjs')], {
+  cwd: REPO_DIR,
+  env: { ...process.env, CLAUDE_PLUGIN_DATA: PLUGINDATA, XTRM_STATE_DB: STORE },
+  input: JSON.stringify({ session_id: 'e5-sess' }),
+  timeout: 60000,
+});
+const postOk =
+  Boolean(postHookRegistered) &&
+  post.status === 0 &&
+  post.stdout.includes('Substrate continuity') &&
+  post.stdout.includes('specialist_status');
+say('--- installed postcompact.mjs ---');
+say((post.stdout || '').trim() || '(silent)');
+link(
+  'postcompact-hook',
+  postOk,
+  postOk
+    ? 'PostCompact registered and consumes the PreCompact pointer'
+    : `registered=${Boolean(postHookRegistered)} exit=${post.status}`,
+);
 // Post-compaction re-derivation runs under node on a master base (bun path is
 // the recorded sessionstart-bun-rows divergence, E2-owned). The claim under
 // test — state re-derived from the store, not summary prose — is
@@ -405,6 +437,140 @@ if (live.status === 0 && liveOut.includes('E5-LOAD-OK')) {
 } else {
   link('claude-live-load', false, `exit=${live.status} out=${liveOut.slice(0, 300)}`);
 }
+
+// ---- Step 9: Claude-client gate (unitAI-aiwva.19) ---------------------------
+// Every MCP assertion above speaks JSON-RPC to the server directly, and step 8 proves only
+// that the CLI starts with a plugin directory present. Neither notices when Claude Code
+// itself cannot connect or cannot see the tools — which is exactly how a manifest missing
+// `mcpServers` and a server refusing the client's protocol revision both shipped green.
+// This step asserts the integration through Claude Code, the surface a user actually has.
+// EXPECTED_TOOLS is already the harness-wide roster (deterministic order asserted above).
+const ENV_BLOCKED = /login|auth|api key|credential|401|403|trust/i;
+
+// 9a. The server must reach Connected through Claude's own client.
+const gateList = run('claude', ['--plugin-dir', PLUGIN, 'mcp', 'list'], {
+  cwd: REPO_DIR,
+  timeout: 120000,
+});
+const gateListOut = `${gateList.stdout || ''} ${gateList.stderr || ''}`;
+const substrateLine = (gateList.stdout || '')
+  .split('\n')
+  .find((l) => l.includes('substrate')) || '';
+say('--- claude mcp list (substrate) ---');
+say(substrateLine.trim() || '(no substrate line)');
+const listBlocked =
+  (ENV_BLOCKED.test(gateListOut) && !substrateLine) || gateList.signal;
+if (listBlocked) {
+  // Only when OUR line is absent entirely. A substrate line that says "Failed to connect"
+  // is a result, not an environment block — excusing it is how a broken client ships green.
+  unprovenLink('client-connected', 'pane (execute-as-declared)', 'headless auth/interactive block');
+} else {
+  link(
+    'client-connected',
+    /Connected/.test(substrateLine) && !/Failed to connect/.test(substrateLine),
+    substrateLine.trim() || `exit=${gateList.status}`,
+  );
+}
+
+// 9b. Every expected tool must be visible to the session, by exact name.
+const gateTools = run(
+  'claude',
+  [
+    '--plugin-dir',
+    PLUGIN,
+    '-p',
+    'List every MCP tool name you can see that starts with mcp__plugin_substrate. One per line, nothing else.',
+  ],
+  { cwd: REPO_DIR, timeout: 300000 },
+);
+const gateToolsOut = `${gateTools.stdout || ''} ${gateTools.stderr || ''}`;
+const clientMissing = EXPECTED_TOOLS.filter((t) => !gateToolsOut.includes(t));
+say('--- tools visible to the Claude session ---');
+say((gateTools.stdout || '').trim() || '(none)');
+if (ENV_BLOCKED.test(gateToolsOut) || gateTools.signal) {
+  unprovenLink('client-tools', 'pane (execute-as-declared)', 'headless auth/interactive block');
+} else {
+  link(
+    'client-tools',
+    clientMissing.length === 0,
+    clientMissing.length === 0
+      ? `all ${EXPECTED_TOOLS.length} tools visible to the client`
+      : `missing from the client: ${clientMissing.join(', ')}`,
+  );
+}
+
+// 9c. §AJ "Substrate skill is discoverable". The file existing is not evidence that Claude
+// surfaced it, and until this gate the file was the entire proof — the one §AJ line with no
+// coverage of any kind. Plugin skills are namespaced <plugin>:<skill>, and the skill sets its
+// own `name:` precisely so a versioned install directory cannot rename it.
+const gateSkill = run(
+  'claude',
+  [
+    '--plugin-dir',
+    PLUGIN,
+    '-p',
+    'Is a skill named using-substrate available to you? Reply with its exact invocable name, or NONE.',
+  ],
+  { cwd: REPO_DIR, timeout: 300000 },
+);
+const gateSkillOut = `${gateSkill.stdout || ''} ${gateSkill.stderr || ''}`;
+say('--- skill visible to the Claude session ---');
+say((gateSkill.stdout || '').trim() || '(none)');
+if (ENV_BLOCKED.test(gateSkillOut) || gateSkill.signal) {
+  unprovenLink('client-skill', 'pane (execute-as-declared)', 'headless auth/interactive block');
+} else {
+  link(
+    'client-skill',
+    gateSkillOut.includes('substrate:using-substrate'),
+    gateSkillOut.includes('substrate:using-substrate')
+      ? 'skill surfaced as substrate:using-substrate'
+      : `skill not surfaced: ${(gateSkill.stdout || '').trim().slice(0, 120)}`,
+  );
+}
+
+// 9c. A status read must stay small enough to spend on. A projection that returns the whole
+// job table costs a large share of a session's context in one call, so size is a contract,
+// not a nicety (unitAI-aiwva.8).
+const STATUS_BUDGET_BYTES = 64 * 1024;
+// Self-contained one-shot: the harness's long-lived client is closed by this point.
+const statusReq = {
+  jsonrpc: '2.0',
+  id: 1,
+  method: 'tools/call',
+  params: { name: 'specialist_status', arguments: {}, _meta: META },
+};
+const statusRun = run('bun', [join(PLUGIN, 'scripts/mcp-server.mjs')], {
+  cwd: REPO_DIR,
+  timeout: 120000,
+  input: `${JSON.stringify(statusReq)}\n`,
+});
+let statusBytes = 0;
+let statusPayload = {};
+try {
+  const line = (statusRun.stdout || '').trim().split('\n')[0] ?? '';
+  const result = JSON.parse(line).result ?? {};
+  statusBytes = JSON.stringify(result).length;
+  statusPayload = JSON.parse(result?.content?.[0]?.text ?? '{}');
+} catch {
+  statusBytes = 0;
+}
+// The budget alone passes vacuously on a fresh scratch store, because the unbounded
+// sections are only large on a machine that has done work. Assert the shape as well.
+const UNBOUNDED_SECTIONS = ['background_jobs', 'specialists'];
+const presentUnbounded = UNBOUNDED_SECTIONS.filter((k) => k in statusPayload);
+link(
+  'status-shape',
+  presentUnbounded.length === 0,
+  presentUnbounded.length === 0
+    ? 'compact projection: no unbounded sections'
+    : `unbounded sections still projected: ${presentUnbounded.join(', ')}`,
+);
+say(`--- specialist_status payload: ${statusBytes} bytes (budget ${STATUS_BUDGET_BYTES}) ---`);
+link(
+  'status-bounded',
+  statusBytes > 0 && statusBytes <= STATUS_BUDGET_BYTES,
+  `${statusBytes} bytes vs ${STATUS_BUDGET_BYTES} budget`,
+);
 
 // ---- Verdict ----------------------------------------------------------------
 say('');

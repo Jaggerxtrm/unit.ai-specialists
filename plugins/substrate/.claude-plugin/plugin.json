@@ -2,7 +2,11 @@
   "name": "substrate",
   "description": "Substrate work authority in Claude Code: specialist activation over MCP, session continuity hooks, and the using-substrate doctrine skill.",
   "version": "0.1.0",
-  "author": { "name": "XTRM", "url": "https://github.com/xtrm-dev/specialists" },
+  "author": {
+    "name": "XTRM",
+    "url": "https://github.com/xtrm-dev/specialists"
+  },
   "homepage": "https://github.com/xtrm-dev/specialists#readme",
-  "license": "MIT"
+  "license": "MIT",
+  "mcpServers": "./.mcp.json"
 }
