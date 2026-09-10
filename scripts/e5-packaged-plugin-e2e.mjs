@@ -499,6 +499,35 @@ if (ENV_BLOCKED.test(gateToolsOut) || gateTools.signal) {
   );
 }
 
+// 9c. §AJ "Substrate skill is discoverable". The file existing is not evidence that Claude
+// surfaced it, and until this gate the file was the entire proof — the one §AJ line with no
+// coverage of any kind. Plugin skills are namespaced <plugin>:<skill>, and the skill sets its
+// own `name:` precisely so a versioned install directory cannot rename it.
+const gateSkill = run(
+  'claude',
+  [
+    '--plugin-dir',
+    PLUGIN,
+    '-p',
+    'Is a skill named using-substrate available to you? Reply with its exact invocable name, or NONE.',
+  ],
+  { cwd: REPO_DIR, timeout: 300000 },
+);
+const gateSkillOut = `${gateSkill.stdout || ''} ${gateSkill.stderr || ''}`;
+say('--- skill visible to the Claude session ---');
+say((gateSkill.stdout || '').trim() || '(none)');
+if (ENV_BLOCKED.test(gateSkillOut) || gateSkill.signal) {
+  unprovenLink('client-skill', 'pane (execute-as-declared)', 'headless auth/interactive block');
+} else {
+  link(
+    'client-skill',
+    gateSkillOut.includes('substrate:using-substrate'),
+    gateSkillOut.includes('substrate:using-substrate')
+      ? 'skill surfaced as substrate:using-substrate'
+      : `skill not surfaced: ${(gateSkill.stdout || '').trim().slice(0, 120)}`,
+  );
+}
+
 // 9c. A status read must stay small enough to spend on. A projection that returns the whole
 // job table costs a large share of a session's context in one call, so size is a contract,
 // not a nicety (unitAI-aiwva.8).
