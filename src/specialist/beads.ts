@@ -4,6 +4,7 @@
 // All methods are fire-and-forget: never throw, never crash a run.
 
 import { spawnSync } from 'node:child_process';
+import { extractSections } from '../activation/bead-gate.js';
 
 
 export interface BeadDependency {
@@ -252,6 +253,36 @@ export class BeadsClient {
       ],
       { stdio: 'ignore' },
     );
+  }
+}
+
+/**
+ * Create a Bead from an inline dispatch contract (unitAI-rrdnt.48).
+ *
+ * The readiness gate has already passed BEFORE this is called — a refused
+ * dispatch must leave the board unchanged. Uses the `bd` CLI exactly like the
+ * runtime's own BeadsClient does; the created bead is the durable record every
+ * later participant reads. Returns the new bead id, or null on failure.
+ *
+ * Shared with the Pi coordinator extension via lib.js: one bead-creation path,
+ * never a second. Must NOT be confused with `BeadsClient.createBead` (a `bd q`
+ * quick-create with no description).
+ */
+export function createBeadFromContract(contract: string, title?: string): string | null {
+  const problem = extractSections(contract).get('PROBLEM');
+  const firstLine = (problem ?? '').split('\n').map((s) => s.trim()).find(Boolean);
+  const resolvedTitle = title ?? (firstLine ?? 'Specialist dispatch contract').slice(0, 72);
+  const result = spawnSync(
+    'bd',
+    ['create', resolvedTitle, '--description', contract, '--type', 'task', '--priority', '2', '--json'],
+    { encoding: 'utf-8', timeout: 20000 },
+  );
+  if (result.error || result.status !== 0) return null;
+  try {
+    const parsed = JSON.parse(result.stdout);
+    return typeof parsed.id === 'string' ? parsed.id : null;
+  } catch {
+    return null;
   }
 }
 

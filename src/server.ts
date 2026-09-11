@@ -29,15 +29,19 @@ import { CircuitBreaker } from './utils/circuitBreaker.js';
 import { BeadsClient } from './specialist/beads.js';
 import { createUseSpecialistTool, useSpecialistSchema } from './tools/specialist/use_specialist.tool.js';
 import { createSpecialistStatusTool } from './tools/specialist/specialist_status.tool.js';
+import { createSpecialistListTool, specialistListSchema } from './tools/specialist/specialist_list.tool.js';
 import {
   createSpecialistDispatchTool,
   createSpecialistReplyTool,
+  createSpecialistRetryTool,
   createSpecialistStopActivationTool,
   specialistDispatchSchema,
   specialistReplySchema,
+  specialistRetrySchema,
   specialistStopSchema,
 } from './tools/specialist/activation.tool.js';
 import { NativeActivationHost } from './activation/native-host.js';
+import { createFileAuthorityWriter } from './activation/authority-store.js';
 import { RuntimeEventPusher } from './activation/async-events.js';
 import { PeerAdapter } from './activation/transport/peer-adapter.js';
 import { createActivationForensicSink } from './activation/forensic-sink.js';
@@ -157,6 +161,8 @@ export class SpecialistsServer {
     this.activationHost = new NativeActivationHost({
       loader,
       beadsClient,
+      // One Substrate authority shared with sb/Pi; path from XTRM_STATE_DB or ~/.xtrm/state.db.
+      authority: createFileAuthorityWriter(),
       ...(this.observability ? { forensics: createActivationForensicSink(this.observability) } : {}),
     });
     const getHost = () => this.activationHost;
@@ -171,7 +177,9 @@ export class SpecialistsServer {
       createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher),
       createSpecialistDispatchTool(getHost, getPusher),
       createSpecialistReplyTool(getHost),
+      createSpecialistRetryTool(getHost, getPusher),
       createSpecialistStopActivationTool(getHost),
+      createSpecialistListTool(loader),
     ];
     this.mcpSessionId = randomUUID();
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
@@ -185,7 +193,9 @@ export class SpecialistsServer {
       use_specialist: useSpecialistSchema,
       specialist_dispatch: specialistDispatchSchema,
       specialist_reply: specialistReplySchema,
+      specialist_retry: specialistRetrySchema,
       specialist_stop_activation: specialistStopSchema,
+      specialist_list: specialistListSchema,
       // specialist_status takes no arguments; the empty-object default applies.
     };
     this.toolSchemas = schemaMap;

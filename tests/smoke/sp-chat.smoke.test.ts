@@ -23,11 +23,6 @@ afterAll(() => {
   }
   for (const beadId of createdBeads) {
     try {
-      spawnSync('bd', ['kv', 'set', `memory-acked:${beadId}`, 'nothing novel:smoke test cleanup'], {
-        cwd: repoRoot,
-        stdio: 'ignore',
-        env: { ...process.env, NO_COLOR: '1' },
-      });
       spawnSync('bd', ['close', beadId, '-r', 'smoke cleanup'], {
         cwd: repoRoot,
         stdio: 'ignore',

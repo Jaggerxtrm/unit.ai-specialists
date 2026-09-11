@@ -88,7 +88,6 @@ Additional shipped skills include:
 - `using-script-specialists` — synchronous `sp script` / `sp serve` integration guidance
 - `using-kpi` — observability SQLite/KPI analysis
 - `using-nodes` — NodeSupervisor/coordinator workflow
-- `memory-audit-transaction` — file-backed memory audit ledger pattern
 - service/persona authoring and maintenance skills used by local workflows
 
 Use `find config/skills -maxdepth 2 -name SKILL.md` or `sp list` / specialist definitions to see which skills each specialist loads.

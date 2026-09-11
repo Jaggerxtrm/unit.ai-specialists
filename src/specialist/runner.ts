@@ -942,7 +942,7 @@ function selectAvailableModel(
   return modelChain.at(-1) ?? modelChain[0];
 }
 
-function classifyFallbackError(error: unknown): string {
+export function classifyFallbackError(error: unknown): string {
   if (isAuthError(error)) return 'auth';
   if (isRateLimitError(error)) return 'rate_limit';
 

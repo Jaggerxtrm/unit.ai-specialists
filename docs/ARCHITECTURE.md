@@ -42,7 +42,7 @@ This document defines the runtime boundary between:
 
 ## 0) Runner context injection at spawn
 
-`src/specialist/runner.ts` injects context into the specialist's first-turn prompt before spawning the Pi session. The injection pipeline uses keyword-filtered memory retrieval from a local FTS cache, replacing the previous full `bd prime` dump.
+`src/specialist/runner.ts` injects context into the specialist's first-turn prompt before spawning the Pi session. Per-bead stored-context injection is retired (S1 unitAI-cnca3 through S4 unitAI-j45ai): the runner injects no stored per-bead context.
 
 ### Injection pipeline (in order)
 
@@ -50,36 +50,12 @@ This document defines the runtime boundary between:
 |---|--------|--------|-----------|--------|
 | 0 | Caveman-micro output directive | ~80 | Always | Terse agent-to-agent output style (+26pp accuracy, ~65% token reduction) |
 | 1 | GitNexus workflow mandate | ~200 | `.gitnexus/meta.json` exists | Mandatory code intelligence usage rules |
-| — | `.xtrm/memory.md` | — | **Not injected by runner** | Injected by xtrm-loader Pi extension (`before_agent_start`) — saves ~800 tokens |
-| 2 | Static workflow rules block | ~60 | Always | `STATIC_WORKFLOW_RULES_BLOCK` from `memory-retrieval.ts` (bead claim/close/remember commands) |
-| 3 | Keyword-filtered memories | ~0-600 | `--bead <id>` provided | `buildFilteredMemoryInjection()` from `memory-retrieval.ts` — FTS query using bead title/description keywords |
+| — | Memory doctrine | — | Injected by xtrm-loader Pi extension ONLY, not runner | User-owned memory file is never injected |
 | 4 | GitNexus pre-query snapshot | ~0-200 | `.gitnexus/meta.json` exists + symbol-like tokens in bead title | Pre-resolved caller/callee/process summaries for top 2 CamelCase symbols |
 
-### Keyword-filtered memory retrieval (`memory-retrieval.ts`)
+### Retired: per-bead context retrieval
 
-Replaced the previous full `bd prime` dump (~3000 tokens) with targeted retrieval:
-
-```typescript
-import { buildFilteredMemoryInjection, STATIC_WORKFLOW_RULES_BLOCK } from './memory-retrieval.js';
-
-const memoryInjection = buildFilteredMemoryInjection({
-  cwd: runCwd,
-  beadTitle: beadForMemory.title,
-  beadDescription: beadForMemory.description,
-});
-// Returns: { block: string, memories: MemoryRecord[], estimatedTokens: number }
-```
-
-Key parameters:
-- `MAX_KEYWORDS = 6` — max search tokens extracted from bead context
-- `MAX_MEMORIES = 10` — max matching memories returned
-- `MAX_MEMORY_TOKENS = 600` — token budget ceiling
-- `CACHE_MAX_AGE_MS = 3600000` (1h) — FTS cache staleness threshold
-
-The FTS cache is a SQLite table (`specialist_memories_cache`) populated from `bd memories` output. Cache sync triggers:
-- `specialists init` — full bootstrap sync
-- PostToolUse hook (`specialists-memory-cache-sync.mjs`) — incremental sync after memory mutations
-- `sp memory sync` / `sp memory refresh` — manual CLI
+Removed across S1–S4: unitAI-cnca3 (spawn injection), unitAI-7n3fs (management CLI, sync hook, init wiring), unitAI-3qfjr (SQLite persistence → stubs), unitAI-j45ai (curator specialist, audit skill). The former module retains neutered stubs plus pure helpers for caller compatibility.
 
 ### Extension opt-out
 
@@ -116,7 +92,6 @@ This enables post-hoc analysis of context budget allocation across runs.
 ### Non-fatal behavior
 
 All injection sources are optional and non-blocking:
-- Missing FTS cache → no keyword-filtered memories (static rules still inject)
 - `.gitnexus/meta.json` missing → no GitNexus mandate or pre-query
 - GitNexus CLI unavailable → pre-query skipped silently
 - Extension opt-out → extension simply not loaded (no error)

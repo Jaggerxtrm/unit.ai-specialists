@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "substrate": {
+      "command": "bun",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs"]
+    }
+  }
+}

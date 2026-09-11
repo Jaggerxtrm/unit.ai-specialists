@@ -2,8 +2,8 @@
 title: MCP Servers Configuration
 scope: mcp-servers
 category: reference
-version: 1.3.1
-updated: 2026-05-15
+version: 1.4.0
+updated: 2026-09-09
 synced_at: bf6baf7a
 description: Project-scoped MCP registration for Specialists.
 source_of_truth_for:
@@ -28,13 +28,20 @@ Specialists exposes an MCP server for Claude Code integration.
 
 ## MCP tools
 
-The server exposes a single tool. For full tool contract, see [mcp-tools.md](mcp-tools.md).
+This server exposes six MCP tools over stdio: one legacy synchronous path
+(`use_specialist`) and five native-path tools over the in-process
+`NativeActivationHost` (no `sp` child process is spawned). For full tool contract, see [mcp-tools.md](mcp-tools.md).
 
-| Tool | Description |
+| Tool | Purpose |
 |---|---|
-| `use_specialist` | run a specialist synchronously |
+| `use_specialist` | legacy synchronous specialist run, result returned directly in MCP response |
+| `specialist_status` | system health + native Fleet: activations, pending asks, recorded results |
+| `specialist_dispatch` | admit-and-start a Specialist on the native runtime (async; returns on admission) |
+| `specialist_reply` | answer an outstanding ask by `message_id` |
+| `specialist_stop_activation` | stop and dispose a native activation |
+| `specialist_list` | resolved Specialist registry with per-row dispatchability |
 
-Orchestration, monitoring, steering, resume, and cancellation are CLI-only. See [cli-reference.md](cli-reference.md).
+Legacy `sp run` jobs are reported by `specialist_status` read-only and remain CLI-managed. See [cli-reference.md](cli-reference.md).
 
 ## Registration
 

@@ -30,7 +30,7 @@ function shippedTemplates(): Array<{ name: string; template: string }> {
 
 describe('placeholder hygiene across every shipped task_template', () => {
   const templates = shippedTemplates();
-  expect(templates.length).toBeGreaterThanOrEqual(25); // guard: sweep must not silently shrink
+  expect(templates.length).toBeGreaterThanOrEqual(24); // guard: sweep must not silently shrink (24 after intentional memory-processor retirement)
 
   for (const { name, template } of templates) {
     it(`renders ${name} with zero unresolved $name placeholders`, () => {

@@ -56,6 +56,19 @@ export declare class BeadsClient {
     auditBead(id: string, toolName: string, model: string, exitCode: number): void;
 }
 /**
+ * Create a Bead from an inline dispatch contract (unitAI-rrdnt.48).
+ *
+ * The readiness gate has already passed BEFORE this is called — a refused
+ * dispatch must leave the board unchanged. Uses the `bd` CLI exactly like the
+ * runtime's own BeadsClient does; the created bead is the durable record every
+ * later participant reads. Returns the new bead id, or null on failure.
+ *
+ * Shared with the Pi coordinator extension via lib.js: one bead-creation path,
+ * never a second. Must NOT be confused with `BeadsClient.createBead` (a `bd q`
+ * quick-create with no description).
+ */
+export declare function createBeadFromContract(contract: string, title?: string): string | null;
+/**
  * Determine whether to create a bead for this specialist run.
  *
  * auto   — create bead only for non-READ_ONLY specialists (write-capable)

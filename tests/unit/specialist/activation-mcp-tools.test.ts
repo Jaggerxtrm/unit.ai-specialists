@@ -25,10 +25,14 @@ vi.mock('node:child_process', async (importOriginal) => {
 import {
   createSpecialistDispatchTool,
   createSpecialistReplyTool,
+  createSpecialistRetryTool,
   createSpecialistStopActivationTool,
   toActivationView,
 } from '../../../src/tools/specialist/activation.tool.js';
 import { createSpecialistStatusTool } from '../../../src/tools/specialist/specialist_status.tool.js';
+import { createSpecialistListTool } from '../../../src/tools/specialist/specialist_list.tool.js';
+import { createUseSpecialistTool } from '../../../src/tools/specialist/use_specialist.tool.js';
+import { createSpecialistResumeTool } from '../../../src/mcp/resume-tool.js';
 import { NativeActivationHost } from '../../../src/activation/native-host.js';
 import { REQUIRED_SECTIONS } from '../../../src/activation/bead-gate.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
@@ -72,6 +76,8 @@ interface HostFixture {
   permission?: string;
   thinkingLevel?: string;
   readContractState?: () => string | undefined;
+  /** First turn fails terminally; later turns succeed — drives a real failed activation. */
+  failFirst?: { stopReason: string; errorMessage: string };
 }
 
 /**
@@ -81,9 +87,10 @@ interface HostFixture {
  * refusal below must leave it at zero, which is the in-process shadow of the process-table
  * assertion the live test makes.
  */
-function fakeSession(): PiAgentSessionLike {
+function fakeSession(failFirst?: { stopReason: string; errorMessage: string }): PiAgentSessionLike {
   const listeners: Array<(e: PiAgentSessionEvent) => void> = [];
   const messages: unknown[] = [];
+  let prompts = 0;
   const session = {
     sessionId: 'pi-sess-mcp',
     messages,
@@ -92,7 +99,15 @@ function fakeSession(): PiAgentSessionLike {
     activeTools: ['read', 'grep'],
     async prompt() {
       listeners.forEach(l => l({ type: 'agent_start' }));
-      messages.push({ role: 'assistant', content: 'done' });
+      prompts += 1;
+      // A fail-first session lets the retry test drive a real failed activation: the
+      // dispatch turn fails terminally ('permanent boom' classifies unknown, so no
+      // fallback walk), and the retried turn succeeds on the same session.
+      if (failFirst && prompts === 1) {
+        messages.push({ role: 'assistant', content: '', stopReason: failFirst.stopReason, errorMessage: failFirst.errorMessage });
+      } else {
+        messages.push({ role: 'assistant', content: 'done' });
+      }
       listeners.forEach(l => l({ type: 'agent_end', willRetry: false }));
       listeners.forEach(l => l({ type: 'agent_settled' }));
     },
@@ -136,7 +151,7 @@ afterEach(() => {
 function hostWith(fixture: HostFixture = {}) {
   const sessionsCreated = { count: 0 };
   const workspace = tempWorkspace();
-  const session = fakeSession();
+  const session = fakeSession(fixture.failFirst);
   const sdk: PiSdk = {
     createAgentSession: async () => { sessionsCreated.count += 1; return { session }; },
     ModelRuntime: { create: async () => ({ hasConfiguredAuth: () => true }) },
@@ -362,6 +377,59 @@ describe('specialist_status — an MCP activation reads back identically', () =>
     expect(reported).toEqual(reprojected);
     expect(typeof _tick).toBe('number');
     expect(_tick as number).toBeGreaterThanOrEqual(0);
+    expect(out).not.toHaveProperty('specialists');
+    expect(out).not.toHaveProperty('background_jobs');
+  });
+
+  it('keeps the host projection compact instead of serializing runtime details', async () => {
+    const oversizedRuntimeDetail = 'x'.repeat(100_000);
+    const snapshot = {
+      activationId: 'act:compact',
+      participantId: 'participant:compact',
+      attemptId: 'attempt:compact',
+      specialist: 'researcher',
+      beadId: 'ISSUE-compact',
+      state: 'running',
+      access: 'read',
+      workspace: { worktreePath: '/tmp/compact-worktree', branch: 'feature/compact' },
+      piSessionId: 'pi-session-compact',
+      requestedModel: 'provider/requested',
+      resolvedModel: 'provider/resolved',
+      modelOverride: true,
+      thinkingOverride: false,
+      startedAt: Date.now(),
+      lastActivityAt: Date.now(),
+      oversizedRuntimeDetail,
+    };
+    const host = {
+      list: () => [snapshot],
+      pendingAsks: () => [],
+    };
+    const status = createSpecialistStatusTool(
+      { list: async () => [] } as never,
+      new CircuitBreaker(),
+      () => host as never,
+    );
+
+    const out = await status.execute({}) as Record<string, unknown>;
+    const serialized = JSON.stringify(out);
+
+    expect(out).not.toHaveProperty('specialists');
+    expect(out).not.toHaveProperty('background_jobs');
+    expect(serialized).not.toContain(oversizedRuntimeDetail);
+    expect(serialized.length).toBeLessThan(5_000);
+    expect(out.activations).toEqual([expect.objectContaining({
+      activation_id: 'act:compact',
+      participant_id: 'participant:compact',
+      attempt_id: 'attempt:compact',
+      specialist: 'researcher',
+      bead_id: 'ISSUE-compact',
+      worktree_path: '/tmp/compact-worktree',
+      branch: 'feature/compact',
+      pi_session_id: 'pi-session-compact',
+      requested_model: 'provider/requested',
+      resolved_model: 'provider/resolved',
+    })]);
   });
 
   it('reports an empty Fleet rather than failing when no host is wired', async () => {
@@ -382,6 +450,94 @@ describe('specialist_reply — correlation is by message id and nothing else', (
 
     expect(out.status).toBe('error');
     expect(String(out.error)).toContain('msg:nope');
+  });
+});
+
+describe('specialist_retry — a failed activation is re-run in place, never redispatched', () => {
+  it('retries a failed activation and keeps its identity', async () => {
+    const { host, events } = hostWith({ failFirst: { stopReason: 'error', errorMessage: 'permanent boom' } });
+    const retry = createSpecialistRetryTool(() => host);
+
+    const handle = await host.start({
+      specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    expect((await handle.result).status).toBe('failed');
+
+    const out = await retry.execute({ activation_id: handle.activationId }) as Record<string, unknown>;
+    expect(out.status).toBe('retried');
+    expect(out.activation_id).toBe(handle.activationId);
+    expect(out.attempt_id).not.toBe(handle.attemptId);
+    await vi.waitFor(() => expect(host.inspect(handle.activationId)?.state).toBe('settled'));
+    expect(events).toContain('activation_retried');
+  });
+
+  it('forwards an explicit prompt and model override to the host', async () => {
+    const { host } = hostWith({ failFirst: { stopReason: 'error', errorMessage: 'permanent boom' } });
+    const seen: Array<[string, unknown]> = [];
+    const retry = createSpecialistRetryTool(() => new Proxy(host, {
+      get: (target, prop, receiver) => prop === 'retry'
+        ? async (id: string, opts: unknown) => { seen.push([id, opts]); return Reflect.get(target, prop, receiver).call(target, id, opts); }
+        : Reflect.get(target, prop, receiver),
+    }));
+
+    const handle = await host.start({
+      specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    await handle.result;
+
+    await retry.execute({ activation_id: handle.activationId, model_override: 'qwen', prompt: 'try again' });
+    expect(seen).toEqual([[handle.activationId, { modelOverride: 'qwen', prompt: 'try again' }]]);
+  });
+
+  it('refuses a settled activation as a rejected result pointing at resume', async () => {
+    const { host } = hostWith();
+    const retry = createSpecialistRetryTool(() => host);
+
+    const handle = await host.start({
+      specialist: 'researcher', beadId: 'ISSUE-1', requestedByParticipantId: 'coordinator',
+    });
+    await handle.result;
+    expect(host.inspect(handle.activationId)?.state).toBe('settled');
+
+    const out = await retry.execute({ activation_id: handle.activationId }) as Record<string, unknown>;
+    expect(out.status).toBe('rejected');
+    expect(String(out.reason)).toMatch(/resume/);
+  });
+
+  it('reports an unknown activation as an error, never a retry', async () => {
+    const { host } = hostWith();
+    const retry = createSpecialistRetryTool(() => host);
+
+    const out = await retry.execute({ activation_id: 'act:nope' }) as Record<string, unknown>;
+    expect(out.status).toBe('rejected');
+    expect(String(out.reason)).toMatch(/unknown_activation/);
+  });
+});
+
+describe('7-tool v2 surface inventory', () => {
+  it('exposes exactly the 7 v2 tools in deterministic order', async () => {
+    // Pinned to the same surface as the v2 wire test's EXPECTED_TOOLS
+    // (tests/unit/mcp/v2-server.test.ts): the tool-level inventory must agree
+    // with what tools/list advertises over the wire.
+    const { host } = hostWith();
+    const tools = [
+      createUseSpecialistTool({} as never),
+      createSpecialistStatusTool({ list: async () => [] } as never, new CircuitBreaker(), () => host),
+      createSpecialistDispatchTool(() => host),
+      createSpecialistReplyTool(() => host),
+      createSpecialistResumeTool(() => host),
+      createSpecialistStopActivationTool(() => host),
+      createSpecialistListTool({ list: async () => [] } as never),
+    ];
+    expect(tools.map((t) => t.name)).toEqual([
+      'use_specialist',
+      'specialist_status',
+      'specialist_dispatch',
+      'specialist_reply',
+      'specialist_resume',
+      'specialist_stop_activation',
+      'specialist_list',
+    ]);
   });
 });
 

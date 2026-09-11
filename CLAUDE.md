@@ -33,10 +33,8 @@ Example native task list mirroring beads:
 ## Session Start
 
 1. `bd prime` — load workflow context and active claims
-2. `bd memories <keyword>` — retrieve memories relevant to today's task
-3. `bd recall <key>` — retrieve a specific memory by key if needed
-4. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
-5. `bd update <id> --claim` — claim before any file edit
+2. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
+3. `bd update <id> --claim` — claim before any file edit
 
 ## Execution Interaction Policy
 
@@ -52,7 +50,6 @@ Example native task list mirroring beads:
 | **Edit** | Write/Edit without active claim | `bd update <id> --claim` |
 | **Commit** | `git commit` while claim is open | `bd close <id>` first, then commit |
 | **Stop** | Session end with unclosed claim | `bd close <id>` |
-| **Memory** | `bd close <id>` without issue ack | First run `bd remember "<insight>"` (or decide nothing novel), then `bd kv set "memory-acked:<id>" "saved:<key>"` or `"nothing novel:<reason>"`, then retry `bd close <id> --reason="..."` (Stop hook remains fallback reminder) |
 | **Dispatch** *(bridge — discipline only, not yet hook-enforced)* | Specialist run against a `contract:draft` bead | Promote first: explore + rewrite full 7-section contract + `bd set-state <id> contract=ready --reason "..."`. Check with `bd state <id> contract` before dispatch. |
 
 ## bd Command Reference
@@ -83,11 +80,9 @@ bd create --title="..." --description="..." --type=task --priority=2
 # types: task | bug | feature | epic | chore | decision
 
 # Closing
-# Memory gate: ack per issue before close
-#   bd kv set "memory-acked:<id>" "saved:<key>"  OR  "nothing novel:<reason>"
-bd close <id>                          # Close issue (blocked until memory-acked:<id> exists)
+bd close <id>                          # Close issue
 bd close <id> --reason="Done: ..."     # Close with context
-bd close <id1> <id2> <id3>            # Batch close (each id needs its own memory ack)
+bd close <id1> <id2> <id3>            # Batch close
 
 # Dependencies
 bd dep add <issue> <depends-on>        # issue depends on depends-on (depends-on blocks issue)
@@ -95,12 +90,6 @@ bd dep <blocker> --blocks <blocked>    # shorthand: blocker blocks blocked
 bd dep relate <a> <b>                  # non-blocking "relates to" link
 bd dep tree <id>                       # visualise dependency tree
 bd blocked                             # show all currently blocked issues
-
-# Persistent memory
-bd remember "<insight>"                # Store across sessions (project-scoped)
-bd memories <keyword>                  # Search stored memories
-bd recall <key>                        # Retrieve full memory by key
-bd forget <key>                        # Remove a memory
 
 # Health & pre-flight
 bd stats                               # Open/closed/blocked counts
@@ -194,7 +183,6 @@ bd update <id> --claim          # claim before any file edit
 |------|---------|-----------------|
 | Edit | Write/Edit without active claim | `bd update <id> --claim` |
 | Commit | `git commit` while claim is open | `bd close <id>` first |
-| Memory | `bd close <id>` without ack | `bd remember "..."` then `bd kv set "memory-acked:<id>" "saved:<key>"` (or `"nothing novel:<reason>"`) then close |
 | Stop | Session end with unclosed claim | `bd close <id>` |
 
 ## Execution policy
@@ -246,8 +234,6 @@ Hook output appears as context. Fix failures before committing.
 | Plan a feature/epic from scratch | `/planning` |
 | Premortem a plan | `/premortem` |
 
-Run `bd memories <keyword>` or `bd recall <key>` for prior insights before substantial work.
-
 ## Specialist orchestration in one paragraph
 
 `--bead` is the prompt — don't run a specialist until the bead is a usable task contract (PROBLEM / SUCCESS / SCRUTINY / SCOPE / NON_GOALS / CONSTRAINTS / VALIDATION / OUTPUT). Edit-capable specialists auto-provision a worktree from `--bead`. Reviewer reuses the executor workspace via `--job <exec-job>` — `--worktree` and `--job` are mutually exclusive. Keep executor/debugger jobs alive with `--keep-alive` so they're resumable. Default `--context-depth` is 3. **Merge via manual git workflow (Cherry-Pick Playbook or `git merge --no-ff`)** — `sp merge` and `sp epic merge` are prohibited (known broken, awaiting separate rework epic). Per-turn output auto-appends to bead notes; `bd show <id>` is the canonical way to read a handoff. Full reference: `/using-specialists`.
@@ -261,7 +247,6 @@ Run `bd memories <keyword>` or `bd recall <key>` for prior insights before subst
 - **Git State Precondition before any dependent chain dispatch.** `git status` clean + HEAD contains prior chain commits + no orphaned worktrees. Stale-base dispatch → guaranteed debugger-restitch loop. The dispatcher fetch-and-pins the base and refuses with a `stale_base` envelope; override via `sp run ... --accept-stale-base --reason "<text>"` (or pin explicitly with `--base-sha <sha>` / `--base-ref <branch>`). `--force-stale-base` is deprecated.
 - **PR/job attention surfaces.** `specialists doctor --pr-drift` refreshes PR classifications (`clean | needs-rebase | conflicted | blocked | stale | unknown`) via `gh pr view` when `pr_drift_checked_at_ms` is stale (> 5 min) or null; `sp ps --needs-attention` (or `--json` → `attention_reasons[]`) filters to non-clean jobs. After container/host restarts, `specialists doctor --reap-dead-jobs [--dry-run] [--json]` cancels orphan rows (`container-restart-orphan`) and emits `xtrm.forensic.v1 lifecycle.dead_declared`.
 - **GitNexus index goes stale on commit.** PostToolUse hook normally re-indexes after `git commit`/`git merge`; if not, `npx gitnexus analyze` (add `--embeddings` only if `.gitnexus/meta.json` shows `stats.embeddings > 0`).
-- **`bd close` itself does not block.** Stop hook blocks only after a successful `bd close` in same session, and only when hook can resolve issue id from `claimed:<sessionId>`, `closed-this-session:<sessionId>`, or branch name. If `bd show` fails, gate fails open. Each id in batch needs its own ack before session stop.
 - **bd auto-export keeps re-staging `.beads/issues.jsonl`** after every bd op. `.git/info/exclude` blocks `git add` but the already-tracked staged change can still be committed. Stale `.git/index.lock` from bd hooks is safe to `rm -f` when no real git process is running.
 - **Specialists are JSON** (`config/specialists/<name>.specialist.json`) — YAML is a deprecated legacy fallback (`loader.ts:101 deprecatedYaml`).
 - **Package-tier specialists need direct JSON edit** (not `sp edit` — that's user-tier only). Use `jq -e` to validate after edit. `specialists list --full` to confirm registry sees the change.

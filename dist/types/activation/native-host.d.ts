@@ -38,6 +38,7 @@ import { type BeadGateOptions } from './bead-gate.js';
 import { type InteractionMessage, type PendingAsk } from './interaction.js';
 import { PeerAdapter, type TransportForensicEvent } from './transport/peer-adapter.js';
 import { type PiSdk, type PiAgentSessionEvent } from './pi-sdk.js';
+import { type AuthorityWriter } from './authority-store.js';
 import { type ActivationHandle, type ActivationRequest, type ActivationSnapshot, type LiveActivationStats } from './types.js';
 /**
  * Sink for activation forensics.
@@ -105,6 +106,13 @@ export interface NativeActivationHostDeps {
     cwd?: string;
     now?: () => number;
     /**
+     * Persists the Fleet projection to the one Substrate authority. Defaults to a
+     * no-op (unit tests); production servers inject `createFileAuthorityWriter()`.
+     * Best-effort by contract — the writer never throws, so lifecycle never depends
+     * on the store being present, writable, or even openable.
+     */
+    authority?: AuthorityWriter;
+    /**
      * Push asks to a live Claude coordinator over the peer channel.
      *
      * Omit it and the host is polling-only, which is the degraded path and is correct: the
@@ -142,6 +150,7 @@ export declare class NativeActivationHost {
     private readonly beadGate;
     private readonly cwd;
     private readonly now;
+    private readonly authority;
     private readonly registry;
     /**
      * Last per-message usage value seen per activation, keyed by live snapshot.
@@ -180,6 +189,44 @@ export declare class NativeActivationHost {
     private onSessionEvent;
     private runToSettled;
     /**
+     * Run the turn-1 attempt, walking the model chain on retryable provider failures.
+     *
+     * The first attempt runs on the dispatch-time session; a failure whose class is
+     * retryable (rate_limit/timeout/transient per the classifier shared with the CLI
+     * runner) disposes that session and continues on the next chain model under the SAME
+     * activation and attempt id. Auth, unknown and abort-class failures settle failed
+     * immediately — retrying those on another model is either wrong (auth) or blind
+     * (unknown), exactly the CLI rule. The winner lands on the snapshot (`resolvedModel`,
+     * `piSessionId`) and on the result (`resolvedModel`, `fallbackUsed`), so attribution
+     * answers what actually ran.
+     *
+     * Runs inside the dispatch result promise: dispatch already returned, so the walk never
+     * blocks admission. A record removed mid-walk (stop) ends the walk — a disposed
+     * activation must never resurrect.
+     */
+    private runWithFallback;
+    /**
+     * Re-run a FAILED activation in place — the native equivalent of `sp retry`.
+     *
+     * Keeps `activationId` and advances `attemptId`: a retry is a new attempt under one
+     * activation, never a second dispatch, so lineage and the workspace lease survive it.
+     * Without a model override the SAME session is re-prompted, so its context survives
+     * too; with one a new session is built identically except for the model, and the
+     * failed session is disposed. The turn prompt defaults to the dispatch-time render of
+     * the same bead — pass `prompt` to say something new, or dispatch fresh when the bead
+     * itself was rewritten.
+     *
+     * Gating mirrors the CLI retry: failed only. A waiting/settled/needs_reply/escalated
+     * activation resumes (its session is alive); a running one steers or stops first.
+     * A refused model override leaves the activation failed-and-retryable, never
+     * half-advanced. Writers reacquire their own lease for the new attempt — the workspace
+     * is held across the retry, never dropped, so no orphan is possible.
+     */
+    retry(activationId: string, opts?: {
+        modelOverride?: string;
+        prompt?: string;
+    }): Promise<ActivationHandle>;
+    /**
      * Answer an outstanding ask, resuming the child inside its existing tool call.
      *
      * The answer returns as that tool's result, so the SAME AgentSession continues with its
@@ -187,6 +234,17 @@ export declare class NativeActivationHost {
      * latest ask" convenience, because with two asks outstanding that is a coin flip.
      */
     answer(messageId: string, body: string): Promise<InteractionMessage | undefined>;
+    /**
+     * Mirror one snapshot to the Substrate authority. Best-effort twice over: the
+     * writer swallows its own errors, and this guards the call, because a store
+     * failure must never alter activation behaviour.
+     */
+    private save;
+    /**
+     * Mirror disposal to the authority: the row goes with the activation, so
+     * SessionStart never surfaces stopped work as live. Guarded like `save`.
+     */
+    private forget;
     /**
      * Release a writer's lease, converting an uncertain release into evidence.
      *
