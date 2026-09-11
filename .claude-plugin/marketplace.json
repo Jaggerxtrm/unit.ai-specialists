@@ -1,0 +1,15 @@
+{
+  "name": "specialists",
+  "description": "XTRM Specialists plugins for Claude Code.",
+  "owner": {
+    "name": "XTRM",
+    "url": "https://github.com/xtrm-dev/specialists"
+  },
+  "plugins": [
+    {
+      "name": "substrate",
+      "source": "./plugins/substrate",
+      "description": "Substrate work authority in Claude Code: specialist activation over MCP, session continuity hooks, and the using-substrate doctrine skill."
+    }
+  ]
+}
