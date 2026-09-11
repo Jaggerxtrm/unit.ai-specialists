@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/server';
+import type { McpRequestContext } from '@modelcontextprotocol/server';
 import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 /**
  * Build one server instance. The `serveStdio` factory calls this once per
@@ -8,7 +9,7 @@ import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
  * handles (activation_id/bead_id), not protocol state: capabilities and the
  * protocol revision are re-read from every request's own envelope.
  */
-export declare function buildV2Server(): McpServer;
+export declare function buildV2Server(ctx?: McpRequestContext): McpServer;
 /**
  * Official SDK v2 stdio entry. The SDK serves both supported eras from this
  * factory and rejects unsupported protocol revisions.
