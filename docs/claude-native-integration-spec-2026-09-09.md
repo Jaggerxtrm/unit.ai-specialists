@@ -1439,3 +1439,74 @@ MCP is an integration protocol, not work authority.
 
 No transport event silently modifies an executable Issue contract.
 ```
+
+---
+
+# AM. Amendment — Claude Code Channels are the primary wake, and they require the legacy era
+
+Added 2026-09-11 under `unitAI-aiwva.21`. Supersedes the assumption in §AA and §AF that a
+polling `asyncRewake` hook is the primary path for reaching an idle Claude session.
+
+## AM.1 What was verified
+
+Verified by decompiling the Claude Code 2.1.268 binary and by live delivery into an idle
+interactive session — not from documentation.
+
+An MCP server that declares `experimental: { 'claude/channel': {} }` may send an
+unsolicited notification:
+
+```
+{ method: "notifications/claude/channel",
+  params: { content: string, meta?: Record<string,string> } }
+```
+
+Claude Code renders it into the session as `<channel source="NAME" k="v">content</channel>`
+and enqueues it as a prompt with `isMeta: true`, waking an idle session with no user input.
+Meta keys failing `^[a-zA-Z_][a-zA-Z0-9_]*$` are dropped silently on the client.
+
+## AM.2 The era constraint — normative
+
+Claude Code refuses to register the channel listener when the connection negotiated a
+modern protocol revision, reporting:
+
+> connection negotiated a modern protocol revision with no unsolicited notification path
+
+Stateless 2026-07-28 has no server-initiated frame, so it has no channel delivery path.
+
+**Therefore `serveStdio(..., { legacy: 'serve' })` is a PRECONDITION for push, not a
+compatibility concession.** The dual-era decision recorded in §AJ.1 (PR #324) is
+load-bearing. A future change that negotiates 2026-07-28 only would silently delete the
+wake path.
+
+Push and modern-only negotiation are mutually exclusive in this build. Whoever removes
+legacy service must reinstate the hook as primary in the same change.
+
+## AM.3 Delivery is gated eight ways, each failing silently
+
+Capability declared → era is legacy → first-party provider (not Bedrock, Vertex, Foundry)
+→ feature enabled → org `channelsEnabled` → server named in `--channels` → plugin
+marketplace matches installed → `allowedChannelPlugins` allowlist (bypass for local
+development: `--dangerously-load-development-channels`).
+
+Registration is also interactive-only: it happens in the TUI, so `claude -p` has no channel
+path at any gate setting.
+
+There is no delivery acknowledgement.
+
+## AM.4 Resulting layer rule
+
+```
+push    Channel notification   "something changed"   delivery, never authority
+pull    specialist_status      "what is true"        authority
+store   ~/.xtrm/state.db       durable truth         recovery
+hook    wake-watch.mjs         recovery-only         every closed gate
+```
+
+The push carries a REFERENCE only — activation id, work id, event class, and the
+instruction to call `specialist_status`. It never carries a result, contract, or
+transcript body: a frame is rendered directly into session context, so its size must
+follow identity length and never result length (§AA, §AD unchanged).
+
+Because delivery is unacknowledged and eight gates can each close silently, the
+`asyncRewake` hook is retained as the recovery path with a relaxed 30s cadence. It is no
+longer the primary wake and must not be deleted.
