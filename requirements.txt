@@ -5,4 +5,4 @@ redis
 pillow>=12.2.0
 zipp>=3.23.1
 
-idna>=3.15
+idna>=3.19
