@@ -97,7 +97,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@modelcontextprotocol/server": "2.0.0",
     "hono": "4.12.32",
-    "qs": "6.15.2",
+    "qs": "6.16.0",
     "yaml": "2.9.0",
     "zod": "3.25.76",
     "zod-to-json-schema": "3.25.2"
@@ -121,6 +121,6 @@
     "hono": "4.12.32",
     "ip-address": "^10.2.0",
     "path-to-regexp": "^8.4.0",
-    "qs": "6.15.2"
+    "qs": "6.16.0"
   }
 }
