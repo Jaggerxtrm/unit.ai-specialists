@@ -377,6 +377,59 @@ describe('specialist_status — an MCP activation reads back identically', () =>
     expect(reported).toEqual(reprojected);
     expect(typeof _tick).toBe('number');
     expect(_tick as number).toBeGreaterThanOrEqual(0);
+    expect(out).not.toHaveProperty('specialists');
+    expect(out).not.toHaveProperty('background_jobs');
+  });
+
+  it('keeps the host projection compact instead of serializing runtime details', async () => {
+    const oversizedRuntimeDetail = 'x'.repeat(100_000);
+    const snapshot = {
+      activationId: 'act:compact',
+      participantId: 'participant:compact',
+      attemptId: 'attempt:compact',
+      specialist: 'researcher',
+      beadId: 'ISSUE-compact',
+      state: 'running',
+      access: 'read',
+      workspace: { worktreePath: '/tmp/compact-worktree', branch: 'feature/compact' },
+      piSessionId: 'pi-session-compact',
+      requestedModel: 'provider/requested',
+      resolvedModel: 'provider/resolved',
+      modelOverride: true,
+      thinkingOverride: false,
+      startedAt: Date.now(),
+      lastActivityAt: Date.now(),
+      oversizedRuntimeDetail,
+    };
+    const host = {
+      list: () => [snapshot],
+      pendingAsks: () => [],
+    };
+    const status = createSpecialistStatusTool(
+      { list: async () => [] } as never,
+      new CircuitBreaker(),
+      () => host as never,
+    );
+
+    const out = await status.execute({}) as Record<string, unknown>;
+    const serialized = JSON.stringify(out);
+
+    expect(out).not.toHaveProperty('specialists');
+    expect(out).not.toHaveProperty('background_jobs');
+    expect(serialized).not.toContain(oversizedRuntimeDetail);
+    expect(serialized.length).toBeLessThan(5_000);
+    expect(out.activations).toEqual([expect.objectContaining({
+      activation_id: 'act:compact',
+      participant_id: 'participant:compact',
+      attempt_id: 'attempt:compact',
+      specialist: 'researcher',
+      bead_id: 'ISSUE-compact',
+      worktree_path: '/tmp/compact-worktree',
+      branch: 'feature/compact',
+      pi_session_id: 'pi-session-compact',
+      requested_model: 'provider/requested',
+      resolved_model: 'provider/resolved',
+    })]);
   });
 
   it('reports an empty Fleet rather than failing when no host is wired', async () => {

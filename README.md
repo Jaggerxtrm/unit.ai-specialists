@@ -174,6 +174,28 @@ sp list
 
 `sp` is an alias for `specialists`.
 
+### Claude Code plugin (optional)
+
+Specialists ships a Claude Code plugin, `substrate`, that exposes specialist activation as
+MCP tools and injects live activation state at session start. It is opt-in: nothing installs
+or enables it for you.
+
+```bash
+claude plugin marketplace add xtrm-dev/specialists
+claude plugin install substrate@specialists
+```
+
+Verify the server is reachable from Claude Code:
+
+```bash
+claude mcp list | grep substrate
+# plugin:substrate:substrate: ... - ✔ Connected
+```
+
+The plugin requires Bun on `PATH` and reads Substrate's canonical store at `~/.xtrm/state.db`
+(override with `XTRM_STATE_DB` only for operator/test use). To develop against a checkout
+instead of an install, use `claude --plugin-dir ./plugins/substrate`.
+
 ### Global model config
 
 Package specialist definitions ship with `execution.model = null`. This is intentional: the package defines roles, tools, contracts, and safety boundaries; your machine-level config defines provider/model choices.

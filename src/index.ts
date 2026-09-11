@@ -1450,17 +1450,9 @@ async function run() {
     process.exit(1);
   }
 
-  // No subcommand: MCP server mode. SDK v2 strict 2026-07-28 by default;
-  // the handwritten 2025-era server stays servable via SPECIALISTS_MCP_SERVER=legacy
-  // until the v2 parity evidence lands (unitAI-aiwva.7).
-  if (process.env.SPECIALISTS_MCP_SERVER === 'legacy') {
-    logger.info("Starting Specialists MCP Server (legacy)...");
-    const { SpecialistsServer } = await import("./server.js");
-    const server = new SpecialistsServer();
-    await server.start();
-    return;
-  }
-  logger.info("Starting Specialists MCP Server (v2, 2026-07-28 strict)...");
+  // No subcommand: one SDK v2 server serves both 2025-11-25 and 2026-07-28;
+  // the entrypoint rejects unsupported protocol revisions.
+  logger.info("Starting Specialists MCP Server (v2, 2025-11-25 + 2026-07-28 dual-revision)...");
   const { serveV2Stdio } = await import("./mcp/v2-server.js");
   serveV2Stdio();
 }

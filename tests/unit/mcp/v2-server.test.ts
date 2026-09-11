@@ -11,18 +11,20 @@ import { buildV2Server } from '../../../src/mcp/v2-server.js';
 /**
  * SDK v2 wire tests (unitAI-aiwva.7 E3).
  *
- * The REAL modern stack — `serveStdio(factory, { legacy: 'reject' })` over a
- * `StdioServerTransport` bound to in-memory streams — spoken to with raw
- * JSON-RPC. No `initialize` handshake is ever sent: every request carries its
- * own `_meta` envelope, which is the statelessness claim under test.
+ * The REAL SDK v2 stack — `serveStdio(factory, { legacy: 'serve' })` over a
+ * `StdioServerTransport` bound to in-memory streams — is spoken to with raw
+ * JSON-RPC. The same factory serves either a 2025-11-25 `initialize` opening
+ * or a 2026-07-28 per-request `_meta` envelope; each connection is pinned to
+ * its negotiated era.
  *
  * Domain parity (gates, refusals, dispatch) lives in
  * activation-mcp-tools.test.ts / activation-dispatch-inline.test.ts at the
- * tool level plus live before/after probes; here the wire contract is proved:
- * exact 2026-07-28 negotiation, server/discover, 7-tool surface, resultType,
+ * tool level plus live probes; here the wire contract is proved:
+ * dual-revision negotiation, server/discover, 7-tool surface, resultType,
  * partitioned errors, and per-request independence.
  */
 
+const LEGACY_PROTOCOL = '2025-11-25';
 const PROTOCOL = '2026-07-28';
 const META = {
   'io.modelcontextprotocol/protocolVersion': PROTOCOL,
@@ -110,7 +112,7 @@ beforeEach(async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const transport = new StdioServerTransport(stdin, stdout);
-  handle = serveStdio(() => buildV2Server(), { transport, legacy: 'reject' });
+  handle = serveStdio(() => buildV2Server(), { transport, legacy: 'serve' });
   client = new WireClient(stdin, stdout);
 });
 
@@ -122,7 +124,7 @@ afterEach(async () => {
   if (xdg) rmSync(xdg, { recursive: true, force: true });
 });
 
-describe('v2 modern negotiation (strict 2026-07-28)', () => {
+describe('v2 dual-revision negotiation', () => {
   it('server/discover advertises exactly 2026-07-28 with the tools capability', async () => {
     const res = await client.call('server/discover', { _meta: META });
     expect(res.error).toBeUndefined();
@@ -135,23 +137,43 @@ describe('v2 modern negotiation (strict 2026-07-28)', () => {
     });
   });
 
-  it('rejects the legacy initialize handshake with -32022 (never downgrades)', async () => {
-    const res = await client.call('initialize', {
-      protocolVersion: '2025-11-25',
+  it('serves the 2025-11-25 initialize handshake and a legacy request', async () => {
+    const init = await client.call('initialize', {
+      protocolVersion: LEGACY_PROTOCOL,
       capabilities: {},
       clientInfo: { name: 'probe', version: '0' },
     });
-    expect(res.error?.code).toBe(-32022);
-    expect(JSON.stringify(res.error)).toContain(PROTOCOL);
+    expect(init.error).toBeUndefined();
+    const result = init.result as Record<string, unknown>;
+    expect(result.protocolVersion).toBe(LEGACY_PROTOCOL);
+    expect(result.capabilities).toMatchObject({ tools: {} });
+    expect(result.serverInfo).toMatchObject({ name: 'specialists' });
+
+    const list = await client.call('tools/list', {});
+    expect(list.error).toBeUndefined();
+    expect((list.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toEqual(EXPECTED_TOOLS);
   });
 
-  it('rejects envelope-less requests with -32022 and capability-less envelopes with -32602', async () => {
-    const noMeta = await client.call('tools/list', {});
-    expect(noMeta.error?.code).toBe(-32022);
-    const noCaps = await client.call('tools/list', {
+  it('rejects unsupported protocol revisions', async () => {
+    const unsupported = '2026-01-01';
+    const res = await client.call('server/discover', {
+      _meta: { ...META, 'io.modelcontextprotocol/protocolVersion': unsupported },
+    });
+    expect(res.error?.code).toBe(-32022);
+    expect(res.error?.data).toMatchObject({ supported: [PROTOCOL], requested: unsupported });
+  });
+
+  it('serves a claim-less legacy request without a modern envelope', async () => {
+    const res = await client.call('tools/list', {});
+    expect(res.error).toBeUndefined();
+    expect((res.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toEqual(EXPECTED_TOOLS);
+  });
+
+  it('rejects a modern envelope without client capabilities', async () => {
+    const res = await client.call('tools/list', {
       _meta: { 'io.modelcontextprotocol/protocolVersion': PROTOCOL },
     });
-    expect(noCaps.error?.code).toBe(-32602);
+    expect(res.error?.code).toBe(-32602);
   });
 
   it('drops claim-less notifications without a response (notifications carry no id)', async () => {
@@ -188,6 +210,27 @@ describe('v2 tool surface (t2kol parity)', () => {
     expect(result.content[0]?.type).toBe('text');
     // Payload is the tool's own projection, parseable by the coordinator.
     expect(() => JSON.parse(result.content[0].text)).not.toThrow();
+  });
+
+  it('specialist_status exposes the compact shared projection without registry or job dumps', async () => {
+    const res = await client.call('tools/call', {
+      name: 'specialist_status',
+      arguments: {},
+      _meta: META,
+    });
+    expect(res.error).toBeUndefined();
+    const result = res.result as {
+      content: Array<{ type: string; text: string }>;
+      resultType: string;
+    };
+    expect(result.resultType).toBe('complete');
+
+    const payload = JSON.parse(result.content[0].text) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('specialists');
+    expect(payload).not.toHaveProperty('background_jobs');
+    expect(JSON.stringify(payload).length).toBeLessThan(5_000);
+    expect(payload.activations).toEqual([]);
+    expect(payload.pending_asks).toEqual([]);
   });
 
   it('refusals surface as returned payloads through the modern envelope', async () => {
