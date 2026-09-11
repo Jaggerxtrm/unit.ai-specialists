@@ -96,7 +96,7 @@
     "@earendil-works/pi-tui": "0.75.5",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@modelcontextprotocol/server": "2.0.0",
-    "hono": "4.12.32",
+    "hono": "4.13.5",
     "qs": "6.15.2",
     "yaml": "2.9.0",
     "zod": "3.25.76",
@@ -118,7 +118,7 @@
     "@hono/node-server": "^1.19.13",
     "esbuild": "^0.28.1",
     "fast-uri": "^3.1.2",
-    "hono": "4.12.32",
+    "hono": "4.13.5",
     "ip-address": "^10.2.0",
     "path-to-regexp": "^8.4.0",
     "qs": "6.15.2"
