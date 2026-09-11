@@ -99,7 +99,23 @@ try {
   if (!existsSync(storePath)) process.exit(0);
 
   // Baseline: everything already actionable when this session started is NOT news.
-  let seen = await readActionable(storePath);
+  //
+  // Retried, because the loop below already tolerates a locked or mid-write store and the
+  // baseline must tolerate it for the same reason: `~/.xtrm/state.db` is the SHARED
+  // authority, written by sb and Pi concurrently. Letting a first-read failure escape to
+  // the outer catch meant a session that happened to start during someone else's write got
+  // no watcher at all, silently — the exact failure this hook exists to prevent, and the
+  // one a caller can never observe because the hook is supposed to exit 0 when idle.
+  let seen;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      seen = await readActionable(storePath);
+      break;
+    } catch (error) {
+      if (attempt >= 5) throw error; // Persistently unreadable is a real failure; exit 0.
+      await sleep(200);
+    }
+  }
   const deadline = Date.now() + MAX_MS;
 
   while (Date.now() < deadline) {

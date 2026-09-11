@@ -61,10 +61,27 @@ function flipUntil(dbPath: string, id: string, state: string, cycles = 40) {
   children.push(child);
 }
 
-function watch(dbPath: string, maxMs = 20000) {
+/**
+ * `entrypoint` is declared explicitly and never inherited.
+ *
+ * The watcher refuses to run unless CLAUDE_CODE_ENTRYPOINT is exactly 'cli' — under
+ * `claude -p` it is 'sdk-cli', and an earlier version of this hook broke every headless
+ * run by waking sessions that had no model to wake. Inheriting the variable from
+ * process.env made these tests pass on a developer machine (where an interactive Claude
+ * Code session exports cli) and fail in CI, where nothing sets it: the watcher exited 0
+ * before reading the store, so every wake assertion saw exit 0 and no output. The test
+ * must state the precondition it is testing under, not borrow it from whoever ran it.
+ */
+function watch(dbPath: string, maxMs = 20000, entrypoint = 'cli') {
   return spawnSync('bun', [hook], {
     encoding: 'utf-8',
-    env: { ...process.env, XTRM_STATE_DB: dbPath, SUBSTRATE_WAKE_POLL_MS: '250', SUBSTRATE_WAKE_MAX_MS: String(maxMs) },
+    env: {
+      ...process.env,
+      CLAUDE_CODE_ENTRYPOINT: entrypoint,
+      XTRM_STATE_DB: dbPath,
+      SUBSTRATE_WAKE_POLL_MS: '250',
+      SUBSTRATE_WAKE_MAX_MS: String(maxMs),
+    },
     timeout: 60000,
   });
 }
@@ -126,6 +143,17 @@ describe('substrate idle-wake watcher', () => {
 
   it('exits 0 and stays silent when the store is absent', () => {
     const r = watch(join(tmpdir(), 'definitely-absent', 'state.db'), 1500);
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('');
+  });
+
+  it('refuses to run outside an interactive session', () => {
+    // The headless guard, asserted directly rather than inherited: under `claude -p` the
+    // entrypoint is 'sdk-cli' and there is no session to wake. A watcher that wakes anyway
+    // breaks every headless run, which is exactly how this guard came to exist.
+    const db = seed([['act:h', 'running']]);
+    flipUntil(db, 'act:h', 'settled');
+    const r = watch(db, 4000, 'sdk-cli');
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe('');
   });
