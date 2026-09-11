@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// DEPRECATED (Wave E1, bead unitAI-aiwva.2): superseded by the Substrate plugin hook
-// plugins/substrate/scripts/session-start.mjs, which reads Substrate state instead of
-// scanning <cwd>/.specialists/jobs. The plugin hook is authoritative where installed.
-// Removal tracked in bead unitAI-aiwva.15. Do not extend this file.
 // specialists-session-start — Claude Code SessionStart hook
 // Injects specialists context at the start of every session:
 //   • Active background jobs (if any)
@@ -11,6 +7,13 @@
 //
 // Installed by: specialists init
 // Hook type: SessionStart
+//
+// NOT superseded by the substrate plugin's SessionStart hook, despite the earlier
+// deprecation note (unitAI-aiwva.15). The two report DISJOINT state and neither can
+// replace the other: this hook covers CLI background jobs (`sp run` child processes with
+// a pid), the available-specialist registry and the command reference; the plugin hook
+// covers native in-process activations from ~/.xtrm/state.db. Removing this one deletes
+// CLI visibility entirely rather than de-duplicating anything.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -118,7 +121,9 @@ lines.push('specialists status                                 # system health')
 lines.push('specialists doctor                                 # troubleshoot issues');
 lines.push('```');
 lines.push('');
-lines.push('MCP tools: use_specialist (foreground only)');
+lines.push('MCP tools (substrate plugin): specialist_dispatch, specialist_status, specialist_reply,');
+lines.push('  specialist_resume, specialist_stop_activation, specialist_list. use_specialist is the');
+lines.push('  deprecated foreground path — it runs a bead specialist_dispatch would refuse.');
 lines.push('');
 
 // ── 4. Hot tips (version-pinned, current sp release) ───────────────────────
@@ -127,10 +132,10 @@ lines.push(`## Specialists — Hot Tips (sp v${spVersion})`);
 lines.push('');
 lines.push('- `--bead` on edit-capable specialists auto-provisions worktree');
 lines.push('- Reviewer enters with `--job <exec-job>`; `--worktree`/`--job` exclusive');
-lines.push('- `sp epic merge <epic>` for epic chains; `sp merge <chain>` for standalone');
+lines.push('- Merge is MANUAL: `git merge --no-ff feature/<bead>`. `sp merge`/`sp epic merge` are prohibited');
 lines.push('- `sp ps`/`sp feed`/`sp result`');
 lines.push('- `--keep-alive` required so reviewer/overthinker can be `sp resume`d');
-lines.push('- `sp merge` fails after `sp stop` cleans status.json — see unitAI-ofjvj');
+lines.push('- Close keep-alive jobs explicitly with `sp stop <job-id>`; there is no finalize cascade');
 
 // ── Output ─────────────────────────────────────────────────────────────────
 if (lines.length === 0) process.exit(0);
