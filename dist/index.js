@@ -94659,6 +94659,73 @@ var init_request_meta = __esm(() => {
   init_forensic_events();
 });
 
+// src/mcp/channel.ts
+function buildChannelFrame(input2) {
+  const meta3 = {
+    activation_id: input2.activationId,
+    specialist: input2.specialist,
+    event: input2.eventClass,
+    read_with: "specialist_status"
+  };
+  if (input2.beadId)
+    meta3.bead_id = input2.beadId;
+  for (const key of Object.keys(meta3)) {
+    if (!META_KEY.test(key))
+      throw new Error(`channel meta key "${key}" fails ${META_KEY.source}`);
+  }
+  const work = input2.beadId ? ` on ${input2.beadId}` : "";
+  const action = ACTION[input2.eventClass] ?? "Call specialist_status for authoritative state.";
+  return {
+    method: CHANNEL_METHOD,
+    params: {
+      content: `Specialist ${input2.specialist}${work}: ${input2.eventClass} (${input2.activationId}). ${action}`,
+      meta: meta3
+    }
+  };
+}
+function withChannelPush(base, send) {
+  return {
+    ...base,
+    emit(event) {
+      base.emit(event);
+      const eventClass = PUSHED_EVENTS[event.name];
+      if (!eventClass)
+        return;
+      try {
+        const frame = buildChannelFrame({
+          activationId: event.activationId,
+          specialist: event.specialist,
+          ...event.beadId ? { beadId: event.beadId } : {},
+          eventClass
+        });
+        Promise.resolve(send(frame)).catch((error3) => {
+          logger.debug(`channel push dropped (${eventClass}): ${String(error3)}`);
+        });
+      } catch (error3) {
+        logger.debug(`channel push not built (${eventClass}): ${String(error3)}`);
+      }
+    }
+  };
+}
+var CHANNEL_CAPABILITY, CHANNEL_METHOD = "notifications/claude/channel", META_KEY, PUSHED_EVENTS, ACTION;
+var init_channel = __esm(() => {
+  init_logger();
+  CHANNEL_CAPABILITY = { "claude/channel": {} };
+  META_KEY = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+  PUSHED_EVENTS = {
+    activation_settled: "completed",
+    activation_failed: "failed",
+    escalation_raised: "escalation",
+    clarification_requested: "needs_reply"
+  };
+  ACTION = {
+    completed: "Call specialist_status for the authoritative result.",
+    failed: "Call specialist_status for the authoritative failure detail.",
+    escalation: "Call specialist_status to read the escalation, then specialist_reply.",
+    needs_reply: "Call specialist_status to read the pending ask and message_id, then specialist_reply."
+  };
+});
+
 // src/mcp/v2-server.ts
 var exports_v2_server = {};
 __export(exports_v2_server, {
@@ -94669,7 +94736,9 @@ import { join as join58 } from "path";
 function textResult(result) {
   return { content: [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }] };
 }
-function buildV2Server() {
+function buildV2Server(ctx) {
+  const channelEra = ctx?.era ?? "legacy";
+  let channelSend = () => {};
   const circuitBreaker = new CircuitBreaker;
   const loader = new SpecialistLoader;
   const hooks = new HookEmitter({ tracePath: join58(process.cwd(), ".specialists", "trace.jsonl") });
@@ -94680,14 +94749,17 @@ function buildV2Server() {
     loader,
     beadsClient,
     authority: createFileAuthorityWriter(),
-    ...observability ? { forensics: createActivationForensicSink(observability) } : {}
+    forensics: withChannelPush(createActivationForensicSink(observability), (frame) => channelSend(frame))
   });
   const getHost = () => host;
   const pusher = new RuntimeEventPusher({
     adapter: new PeerAdapter({ repoRoot: process.cwd() })
   });
   const getPusher = () => pusher;
-  const server = new McpServer({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: { tools: { listChanged: false } } });
+  const server = new McpServer({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: { tools: { listChanged: false }, experimental: { ...CHANNEL_CAPABILITY } } });
+  if (channelEra === "legacy") {
+    channelSend = (frame) => server.server.notification(frame);
+  }
   const tools = [
     createUseSpecialistTool(runner),
     createSpecialistStatusTool(loader, circuitBreaker, getHost, getPusher),
@@ -94710,11 +94782,11 @@ function buildV2Server() {
     server.registerTool(tool.name, {
       description: tool.description,
       inputSchema: fromJsonSchema2(zodToJsonSchema(schema))
-    }, async (args, ctx) => {
-      const envelope = ctx.mcpReq.envelope;
+    }, async (args, ctx2) => {
+      const envelope = ctx2.mcpReq.envelope;
       const context = createMcpRequestContext({
         protocolVersion: envelope?.[PROTOCOL_VERSION_META_KEY],
-        requestId: ctx.mcpReq.id
+        requestId: ctx2.mcpReq.id
       });
       logger.info(`Tool call: ${tool.name}`);
       emitMcpForensicEvent(observability, "mcp.call.started", context, {
@@ -94752,7 +94824,7 @@ function buildV2Server() {
   return server;
 }
 function serveV2Stdio() {
-  const handle = serveStdio(() => buildV2Server(), {
+  const handle = serveStdio((ctx) => buildV2Server(ctx), {
     legacy: "serve",
     onerror: (error3) => logger.error("MCP v2 transport error", error3)
   });
@@ -94787,6 +94859,7 @@ var init_v2_server = __esm(() => {
   init_forensic_sink();
   init_logger();
   init_request_meta();
+  init_channel();
 });
 
 // src/index.ts
