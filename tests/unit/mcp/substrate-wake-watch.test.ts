@@ -17,6 +17,7 @@ const hook = join(
 );
 
 const roots: string[] = [];
+const children: Array<{ kill: (s?: NodeJS.Signals) => boolean }> = [];
 function seed(rows: Array<[string, string]>): string {
   const root = mkdtempSync(join(tmpdir(), 'wake-watch-'));
   roots.push(root);
@@ -35,20 +36,32 @@ function seed(rows: Array<[string, string]>): string {
   return dbPath;
 }
 /**
- * Writes the transition from a DETACHED process. It cannot be a setTimeout: spawnSync below
- * blocks this thread's event loop, so an in-process timer would not fire until after the
- * watcher had already exited.
+ * Drives the transition from a DETACHED process, alternating the row between a
+ * non-actionable and an actionable state for the whole run.
+ *
+ * It cannot be a setTimeout: spawnSync below blocks this thread's event loop, so an
+ * in-process timer would not fire until after the watcher had already exited.
+ *
+ * It cannot be a single delayed write either, which is what CI caught. Both this writer
+ * and the watcher are cold `bun` starts racing from the same instant: if the write lands
+ * before the watcher takes its baseline, the row reads as pre-existing backlog and the
+ * watcher correctly does NOT wake — so the test failed for the one reason the watcher is
+ * supposed to behave that way. Alternating removes the race instead of widening a timeout
+ * around it: whichever state the baseline captures, the next flip is a real transition.
  */
-function transitionAfter(dbPath: string, id: string, state: string, delayMs: number) {
+function flipUntil(dbPath: string, id: string, state: string, cycles = 40) {
   const script =
-    `await Bun.sleep(${delayMs});` +
     `const {Database}=require('bun:sqlite');const db=new Database(${JSON.stringify(dbPath)});` +
-    `db.prepare("INSERT OR REPLACE INTO activations VALUES (?, 'executor', ?, 'B-1', '2000')")` +
-    `.run(${JSON.stringify(id)}, ${JSON.stringify(state)});db.close();`;
+    `const set=(s)=>db.prepare("INSERT OR REPLACE INTO activations VALUES (?, 'executor', ?, 'B-1', '2000')")` +
+    `.run(${JSON.stringify(id)}, s);` +
+    `for(let i=0;i<${cycles};i++){set('running');await Bun.sleep(150);set(${JSON.stringify(state)});await Bun.sleep(150);}` +
+    `db.close();`;
   const child = spawn('bun', ['-e', script], { detached: true, stdio: 'ignore' });
   child.unref();
+  children.push(child);
 }
-function watch(dbPath: string, maxMs = 4000) {
+
+function watch(dbPath: string, maxMs = 20000) {
   return spawnSync('bun', [hook], {
     encoding: 'utf-8',
     env: { ...process.env, XTRM_STATE_DB: dbPath, SUBSTRATE_WAKE_POLL_MS: '250', SUBSTRATE_WAKE_MAX_MS: String(maxMs) },
@@ -57,6 +70,8 @@ function watch(dbPath: string, maxMs = 4000) {
 }
 
 afterEach(() => {
+  // Kill the flip writer first: it holds the sqlite file the cleanup removes.
+  while (children.length > 0) { try { children.pop()?.kill('SIGKILL'); } catch { /* already gone */ } }
   while (roots.length > 0) rmSync(roots.pop() as string, { recursive: true, force: true });
 });
 
@@ -79,7 +94,7 @@ describe('substrate idle-wake watcher', () => {
 
   it('wakes with exit 2 when an activation settles', () => {
     const db = seed([['act:live', 'running']]);
-    transitionAfter(db, 'act:live', 'settled', 500);
+    flipUntil(db, 'act:live', 'settled');
     const r = watch(db);
     expect(r.status).toBe(2);
     const payload = JSON.parse(r.stdout.trim().split('\n').pop() as string);
@@ -91,7 +106,7 @@ describe('substrate idle-wake watcher', () => {
 
   it('wakes when an activation starts waiting on a reply', () => {
     const db = seed([['act:q', 'running']]);
-    transitionAfter(db, 'act:q', 'needs_reply', 500);
+    flipUntil(db, 'act:q', 'needs_reply');
     const r = watch(db);
     expect(r.status).toBe(2);
     expect(r.stdout).toContain('awaiting reply');
@@ -99,7 +114,7 @@ describe('substrate idle-wake watcher', () => {
 
   it('carries a reference only — no bodies, no forensic ids', () => {
     const db = seed([['act:x', 'running']]);
-    transitionAfter(db, 'act:x', 'settled', 500);
+    flipUntil(db, 'act:x', 'settled');
     const payload = JSON.parse((watch(db).stdout.trim().split('\n').pop() as string));
     expect(Object.keys(payload).sort()).toEqual(['activations', 'read_with', 'reason', 'source']);
     for (const row of payload.activations) {
