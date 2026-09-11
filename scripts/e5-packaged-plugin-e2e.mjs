@@ -45,6 +45,7 @@ const PLUGIN_FILES = [
   'package/plugins/substrate/scripts/session-start.mjs',
   'package/plugins/substrate/scripts/precompact.mjs',
   'package/plugins/substrate/scripts/postcompact.mjs',
+  'package/plugins/substrate/scripts/wake-watch.mjs',
   'package/plugins/substrate/skills/using-substrate/SKILL.md',
 ];
 
@@ -230,6 +231,15 @@ try {
       discover.result?.capabilities?.tools !== undefined &&
       discover.result?.resultType === 'complete',
     `tools capability + resultType=${discover.result?.resultType}`,
+  );
+
+  // Channel push (unitAI-aiwva.21). Claude Code registers its inbound listener
+  // off this exact literal and reports nothing when it is absent, so a rename
+  // or an accidental capability overwrite is invisible everywhere but here.
+  link(
+    'channel-capability',
+    discover.result?.capabilities?.experimental?.['claude/channel'] !== undefined,
+    `experimental=${JSON.stringify(discover.result?.capabilities?.experimental)}`,
   );
 
   const tools = await call('tools/list', { _meta: META });
@@ -498,6 +508,38 @@ if (ENV_BLOCKED.test(gateToolsOut) || gateTools.signal) {
       : `missing from the client: ${clientMissing.join(', ')}`,
   );
 }
+
+// 9b2. Idle-wake mechanism (unitAI-aiwva.21, spec §Z/§AJ). Claude Code wakes the model when
+// an asyncRewake hook exits 2 — so the registration AND the exit code are both the contract.
+// A watcher that never fires is indistinguishable from "nothing happened", which is exactly
+// the failure class this gate exists to make loud.
+const wakeEntry = (
+  JSON.parse(readFileSync(join(PLUGIN, 'hooks/hooks.json'), 'utf-8')).hooks?.SessionStart ?? []
+)
+  .flatMap((entry) => entry.hooks ?? [])
+  .find((h) => h.asyncRewake === true);
+const wakeStore = join(SCRATCH, 'wake.db');
+run('bun', ['-e', `const {Database}=require('bun:sqlite');const db=new Database(${JSON.stringify(wakeStore)});db.exec("CREATE TABLE activations(activation_id TEXT PRIMARY KEY, specialist TEXT, state TEXT, bead_id TEXT, last_activity_at TEXT)");db.exec("INSERT INTO activations VALUES('act:w','executor','running','B-1','1')");db.close();`], { timeout: 60000 });
+spawn(
+  'bun',
+  ['-e', `await Bun.sleep(1500);const {Database}=require('bun:sqlite');const db=new Database(${JSON.stringify(wakeStore)});db.exec("UPDATE activations SET state='settled' WHERE activation_id='act:w'");db.close();`],
+  { detached: true, stdio: 'ignore' },
+).unref();
+const wake = run('bun', [join(PLUGIN, 'scripts/wake-watch.mjs')], {
+  cwd: REPO_DIR,
+  env: { ...process.env, XTRM_STATE_DB: wakeStore, SUBSTRATE_WAKE_POLL_MS: '400', SUBSTRATE_WAKE_MAX_MS: '20000' },
+  timeout: 60000,
+});
+const wakeOk = Boolean(wakeEntry) && wake.status === 2 && (wake.stdout || '').includes('act:w');
+say('--- idle-wake watcher ---');
+say((wake.stdout || '').trim() || '(no wake)');
+link(
+  'wake-on-settle',
+  wakeOk,
+  wakeOk
+    ? 'asyncRewake registered; watcher exits 2 naming the settled activation'
+    : `registered=${Boolean(wakeEntry)} exit=${wake.status}`,
+);
 
 // 9c. §AJ "Substrate skill is discoverable". The file existing is not evidence that Claude
 // surfaced it, and until this gate the file was the entire proof — the one §AJ line with no
