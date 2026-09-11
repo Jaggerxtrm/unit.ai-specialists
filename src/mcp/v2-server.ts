@@ -29,7 +29,7 @@ import * as z from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { McpServer, fromJsonSchema, PROTOCOL_VERSION_META_KEY } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import type { ServerContext } from '@modelcontextprotocol/server';
+import type { ServerContext, McpRequestContext } from '@modelcontextprotocol/server';
 import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 import { MCP_CONFIG } from '../constants.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
@@ -57,6 +57,7 @@ import { PeerAdapter } from '../activation/transport/peer-adapter.js';
 import { createActivationForensicSink } from '../activation/forensic-sink.js';
 import { logger } from '../utils/logger.js';
 import { createMcpRequestContext, emitMcpForensicEvent } from './request-meta.js';
+import { CHANNEL_CAPABILITY, withChannelPush, type ChannelFrame, type ChannelSend } from './channel.js';
 
 type AnyTool = {
   name: string;
@@ -76,7 +77,14 @@ function textResult(result: unknown): { content: [{ type: 'text'; text: string }
  * handles (activation_id/bead_id), not protocol state: capabilities and the
  * protocol revision are re-read from every request's own envelope.
  */
-export function buildV2Server(): McpServer {
+export function buildV2Server(ctx?: McpRequestContext): McpServer {
+  // Claude Code refuses to register the channel listener on a modern-era
+  // connection (no unsolicited notification path), so a push is only wired for
+  // a legacy-pinned one. The capability is still declared in both eras: it
+  // costs nothing, and the client's own gate is the authority on delivery.
+  const channelEra = ctx?.era ?? 'legacy';
+  // Late-bound: the sink is built before the server that sends for it.
+  let channelSend: ChannelSend = () => {};
   const circuitBreaker = new CircuitBreaker();
   const loader = new SpecialistLoader();
   const hooks = new HookEmitter({ tracePath: join(process.cwd(), '.specialists', 'trace.jsonl') });
@@ -92,7 +100,13 @@ export function buildV2Server(): McpServer {
     beadsClient,
     // One Substrate authority shared with sb/Pi; path from XTRM_STATE_DB or ~/.xtrm/state.db.
     authority: createFileAuthorityWriter(),
-    ...(observability ? { forensics: createActivationForensicSink(observability) } : {}),
+    // The push rides the forensic stream the host already emits — no poll, no
+    // bus. A null observability store still gets a channel sink, because the
+    // push is not forensics and must not depend on a diagnostic database.
+    forensics: withChannelPush(
+      createActivationForensicSink(observability),
+      (frame) => channelSend(frame),
+    ),
   });
   const getHost = () => host;
 
@@ -104,9 +118,20 @@ export function buildV2Server(): McpServer {
   const server = new McpServer(
     { name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION },
     // Tools only: no prompts/logging capabilities (§N deprecates Logging, and
-    // the list is static so listChanged stays false per §K).
-    { capabilities: { tools: { listChanged: false } } },
+    // the list is static so listChanged stays false per §K). `claude/channel`
+    // is an inbound-listener registration on the client, not a server-initiated
+    // REQUEST family, so it does not reintroduce what §§M/N deprecate.
+    { capabilities: { tools: { listChanged: false }, experimental: { ...CHANNEL_CAPABILITY } } },
   );
+
+  // Bind the sender now that the server exists. `server.server` is the SDK's
+  // documented escape hatch for sending notifications; the frame method is
+  // outside the typed ServerNotification union by design, so the cast is the
+  // narrowest possible and is confined to this one line.
+  if (channelEra === 'legacy') {
+    channelSend = (frame: ChannelFrame) =>
+      server.server.notification(frame as unknown as Parameters<typeof server.server.notification>[0]);
+  }
 
   const tools: AnyTool[] = [
     createUseSpecialistTool(runner),
@@ -186,7 +211,7 @@ export function buildV2Server(): McpServer {
  * factory and rejects unsupported protocol revisions.
  */
 export function serveV2Stdio(): StdioServerHandle {
-  const handle = serveStdio(() => buildV2Server(), {
+  const handle = serveStdio((ctx) => buildV2Server(ctx), {
     legacy: 'serve',
     onerror: (error) => logger.error('MCP v2 transport error', error),
   });
